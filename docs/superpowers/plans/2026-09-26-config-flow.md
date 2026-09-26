@@ -59,7 +59,7 @@ it.
 | Wave | Tasks | Notes |
 |---|---|---|
 | 1 | 1, 4 | Disjoint files. Task 4 (docs) starts ahead of inputs, from the names this plan fixes, and is re-checked against the code that lands |
-| 2 | 2 | Needs Task 1's `entry.py` and fixtures |
+| 2 | 2 | Needs Task 1's `entry.py`, fixtures and `config_flow.py` stub (HA imports the `config_flow` platform to set up any entry) |
 | 3 | 3 | Needs Task 2's `async_setup_entry`: a created or reauthed entry is set up for real (with the mocked client), and the AuthError → reauth test needs both |
 
 No task has guarded files.
@@ -88,6 +88,9 @@ plan routes both through `entry.create_client`, so there is one patch site
 (`custom_components.nortec_go.entry.NortecGoClient`). The intent is kept: one shared mocked instance, and the
 class mock is exposed for constructor kwargs and `on_tokens_refreshed`.
 
+The spec's §6 names a *Reauthentication* section in the user docs. This plan puts it under *Troubleshooting*
+("Asked to sign in again"), which fits the home-assistant.io template (D9) better; the content is the same.
+
 ---
 
 ### Task 1: Dependency, entry helpers and test fixtures
@@ -99,6 +102,7 @@ class mock is exposed for constructor kwargs and `on_tokens_refreshed`.
 - Modify: `custom_components/nortec_go/manifest.json`
 - Modify: `custom_components/nortec_go/const.py`
 - Create: `custom_components/nortec_go/entry.py`
+- Create: `custom_components/nortec_go/config_flow.py` (a stub; Task 3 replaces it)
 - Modify: `tests/conftest.py`
 - Create: `tests/test_entry.py`, `tests/test_manifest.py`
 
@@ -176,6 +180,23 @@ In `custom_components/nortec_go/manifest.json` set `"config_flow": true` and
 
 Run: `uv run pytest tests/test_manifest.py -v`
 Expected: PASS.
+
+- [ ] **Step 5a: Add the config flow stub**
+
+With `config_flow: true`, HA imports the `config_flow` platform to set up any config entry (see
+`docs/notes.md`), and hassfest expects the file. Create `custom_components/nortec_go/config_flow.py`:
+
+```python
+"""Config flow for Nortec Go."""
+
+from homeassistant.config_entries import ConfigFlow
+
+from .const import DOMAIN
+
+
+class NortecGoConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Nortec Go. The steps come in a later task."""
+```
 
 - [ ] **Step 6: Add the fixtures**
 
@@ -376,8 +397,6 @@ Create `custom_components/nortec_go/entry.py`:
 ```python
 """The Nortec Go config entry: its type, its stored tokens and its client."""
 
-from __future__ import annotations
-
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Any
@@ -442,7 +461,7 @@ feat: add pynortecgo, entry helpers and test fixtures (#7)
 <co-author trailer from the dispatch>
 ```
 
-Run: `git add pyproject.toml uv.lock custom_components/nortec_go/manifest.json custom_components/nortec_go/const.py custom_components/nortec_go/entry.py tests/conftest.py tests/test_entry.py tests/test_manifest.py && git commit -F <message file>`
+Run: `git add pyproject.toml uv.lock custom_components/nortec_go/manifest.json custom_components/nortec_go/const.py custom_components/nortec_go/entry.py custom_components/nortec_go/config_flow.py tests/conftest.py tests/test_entry.py tests/test_manifest.py && git commit -F <message file>`
 
 ---
 
@@ -559,7 +578,8 @@ async def test_setup_retry_reuses_stored_tokens(
     """A retry after a transient error reads with the stored tokens and never logs in."""
     mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
     await _setup(hass, mock_config_entry)
-    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+    state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
+    assert state is ConfigEntryState.SETUP_RETRY
 
     mock_client.get_charger.side_effect = None
     await hass.config_entries.async_reload(mock_config_entry.entry_id)
@@ -597,6 +617,7 @@ async def test_setup_charger_changed(
     await _setup(hass, mock_config_entry)
 
     assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
+    assert "charger has changed" in caplog.text
     assert str(FAKE_CHARGER_ID) not in caplog.text
     assert str(OTHER_CHARGER_ID) not in caplog.text
 
@@ -613,6 +634,7 @@ async def test_setup_logs_no_credentials(
     with patch.object(ConfigEntry, "async_start_reauth_if_available"):
         await _setup(hass, mock_config_entry)
 
+    assert "could not authenticate" in caplog.text
     for secret in (
         FAKE_EMAIL,
         FAKE_DEVICE_ID,
@@ -663,8 +685,6 @@ Replace `custom_components/nortec_go/__init__.py` with:
 
 ```python
 """The Nortec Go integration."""
-
-from __future__ import annotations
 
 from homeassistant.const import CONF_DEVICE_ID, Platform
 from homeassistant.core import HomeAssistant
@@ -767,7 +787,7 @@ Run: `git add custom_components/nortec_go/__init__.py tests/test_init.py && git 
 **Model:** opus (login, token storage and reauth) · **Wave:** 3
 
 **Files:**
-- Create: `custom_components/nortec_go/config_flow.py`
+- Modify: `custom_components/nortec_go/config_flow.py` (replace Task 1's stub)
 - Modify: `custom_components/nortec_go/strings.json`, `custom_components/nortec_go/translations/en.json`
 - Create: `tests/test_config_flow.py`
 
@@ -792,7 +812,12 @@ import logging
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_USER, ConfigEntryState
+from homeassistant.config_entries import (
+    SOURCE_REAUTH,
+    SOURCE_USER,
+    ConfigEntryState,
+    ConfigFlow,
+)
 from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -1021,6 +1046,7 @@ async def test_user_flow_parallel_for_same_charger(
         DOMAIN, context={"source": SOURCE_USER}
     )
     flow = hass.config_entries.flow._progress[first["flow_id"]]  # noqa: SLF001
+    assert isinstance(flow, ConfigFlow)
     await flow.async_set_unique_id(str(FAKE_CHARGER_ID))
 
     result = await hass.config_entries.flow.async_configure(
@@ -1043,7 +1069,11 @@ async def test_reauth(
     result = await mock_config_entry.start_reauth_flow(hass)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reauth_confirm"
-    assert result["description_placeholders"] == {"email": FAKE_EMAIL}
+    # HA adds {"name": entry.title} to reauth placeholders itself.
+    assert result["description_placeholders"] == {
+        "email": FAKE_EMAIL,
+        "name": FAKE_CHARGER_NAME,
+    }
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_PASSWORD: FAKE_PASSWORD}
@@ -1127,16 +1157,14 @@ async def test_setup_auth_error_opens_reauth(
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `uv run pytest tests/test_config_flow.py -v`
-Expected: FAIL; there is no config flow (`UnknownHandler` / flow not found).
+Expected: FAIL; the stub flow has no `user` step (the flow aborts or errors with an unknown step).
 
 - [ ] **Step 3: Write the config flow**
 
-Create `custom_components/nortec_go/config_flow.py`:
+Replace `custom_components/nortec_go/config_flow.py` with:
 
 ```python
 """Config flow for Nortec Go."""
-
-from __future__ import annotations
 
 from collections.abc import Mapping
 import logging
@@ -1160,7 +1188,7 @@ from pynortecgo import (
     RateLimitError,
     Tokens,
 )
-import voluptuous as vol
+import voluptuous as vol  # noqa: TID251  (HA 2026.9.3's flow API is typed for voluptuous schemas)
 
 from .const import DOMAIN
 from .entry import create_client, tokens_to_data
@@ -1279,9 +1307,9 @@ class NortecGoConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 ```
 
-If ruff flags `except Exception` (BLE001) despite the `_LOGGER.exception` call, add `# noqa: BLE001` with
-no other change. If ruff's `PLR0911` (too many returns) fires, it is already in the ignore list; don't
-restructure.
+The `voluptuous` import keeps its `noqa`: ruff's config (copied from HA core dev) bans it in favour of
+`probatio`, but HA 2026.9.3's `add_suggested_values_to_schema` and `async_show_form` are typed for voluptuous
+schemas, so `probatio` fails mypy strict (HA aliases one to the other at runtime).
 
 - [ ] **Step 4: Write the strings**
 
@@ -1496,7 +1524,8 @@ In `docs/decisions.md`:
     with `gh issue create -R thomas3650/nortecgo --label ha-integration`. Supersedes D8.
   - **Why:** The repos do different jobs; a sync duty costs an issue for every process change, most of
     which don't apply to the other repo.
-  - **Source:** owner decision on 2026-09-26 (NortecGo#41 closed); [config-flow spec](superpowers/specs/2026-09-26-config-flow-design.md), §7
+  - **Source:** owner decision on 2026-09-26 (NortecGo#41 closed);
+    [config-flow spec](superpowers/specs/2026-09-26-config-flow-design.md), §7
   ```
 
 - [ ] **Step 5: Way of working**
@@ -1513,7 +1542,9 @@ In `docs/way-of-working.md`:
   ```
 
 Check nothing else in the repo still mentions the sync note: `grep -rn -i "sibling copy\|sync note" docs CLAUDE.md README.md`.
-Expected: only D8 (superseded) and the spec. Report any other hit to the controller.
+Expected hits: D8 (superseded) in `docs/decisions.md`, and the specs and plans under `docs/superpowers/`
+(snapshots, never edited). `docs/way-of-working.md` must no longer appear. Report any other hit to the
+controller.
 
 - [ ] **Step 6: Run the gates and commit**
 

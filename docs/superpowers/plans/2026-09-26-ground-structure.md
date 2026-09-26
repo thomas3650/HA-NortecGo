@@ -525,9 +525,9 @@ git commit -F <message file>   # "docs: add README, changelog, security policy, 
 
 **Files:**
 - Create: `CLAUDE.md`, `docs/way-of-working.md`, `docs/decisions.md`, `docs/README.md`, `docs/notes.md`
-- Read (source for the copy): `/Users/thomas/Documents/Sourcecode/NortecGo/CLAUDE.md`,
-  `/Users/thomas/Documents/Sourcecode/NortecGo/docs/way-of-working.md`,
-  `/Users/thomas/Documents/Sourcecode/NortecGo/docs/decisions.md` (only these three files in that repo).
+- Read (source for the copy): `../NortecGo/CLAUDE.md`,
+  `../NortecGo/docs/way-of-working.md`,
+  `../NortecGo/docs/decisions.md` (only these three files in that repo).
 
 **Interfaces:**
 - Consumes (names fixed by this plan): the gate commands (Global Constraints); `scripts/develop` (Task 6);

@@ -21,8 +21,6 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tag version must match the `version` in `manifest.json` exactly, including the leading `v`.
-
 ## What `release.yml` checks
 
 - The pushed tag equals `v` followed by the `version` in `manifest.json`. If it doesn't match, the
@@ -42,4 +40,5 @@ bumps this pin and runs the usual gates before merging.
 
 A `pytest-homeassistant-custom-component` bump pull request also raises `hacs.json`'s `homeassistant` key
 to the Home Assistant version that dependency pins, and updates `requires-python` if that Home Assistant
-version needs a newer Python.
+version needs a newer Python. A `requires-python` change also updates `[tool.mypy] python_version` in
+`pyproject.toml` and the `.devcontainer` image tag.

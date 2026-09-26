@@ -123,4 +123,5 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
   needed. The owner may delegate plan approval to the controller once `full-reviewer` rates the plan Ready,
   but the spec always needs the owner's approval.
 - **Why:** The owner reviews in the PR, and doesn't need to approve a plan the reviewer has already passed.
-- **Source:** this plan, Task 3, owner request on 2026-09-26
+- **Source:** [ground-structure plan](superpowers/plans/2026-09-26-ground-structure.md), Task 3, owner
+  request on 2026-09-26

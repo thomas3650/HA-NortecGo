@@ -37,7 +37,7 @@ imported below. Lasting decisions are in `docs/decisions.md`.
 
 ## Code and docs rules
 
-- TDD. Tests, `ruff check`, `ruff format --check` and mypy pass before committing.
+- TDD, and the gates (Commands above, including the coverage gate) pass before committing.
 - Add a `CHANGELOG.md` entry under *Unreleased* for user-visible changes.
 - `quality_scale.yaml` and `docs/user/nortec_go.md` are updated in the same PR as the code they describe.
 

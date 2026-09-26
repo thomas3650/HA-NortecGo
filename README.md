@@ -15,7 +15,8 @@ Install via HACS as a custom repository:
 
 1. In HACS, open the menu (⋮) and choose **Custom repositories**.
 2. Add `https://github.com/thomas3650/HA-NortecGo` with type **Integration**.
-3. Restart Home Assistant.
+3. Search for **Nortec Go** in HACS, open it and select **Download**.
+4. Restart Home Assistant.
 
 ## Documentation
 

@@ -28,7 +28,7 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
 
    The tasks of one wave run in parallel; see [Parallel waves](#parallel-waves).
 8. **Learnings:** list what the work taught us that isn't written down yet (tool quirks, safe ways of doing
-   things, API facts), and propose where each goes (see [§7](#7-docs), *Learnings*), as questions to the
+   things, HA behaviour), and propose where each goes (see [§7](#7-docs), *Learnings*), as questions to the
    owner (§6). The owner decides; the docs change in this PR, before the branch review checks them. If there
    are none, say so in the PR description.
 9. **Branch review:** `full-reviewer` on the branch until Ready. A learning found during the review goes
@@ -148,6 +148,7 @@ doc fix. It goes straight to a branch and a ready PR: no spec, no plan, no draft
   private data from this side.
 - **Quality scale:** a PR that completes a rule sets it to `done` in `quality_scale.yaml`.
 - **Devcontainer:** manual testing only, never the gate environment.
+- **Gates:** the commands in `CLAUDE.md` → Commands; `hassfest` and `hacs` run in CI only.
 
 | The controller may | The controller may not |
 |---|---|
@@ -184,7 +185,3 @@ The one-time GitHub settings applied for this repo's ground structure are an exp
   - **Why:** one or two sentences.
   - **Source:** link to the spec (and section).
   ```
-
-  Gates: `uv run ruff check && uv run ruff format --check && uv run mypy && uv run pytest
-  --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95`. `hassfest` and `hacs` run
-  in CI only.

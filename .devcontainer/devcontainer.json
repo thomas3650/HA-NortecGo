@@ -5,6 +5,9 @@
     "ghcr.io/va-h/devcontainers-features/uv:1": {}
   },
   "postCreateCommand": "uv sync",
+  "containerEnv": {
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.venv"
+  },
   "forwardPorts": [8123],
   "customizations": {
     "vscode": {

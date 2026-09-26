@@ -18,4 +18,5 @@ Set on 2026-09-26; expires 2027-03-26.
 
 The workflow actions are pinned to commit SHAs, but `hacs/action` runs the Docker image
 `ghcr.io/hacs/action:main` and the hassfest action runs `ghcr.io/home-assistant/hassfest` unpinned, so their
-checks can change without a change here. That's why both also run weekly.
+checks can change without a change here. That's why both also run weekly. The hassfest action itself is
+pinned to a `master` commit SHA, which Dependabot can't bump; refresh it by hand if the weekly run breaks.

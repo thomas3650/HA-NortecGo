@@ -1,1 +1,42 @@
-{}
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sign in to Nortec Go",
+        "description": "Sign in with the email and password you use in the Nortec Go app.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The email address of your Nortec Go account.",
+          "password": "Your Nortec Go password. It is used once to sign in and is not stored."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in to Nortec Go again",
+        "description": "The Nortec Go session for {email} was rejected. Enter your password to sign in again.",
+        "data": {
+          "password": "Password"
+        },
+        "data_description": {
+          "password": "Your Nortec Go password. It is used once to sign in and is not stored."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The email or password is wrong.",
+      "cannot_connect": "Can't reach the Nortec Go service. Check your connection and try again.",
+      "rate_limited": "Too many sign-in attempts. Wait a while before you try again.",
+      "no_charger": "This account has no charger.",
+      "multiple_chargers": "This account has more than one charger. Only one charger per account is supported.",
+      "unknown": "Unexpected error. Check the Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "This charger is already set up.",
+      "already_in_progress": "This charger is already being set up or signed in again.",
+      "reauth_successful": "Signed in again.",
+      "wrong_account": "This account's charger isn't the one this integration was set up for. Sign in with the same account."
+    }
+  }
+}

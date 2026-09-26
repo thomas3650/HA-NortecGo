@@ -62,12 +62,17 @@ number (§) below refers to it.
   `chore/ground-structure` onto `main`.
 - **C3** Push `chore/ground-structure`; open a **draft PR** (`Closes #1`, links to spec and plan).
 - **C4** Run Tasks 1–8 by wave (SDD, `implementer` + `task-reviewer`); push after each Approved task.
+  Worktrees for Tasks 2 and 3 skip `uv sync` (there's no `pyproject.toml` on the base yet).
+- **C4a** Before dispatching Task 8: the controller runs `git rm -r .claude/skills/document-endpoint`, commits
+  and pushes (Task 8 *Before dispatch*).
 - **C5 ⏸** After CI is green on the PR: the full branch-protection `PUT` (§4 step 5).
 - **C6** Controller verification (§5 "Local" and "CI"), `full-reviewer` on the branch until Ready, the
   learnings step, then `gh pr ready` and tell the owner. **The owner merges.**
 - **C7** After merge: the owner tags `v0.0.1`; the controller verifies the release, Dependabot (§5 "After the
-  merge") and files the "Renew interaction limit" issue (§4 step 8), and asks `nortecgo-af` to file the sync-note
-  issue in `NortecGo` (§3.6).
+  merge"), checks `hassfest` and `hacs` pass on `main` (§5 *After the release*), files the "Renew interaction
+  limit (expires 2027-03-26)" issue (§4 step 8), and asks `nortecgo-af` to file the sync issue in `NortecGo`
+  (§3.6). That issue lists the sync note **and** D16's process changes (draft PR once spec and plan are Ready,
+  push after each approved task, ready only when owner review is needed, delegated plan approval).
 
 **Waves.**
 
@@ -93,7 +98,8 @@ number (§) below refers to it.
 | `.github/**` | 5 | CI, release, Dependabot, templates |
 | `scripts/develop`, `.devcontainer/devcontainer.json` | 6 | Manual testing |
 | `.pre-commit-config.yaml` | 7 | Local hooks |
-| `.claude/agents/*.md`, `.claude/hooks/subagent_guard.py` (docstring), `.claude/skills/document-endpoint/` (deleted) | 8 | Claude setup |
+| `.claude/agents/*.md`, `.claude/hooks/subagent_guard.py` (docstring) | 8 | Claude setup |
+| `.claude/skills/document-endpoint/` (deleted) | C4a | Controller, before Task 8 |
 
 ---
 
@@ -300,7 +306,7 @@ def test_translations_match_strings() -> None:
 - [ ] **Step 4: Run the tests to verify they fail**
 
 Run: `uv run pytest -q`
-Expected: collection error `ModuleNotFoundError: No module named 'custom_components.nortec_go'`.
+Expected: collection error `ModuleNotFoundError: No module named 'custom_components'`.
 
 - [ ] **Step 5: Write the skeleton**
 
@@ -589,6 +595,13 @@ listed in spec §3.4, each in the format:
 Each entry's Decision and Why come from the spec's Decisions table and the section it cites; one or two
 sentences each. D13 notes it's inherited from `NortecGo` ("NortecGo D10"), with no link.
 
+Then add **D16: PR lifecycle and delegated plan approval** (Source: this plan, Task 3, owner request on
+2026-09-26): a draft PR is opened once the spec and plan are both Ready so the owner can review them there;
+every approved task is committed and pushed; the PR is marked ready only when the owner's review is needed; the
+owner may delegate plan approval to the controller once `full-reviewer` rates the plan Ready, but the spec
+always needs the owner's approval. Why: the owner reviews in the PR, and doesn't need to approve a plan the
+reviewer has already passed.
+
 - [ ] **Step 4: Write `docs/README.md`**
 
 Title `# Documentation map`, one sentence (root `README.md` is the public intro). Table 1 (Doc | Contents | Read
@@ -619,9 +632,15 @@ expires after six months. Renew it with:
 `gh api -X PUT repos/thomas3650/HA-NortecGo/interaction-limits -f limit=collaborators_only -f expiry=six_months`
 
 Check the current limit and its expiry with `gh api repos/thomas3650/HA-NortecGo/interaction-limits`.
-```
 
-(The controller adds the actual expiry date after step C1.)
+Set on 2026-09-26; expires 2027-03-26.
+
+## 2026-09-26: CI images aren't pinned
+
+The workflow actions are pinned to commit SHAs, but `hacs/action` runs the Docker image
+`ghcr.io/hacs/action:main` and the hassfest action runs `ghcr.io/home-assistant/hassfest` unpinned, so their
+checks can change without a change here. That's why both also run weekly.
+```
 
 - [ ] **Step 6: Check and commit**
 
@@ -679,6 +698,12 @@ def test_quality_scale_statuses() -> None:
                 assert value.get("comment"), name
 
 
+def test_dependency_transparency_comment() -> None:
+    """The comment isn't cut short by a YAML '#' comment marker."""
+    rule = load_yaml_dict(QUALITY_SCALE)["rules"]["dependency-transparency"]
+    assert rule["comment"].endswith("(issue #34).")
+
+
 def test_rule_count() -> None:
     """All 54 rules from Bronze to Platinum are listed."""
     assert len(load_yaml_dict(QUALITY_SCALE)["rules"]) == 54
@@ -698,13 +723,13 @@ rules:
   appropriate-polling: todo
   brands:
     status: done
-    comment: Local brand/ folder (HA >= 2026.3), accepted by HACS; moves to home-assistant/brands for a core submission.
+    comment: "Local brand/ folder (HA >= 2026.3), accepted by HACS; moves to home-assistant/brands for a core submission."
   common-modules: todo
   config-flow: todo
   config-flow-test-coverage: todo
   dependency-transparency:
     status: todo
-    comment: The pynortecgo source repo is private; the rule needs an open repo, tags and a public publishing pipeline. Tracked in the pynortecgo repo (issue #34).
+    comment: "The pynortecgo source repo is private; the rule needs an open repo, tags and a public publishing pipeline. Tracked in the pynortecgo repo (issue #34)."
   docs-actions: todo
   docs-conditions: todo
   docs-high-level-description: todo
@@ -767,23 +792,39 @@ count or names differ, use the docs' list, update `test_rule_count`, and note th
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_quality_scale.py -q`
-Expected: 2 passed.
+Expected: 3 passed.
 
 - [ ] **Step 5: Render the brand icons**
 
 The source is the Material Design Icons `ev-station` glyph, distributed under Apache-2.0 (Pictogrammers Free
 License, "Icons: Apache 2.0"). Render it in HA blue with a transparent background:
 
+Use a scratch directory outside the repo, e.g. `/tmp/nortec-brand` (create it; don't rely on `$TMPDIR`
+being set). The guard refuses heredocs, so write the script with the **Write tool**.
+
 ```bash
-mkdir -p custom_components/nortec_go/brand
-gh api repos/Templarian/MaterialDesign/contents/svg/ev-station.svg --jq .content | base64 -d > "$TMPDIR/ev-station.svg"
-uv run --no-project --with resvg-py==0.5.0 python - <<'EOF'
-import os, resvg_py
-svg = open(os.path.join(os.environ["TMPDIR"], "ev-station.svg")).read().replace("<path ", '<path fill="#41BDF5" ')
+mkdir -p custom_components/nortec_go/brand /tmp/nortec-brand
+gh api repos/Templarian/MaterialDesign/contents/svg/ev-station.svg --jq .content | base64 -d > /tmp/nortec-brand/ev-station.svg
+```
+
+Write `/tmp/nortec-brand/render.py` (Write tool):
+
+```python
+"""Render the MDI ev-station glyph to the integration's brand icons."""
+
+from pathlib import Path
+
+import resvg_py
+
+svg = Path("/tmp/nortec-brand/ev-station.svg").read_text(encoding="utf-8")
+svg = svg.replace("<path ", '<path fill="#41BDF5" ')
 for size, name in ((256, "icon.png"), (512, "icon@2x.png")):
     data = resvg_py.svg_to_bytes(svg_string=svg, width=size, height=size)
-    open(f"custom_components/nortec_go/brand/{name}", "wb").write(bytes(data))
-EOF
+    Path("custom_components/nortec_go/brand", name).write_bytes(bytes(data))
+```
+
+```bash
+uv run --no-project --with resvg-py==0.5.0 python /tmp/nortec-brand/render.py
 file custom_components/nortec_go/brand/icon.png custom_components/nortec_go/brand/icon@2x.png
 ```
 
@@ -1033,8 +1074,8 @@ Expected: `ok`. (PyYAML is available through Home Assistant's dependencies.)
 
 Run the two `release.yml` shell snippets against the repo with `GITHUB_REF_NAME=v0.0.1`, and again with
 `GITHUB_REF_NAME=v0.0.2`, in a temp dir copy (`cp CHANGELOG.md custom_components/nortec_go/manifest.json`
-into matching paths under `$TMPDIR/reltest`). Before Task 2 lands, create a minimal `CHANGELOG.md` there with
-the `## [0.0.1]` section from Task 2 Step 2.
+into matching paths under `/tmp/nortec-reltest`). Write the snippets to a script file with the Write tool (the
+guard refuses heredocs).
 Expected: `v0.0.1` passes both steps and `notes.md` contains "Initial project skeleton"; `v0.0.2` fails the
 tag check. Also check an empty section (`## [0.0.1] - x` followed directly by another `## [`) fails the notes
 step. Report the outputs.
@@ -1081,10 +1122,13 @@ exec uv run hass -c config --debug
 
 Run: `chmod +x scripts/develop`
 
-- [ ] **Step 2: Start it and check the log**
+- [ ] **Step 2: Syntax-check the script**
 
-Run it in the background, wait up to 3 minutes for `Home Assistant initialized` (first start installs
-packages), then stop it:
+Run: `bash -n scripts/develop && echo ok`
+Expected: `ok`. (Starting HA is controller step C6, not part of this task.)
+
+**Controller step (C6), for reference; not run by the implementer.** Run it in the background (the Bash
+tool's `run_in_background`), wait up to 3 minutes for `Home Assistant initialized`, then stop it:
 
 ```bash
 scripts/develop > "$TMPDIR/develop.log" 2>&1 &
@@ -1095,8 +1139,7 @@ grep -n "custom integration nortec_go" "$TMPDIR/develop.log"
 grep -n "ERROR" "$TMPDIR/develop.log" | grep -i nortec_go || echo "no nortec_go errors"
 ```
 
-Expected: the warning line is found, and "no nortec_go errors". Don't paste the full log into the report (it
-is local data). If HA fails to start for a reason unrelated to `nortec_go`, report it as a concern.
+Expected: the warning line is found, and "no nortec_go errors". The log stays local (it holds local data).
 
 - [ ] **Step 3: Write `.devcontainer/devcontainer.json`**
 
@@ -1119,11 +1162,8 @@ Plain JSON, no comments:
 }
 ```
 
-Check the image tag exists: `curl -s -o /dev/null -w '%{http_code}\n' https://mcr.microsoft.com/v2/devcontainers/python/manifests/3.14`
-should print `200` (or `401` for an anonymous manifest request, which still means the registry answered; then
-check `https://mcr.microsoft.com/v2/devcontainers/python/tags/list` includes `3.14`). If `3.14` isn't
-published, use the newest `3.14`-based tag listed and note it. The Python in the image must satisfy
-`>=3.14.2`.
+Check the image tag exists: `curl -s https://mcr.microsoft.com/v2/devcontainers/python/tags/list` must list
+`3.14`. The Python in the image must satisfy `>=3.14.2`.
 
 - [ ] **Step 4: Validate and commit**
 
@@ -1164,6 +1204,7 @@ repos:
       - id: trailing-whitespace
       - id: detect-private-key
       - id: check-added-large-files
+        exclude: ^uv\.lock$
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.9
     hooks:
@@ -1208,13 +1249,16 @@ Expected: the commit runs the hooks and succeeds.
 **Model:** sonnet · **Wave:** 4
 **Guarded files:** `.claude/agents/implementer.md`, `.claude/agents/task-reviewer.md`,
 `.claude/agents/full-reviewer.md`, `.claude/hooks/subagent_guard.py` (reason: docstring-only change, replacing
-links into the private repo and the `captures/` known-limit line; no code change),
-`.claude/skills/document-endpoint/SKILL.md` (deleted)
+links into the private repo and the `captures/` known-limit line; no code change)
+
+**Before dispatch (controller):** the guard refuses subagents any delete under `.claude/`, so the controller
+deletes the skill itself in the main checkout and commits it (step C4a):
+`git rm -r .claude/skills/document-endpoint` and a commit "chore: remove the document-endpoint skill (API docs
+stay in NortecGo)" with the trailer.
 
 **Files:**
 - Modify: `.claude/agents/implementer.md`, `.claude/agents/task-reviewer.md`, `.claude/agents/full-reviewer.md`
 - Modify: `.claude/hooks/subagent_guard.py` (docstring only)
-- Delete: `.claude/skills/document-endpoint/SKILL.md` (and the now-empty directories)
 
 - [ ] **Step 1: Adapt the agents (Edit tool only)**
 
@@ -1245,13 +1289,7 @@ Verify the code is unchanged:
 docstring lines, and `python3 -c "import ast; ast.parse(open('.claude/hooks/subagent_guard.py').read())"`
 succeeds.
 
-- [ ] **Step 3: Delete the skill**
-
-Run: `git rm -r .claude/skills/document-endpoint`
-Expected: the directory is gone; `ls .claude/skills` shows nothing or fails (if `.claude/skills` is empty, git
-drops it).
-
-- [ ] **Step 4: Check and commit**
+- [ ] **Step 3: Check and commit**
 
 Run: `grep -rnE 'pynortecgo repo|captures/|check_api_md|api-standard|document-endpoint|uv build' .claude`
 Expected: no output.
@@ -1267,6 +1305,7 @@ git commit -F <message file>   # "chore: adapt Claude agents and guard docs to H
 
 After Task 8, in the main checkout on `chore/ground-structure`:
 1. `uv sync --locked`, then the gate command, then `uv run pre-commit run --all-files`: all pass.
+   `scripts/develop` check (Task 6, *Controller step*).
 2. A throwaway commit on `main` is refused: `git switch main && git commit --allow-empty -m test` → refused by
    `no-commit-to-branch`; then `git switch chore/ground-structure`.
 3. The private-data scans from spec §5 (files and commit messages).

@@ -205,4 +205,4 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
   plan and the `full-reviewer` review. It still has an issue, a short design in chat, TDD and the gates.
 - **Why:** Nothing is released yet, so a behaviour change reaches no user, and the owner's local test before
   the release catches what a review would have.
-- **Source:** owner rulings on 2026-09-26 (#17, and in #8's PR)
+- **Source:** owner rulings on 2026-09-26 (#17, and PR #21)

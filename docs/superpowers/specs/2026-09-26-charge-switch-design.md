@@ -23,7 +23,7 @@ rest and reviews them in the PR.
 |---|---|
 | Switch state | On while a charge is open and not ending: `charge_state` is `STARTING`, `CHARGING` or `PAUSED`; also while our own start is pending, unless a stop was asked for (§3.2). Off otherwise, including `STOPPING` |
 | Guard | After a start that may have left a card hold, starts are blocked until the cable has been unplugged, or the owner confirms in the repair issue. Reload and restart don't clear it (it is stored) |
-| Clearing | A read that sees the cable unplugged, a charger that goes from `BUSY_NON_RELEASED` to `AVAILABLE` (both reads after the block was set), a read that sees a charge open, or the repair issue's fix flow |
+| Clearing | A read that sees the cable unplugged, a charger that goes from `BUSY_NON_RELEASED` to `AVAILABLE` (both reads begun after the block was set), a read that sees a charge open, or the repair issue's fix flow |
 | Status sensor | An enum sensor, *Charge status*, including `start_blocked` |
 | EVSC's repeated "on" | A no-op while a charge is open or our start is pending (§3.1). EVSC calls `turn_on` without checking the switch |
 | Pending start | *Controller.* After a successful `start_charge()` the start is pending until a read sees that a charge happened. If no read within 10 minutes sees it, the start counts as failed with a hold, and starts are blocked |
@@ -99,6 +99,7 @@ Charger device, key `charge_status`, device class `enum`, translated options. Th
 | Value | When |
 |---|---|
 | `start_blocked` | the block is set |
+| `stopping` | a start is pending, a stop is asked, and the read shows no charge yet (matches the switch showing off) |
 | `starting` | a start is pending and the read shows no charge yet |
 | `None` (HA's *unknown*) | `Charger.state` or `charge_state` is `UNKNOWN` |
 | `starting`, `charging`, `paused`, `stopping` | `charge_state` |
@@ -112,16 +113,21 @@ Charger device, key `charge_status`, device class `enum`, translated options. Th
 ## 3. Charge control
 
 `ChargeControl` lives in `charge_control.py`, one per entry, owned by the coordinator. It holds the pending
-start (its time and a "stop asked" flag), the block (its time) and the state seen by the last read after the
-block was set, and an `asyncio.Lock`: starts, stops and the background stop (§3.4) all run under it.
+start (its time and a "stop asked" flag), the block (its time), the state seen by the last read after the
+block was set, a start-attempt counter, and an `asyncio.Lock`: starts, stops and the background stop (§3.4)
+all run under it.
 
 - **"A charge is open"** in a read: `charge_state is not None`, or `Charger.state` is `BUSY` or
   `BUSY_CHARGING` (the same test `pynortecgo` uses for `ChargeAlreadyActiveError`).
 - **"A charge happened"**: a charge is open, or `Charger.state` is `BUSY_NON_RELEASED` (a charge opened and
   closed between reads).
-- **Every change** to the pending start, the stop asked flag or the block saves the store and calls
-  `coordinator.async_update_listeners()`, because the coordinator (`always_update=False`) doesn't notify
-  entities for an unchanged read.
+- **Snapshot:** the control's state (pending start, stop asked, blocked) is a frozen dataclass,
+  `ChargeControlState`, and `NortecGoData` gains a `control` field holding it. A read returns the snapshot
+  after the §3.4 hook, so `always_update=False`'s equality check sees a change the hook made, and entities
+  read the new charger and control state together.
+- **Changes outside a read** (start, stop, the background stop, the fix flow) save the store and call
+  `coordinator.async_set_updated_data()` with the same charger and car and the new snapshot. Changes inside
+  the §3.4 hook only save.
 - **Saves** use `Store.async_delay_save` (sync, flushed at HA's final write), so a change made while being
   cancelled still lands.
 - **Reauth:** on an `AuthError` from its own calls, `ChargeControl` calls `entry.async_start_reauth(hass)`.
@@ -138,7 +144,8 @@ Under the lock, in order:
 2. **Blocked:** raise `ServiceValidationError`, `start_blocked`.
 3. **Unknown charger:** if the last read's `Charger.state` is `UNKNOWN`, raise `ServiceValidationError`,
    `charger_state_unknown`.
-4. **`await client.start_charge()`**, once. Never retried, by us or by HA.
+4. **Count the attempt** (the start-attempt counter goes up by one), then **`await client.start_charge()`**,
+   once. Never retried, by us or by HA.
 5. **Success:** set the pending start (now, stop not asked) and ask the coordinator for a read
    (`async_request_refresh`).
 
@@ -156,7 +163,7 @@ pending start in step 1.
 | `ChargeStartError`, `hold_may_be_placed` false | `HomeAssistantError` `start_failed` | no |
 | `AuthError` (pre-check) | start reauth; `HomeAssistantError` `auth_failed` | no |
 | `RateLimitError`, `NortecGoConnectionError`, `ApiError`, `UnexpectedResponseError`, other `NortecGoError` (pre-check) | `HomeAssistantError` `start_failed` | no |
-| `asyncio.CancelledError` | set the block, then re-raise | **yes** |
+| `asyncio.CancelledError` during `await client.start_charge()` | set the block, then re-raise (a cancel while waiting for the lock made no API call: re-raise, no block) | **yes** |
 
 - `ChargeStartError` wraps every failure after the first payment request, including an `AuthError`, so an
   `AuthError` outside it comes from the pre-check. With `step` `START` the charge may have started: the read
@@ -191,16 +198,23 @@ Under the lock:
 
 ### 3.4 Each charger read
 
-The coordinator calls `ChargeControl.async_on_charger_read(charger)` after every successful charger read,
-before it sets the interval. In order:
+The coordinator notes the start-attempt counter before it calls `get_charger()`, and after every successful
+charger read calls `ChargeControl.async_on_charger_read(charger, counter)` before it sets the interval.
+
+**Stale reads:** if the counter has changed since the read began, the read began before the latest
+`start_charge()` call and may show the charger as it was before that start's own pre-check. Such a read
+updates the coordinator's data only; none of the steps below run. (A read that began during the call began
+after `pynortecgo`'s pre-check read, so what it sees is real.)
+
+Otherwise, in order:
 
 1. **Pending start with stop asked, and a charge open:** end the pending start and start a background task
    (`entry.async_create_background_task`) that takes the lock and calls `stop_charge()` once, with §3.3's
    error handling, logged instead of raised.
 2. **Pending start:** ends or times out as in §3.2. A timeout sets the block.
 3. **Block:** cleared if the cable isn't connected, a charge is open, or the remembered state is
-   `BUSY_NON_RELEASED` and this read's is `AVAILABLE`. The remembered state is only from reads after the
-   block was set: setting the block forgets it, and it isn't stored, so a transition across a restart isn't
+   `BUSY_NON_RELEASED` and this read's is `AVAILABLE`. The remembered state is only from reads begun after
+   the block was set: setting the block forgets it, and it isn't stored, so a transition across a restart isn't
    seen (safe: the block stays).
 4. **Remember** `Charger.state` while a block is set.
 
@@ -215,13 +229,16 @@ The interval (D22) is 5 minutes while a start is pending, otherwise unchanged.
   `{"blocked_since": ISO 8601 UTC | null, "start_pending_since": ISO 8601 UTC | null, "stop_asked": bool}`.
   No IDs. Loaded at setup before the first refresh. A missing file gives the empty state. A file of the
   wrong shape logs a warning and sets the block (fail safe: a stored block may have been lost).
-- **Setting the block** logs a warning and creates the repair issue.
+- **Setting the block** logs a warning and creates the repair issue. After a failed start the issue's
+  translation key is `start_blocked`; after a wrong-shape store it is `start_blocked_store`.
 - **Repair issue:** `ir.async_create_issue`, ID `start_blocked_<entry_id>`, `is_fixable=True`,
   `is_persistent=False`, severity `error`, `data={"entry_id": …}`, translated, with `entry.title` (the
-  charger's name or *Nortec Go*) as the only placeholder. The text: a start failed after a card hold may have
-  been placed; starts are blocked so no new hold is placed; a hold that led to no charge is expected to
+  charger's name or *Nortec Go*) as the only placeholder. `start_blocked`'s text: a start failed after a card hold may
+  have been placed; starts are blocked so no new hold is placed; a hold that led to no charge is expected to
   expire by itself; check the charger in the Nortec Go app, then unplug and replug the cable, or confirm
-  here.
+  here. `start_blocked_store`'s text: the saved start guard couldn't be read, so starts are blocked to be
+  safe; check the charger in the Nortec Go app, then unplug and replug the cable, or confirm here. Both
+  share the same fix flow.
 - **At setup** a stored block recreates the issue.
 - **Fix flow** (`repairs.py`, `async_create_fix_flow` reads `entry_id` from `data`): one confirm step. On
   confirm, if the entry is loaded, clear the block; otherwise abort with `not_loaded`. HA deletes the issue
@@ -246,6 +263,8 @@ gains a `state` argument. No test reaches the real API.
   - every row of §3.1 and §3.3: the error raised, block or not, reauth, a read asked for, raised `from None`;
   - `start_charge` called exactly once in every path, never retried; a second `turn_on` after a success is
     a no-op;
+  - a stale read (begun before the latest `start_charge()`) showing unplugged, `BUSY_NON_RELEASED` or a
+    charge open neither ends the pending start nor clears the block;
   - pending start: no-op `turn_on`; ends on a charge open, on `BUSY_NON_RELEASED`, on the cable unplugged;
     times out into the block, also on a read that returns the same `Charger` as before (the entities still
     update);
@@ -270,6 +289,8 @@ gains a `state` argument. No test reaches the real API.
 
 - `action-exceptions`: `done` (the switch raises `ServiceValidationError` / `HomeAssistantError`).
 - `repair-issues`: `done`.
+- `entity-unavailable`: stays `done`, with a comment: the *Charge* switch stays available after a failed
+  read on purpose (§2.1, *Decisions* → *Availability*); the other entities follow the rule.
 - `exception-translations`: stays `todo`, with a comment: the switch's exceptions are translated; the
   coordinator's `UpdateFailed` and `ConfigEntryError` texts aren't yet.
 
@@ -298,8 +319,10 @@ gains a `state` argument. No test reaches the real API.
 
 - **D26: Start guard.** A start that may have left a card hold (a `ChargeStartError` with
   `hold_may_be_placed`, a cancelled start, or a start whose charge isn't seen within 10 minutes) blocks
-  further starts until the cable is seen unplugged, a charge is seen open, or the owner confirms in the
-  repair issue. The block is stored, so reload and restart don't clear it. While a start is pending the
+  further starts until a read begun after the block sees the cable unplugged, a charge open, or the charger
+  going from `BUSY_NON_RELEASED` to `AVAILABLE`, or the owner confirms in the repair issue. A pending start
+  ends without a block when a read sees a charge happened (open, or `BUSY_NON_RELEASED`) or the cable
+  unplugged; reads begun before the latest start attempt change nothing. The block is stored, so reload and restart don't clear it. While a start is pending the
   charger is read every 5 minutes (extending D22). *Why:* EVSC repeats "on" up to 8 times an hour, and each
   start can place a new hold; a human looks before the next one. Source: this spec, *Decisions* and §3.
 

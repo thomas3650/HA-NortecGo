@@ -74,3 +74,4 @@ Collected while writing the ground-structure spec, all returning HTTP 200 on 202
 - Dependabot options: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 - Branch protection REST API: https://docs.github.com/en/rest/branches/branch-protection
 - Interaction limits REST API: https://docs.github.com/en/rest/interactions/repos
+- CodeQL default setup: https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configure-code-scanning

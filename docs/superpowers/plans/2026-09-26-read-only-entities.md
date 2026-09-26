@@ -988,6 +988,8 @@ async def test_car_device_updated_on_rename(
     """
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
+    # Task 2 has no device strings yet, so this device starts with the untranslated key as its name;
+    # the car read below overwrites it.
     device = device_registry.async_get_or_create(
         config_entry_id=mock_config_entry.entry_id,
         identifiers={car_device_identifier(str(FAKE_CHARGER_ID))},
@@ -2247,7 +2249,9 @@ class NortecGoCarBinarySensor(NortecGoCarEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         """The value from the charger and the car, or None before the car is read."""
         vehicle = self.coordinator.data.vehicle
-        if vehicle is None:
+        if (
+            vehicle is None
+        ):  # for mypy: HA doesn't read is_on while the entity is unavailable
             return None
         return self.entity_description.value_fn(self.coordinator.data.charger, vehicle)
 ```

@@ -125,3 +125,12 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Why:** The owner reviews in the PR, and doesn't need to approve a plan the reviewer has already passed.
 - **Source:** [ground-structure plan](superpowers/plans/2026-09-26-ground-structure.md), Task 3, owner
   request on 2026-09-26
+
+### D17: CodeQL default setup, advisory
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** Code scanning runs as CodeQL default setup (no workflow file) for Python and GitHub Actions,
+  on PRs, pushes to `main` and weekly. It is not a required check on `main`; revisit once the config flow
+  and auth code land.
+- **Why:** Catches security problems in the integration and the workflows early, without a false positive
+  blocking merges.
+- **Source:** issue #5

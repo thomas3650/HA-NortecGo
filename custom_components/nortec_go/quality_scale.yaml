@@ -1,11 +1,11 @@
 rules:
   # Bronze
   action-setup: todo
-  appropriate-polling: todo
+  appropriate-polling: done
   brands:
     status: done
     comment: "Local brand/ folder (HA >= 2026.3), accepted by HACS; moves to home-assistant/brands for a core submission."
-  common-modules: todo
+  common-modules: done
   config-flow: done
   config-flow-test-coverage: done
   dependency-transparency:
@@ -17,9 +17,11 @@ rules:
   docs-installation-instructions: done
   docs-removal-instructions: done
   docs-triggers: todo
-  entity-event-setup: todo
-  entity-unique-id: todo
-  has-entity-name: todo
+  entity-event-setup:
+    status: exempt
+    comment: "Entities subscribe to no events; the coordinator owns the timers."
+  entity-unique-id: done
+  has-entity-name: done
   runtime-data: done
   test-before-configure: done
   test-before-setup: done
@@ -32,30 +34,30 @@ rules:
     status: exempt
     comment: "The integration has no options flow."
   docs-installation-parameters: done
-  entity-unavailable: todo
+  entity-unavailable: done
   integration-owner: done
-  log-when-unavailable: todo
-  parallel-updates: todo
+  log-when-unavailable: done
+  parallel-updates: done
   reauthentication-flow: done
   test-coverage: todo
 
   # Gold
-  devices: todo
+  devices: done
   diagnostics: todo
   discovery: todo
   discovery-update-info: todo
-  docs-data-update: todo
-  docs-examples: todo
+  docs-data-update: done
+  docs-examples: done
   docs-known-limitations: done
-  docs-supported-devices: todo
-  docs-supported-functions: todo
+  docs-supported-devices: done
+  docs-supported-functions: done
   docs-troubleshooting: todo
-  docs-use-cases: todo
+  docs-use-cases: done
   dynamic-devices: todo
-  entity-category: todo
-  entity-device-class: todo
+  entity-category: done
+  entity-device-class: done
   entity-disabled-by-default: todo
-  entity-translations: todo
+  entity-translations: done
   exception-translations: todo
   icon-translations: todo
   reconfiguration-flow: todo

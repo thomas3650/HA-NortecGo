@@ -16,17 +16,17 @@ API as the app (through the `pynortecgo` library), which can change without noti
 
 ## Supported devices
 
-Not available yet.
+- A charger on a Nortec Go account.
+- The car linked to that account.
 
 ## Unsupported devices
 
-Not available yet.
+An account with more than one charger. With more than one car, the integration works without car entities.
 
 ## Prerequisites
 
-You need a Nortec Go account with exactly one charger and one car registered, since that is what the
-client library currently supports. The car isn't checked when you add the integration, but later features
-need it.
+You need a Nortec Go account with exactly one charger. A car is optional: without one there is no car
+device. A car added later appears after you reload the integration.
 
 ## Installation
 
@@ -62,7 +62,45 @@ The integration has no options to change after setup.
 
 ## Supported functionality
 
-Not available yet.
+The integration adds two devices: the charger, and the car when the account has one.
+
+### Charger
+
+| Entity | Type | Description |
+|---|---|---|
+| Current price | Sensor | The spot price for the current 15 minutes, per kWh, incl. VAT. Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
+| Cable connected | Binary sensor | On when a cable is connected to the charger |
+| Charging | Binary sensor | On while the car draws power |
+
+### Car
+
+| Entity | Type | Description |
+|---|---|---|
+| Battery | Sensor | The car's state of charge, in % |
+| Charge limit | Sensor | The charge limit set in the car, in % |
+| Last seen | Sensor (diagnostic) | When the car last reported its data |
+| Plugged in | Binary sensor | On when the car reports that it's plugged in, at any charger |
+| Connected to charger | Binary sensor | On when the charger's cable is connected and the car reports it's plugged in |
+
+Values the car doesn't report show as unknown. Until the car has been read once, the car device is called
+*Car* and its entities are unavailable.
+
+## Use cases
+
+### Smart charging with EV Smart Charging
+
+[EV Smart Charging](https://github.com/jonasbkarlsson/ev_smart_charging) plans charging in the cheapest
+hours. Set it up with these entities:
+
+| EV Smart Charging setting | Entity |
+|---|---|
+| Electricity price entity | Current price |
+| EV SOC entity | Battery |
+| EV target SOC entity | Charge limit |
+| EV connected entity | Connected to charger |
+
+*Connected to charger* is on only when your own car is at your charger. A guest car plugged into the
+charger leaves it off, so EV Smart Charging leaves the charger alone and the guest charges normally.
 
 ## Actions, conditions and triggers
 
@@ -70,18 +108,54 @@ Not available yet.
 
 ## Automation examples
 
-Not available yet.
+### Read the charger when you get home
+
+The charger is read once an hour while no cable is connected. To see a plugged-in car sooner, read it
+when you arrive:
+
+```yaml
+automation:
+  - alias: "Read the Nortec Go charger when I get home"
+    triggers:
+      - trigger: zone
+        entity_id: person.me
+        zone: zone.home
+        event: enter
+    actions:
+      - delay: "00:05:00"
+      - action: homeassistant.update_entity
+        target:
+          entity_id: binary_sensor.garage_charger_cable_connected
+```
+
+Replace `person.me` and the entity ID with your own.
 
 ## Data updates
 
-Not available yet.
+The integration reads the charger and the car:
+
+- every 60 minutes while no cable is connected,
+- every 15 minutes while a cable is connected,
+- every 5 minutes while a charge is starting, running or stopping.
+
+It reads the price forecast when it starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. The current price
+moves to the next 15 minutes by itself, without a read.
+
+To read the charger and the car now, call the `homeassistant.update_entity` action on any Nortec Go entity
+(see *Automation examples*). It doesn't read the prices.
 
 ## Known limitations
 
 - One charger per account. An account with no charger or with more than one can't be added.
 - Unofficial: the integration uses the same private API as the app, which can change without notice.
-- No entities yet. The integration only signs in and checks the charger; sensors and charge control come
-  in later releases.
+- The price is the spot price including VAT, without fees or grid tariff, so it isn't what you pay in
+  total.
+- The price is assumed to be in the currency set in Home Assistant. This has been checked only for DKK.
+- Tomorrow's prices are a forecast until the day-ahead prices come out, around 13:00; the 15:05 read
+  replaces them.
+- Car data can be hours old (see *Last seen*), so *Connected to charger* can turn on late.
+- Days and the price times follow Home Assistant's time zone.
+- A car removed from the account stays until you reload the integration.
 
 ## Troubleshooting
 

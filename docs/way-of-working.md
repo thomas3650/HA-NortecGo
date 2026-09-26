@@ -142,6 +142,8 @@ doc fix. It goes straight to a branch and a ready PR: no spec, no plan, no draft
 - **Issues:** every non-trivial change starts from an issue. The spec links it, and the PR says `Closes #n`.
 - **Backlog:** GitHub issues are the backlog (D19). Anything found that won't be fixed in the current work
   becomes an issue, or is added to an existing one.
+- **Labels:** each issue gets `v1`, `v2` or `enhancement`; chores may have none. When in doubt, ask the owner
+  (D24).
 - **Merging and pushing:** the owner merges. Only the controller pushes or marks a PR ready.
 - **Git guards:** run `uv run pre-commit install` once per clone. The hooks refuse commits on `main` and pushes
   to `main`, and `.claude/settings.json` denies pushes to `main` and `--no-verify`. `main` is also protected

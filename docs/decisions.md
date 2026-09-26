@@ -172,3 +172,28 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Why:** Setup reads one known charger instead of discovering it on every start, so the manual
   charger-ID check is gone; 0.2.0 also turns a rejected token refresh into `AuthError`, which starts reauth.
 - **Source:** issue #17; owner decision on 2026-09-26 to do it without a spec, as nothing is released yet
+
+### D22: State-based polling, no polling settings
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** The charger and car are read every 60 min unplugged, 15 min connected and 5 min while a
+  charge is under way; prices at setup and at 00:05, 05:05, 10:05, 15:05 and 20:05. There is no options flow
+  and no refresh button; `homeassistant.update_entity` reads the charger and car now.
+- **Why:** Reads match how fast things change (the car mostly stands unplugged), and Home Assistant doesn't
+  allow integrations to offer polling settings.
+- **Source:** [read-only entities spec](superpowers/specs/2026-09-26-read-only-entities-design.md), Decisions
+
+### D23: Padded price lists, predictions kept, prices stored
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** EV Smart Charging's lists are padded to full days: 0 for a missing past slot, 10 for a
+  missing current or future slot, and `[]` when no slot of tomorrow is known. Predicted prices are shown and
+  replaced by later reads. Known slots are saved with Home Assistant's `Store`.
+- **Why:** The API has no earlier hours of today and EV Smart Charging rejects a short day. Past prices never
+  affect a plan, a high price keeps it away from unknown slots, and a forecast beats no prices.
+- **Source:** [read-only entities spec](superpowers/specs/2026-09-26-read-only-entities-design.md), §3.3–3.4
+
+### D24: Version labels on issues
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** Each issue gets one of `v1` (needed for version 1), `v2` (can wait for version 2) or
+  `enhancement` (an improvement with no version decided). Chores may have none. When in doubt, ask the owner.
+- **Why:** Not every issue is an enhancement; the labels show what v1 needs.
+- **Source:** owner request on 2026-09-26

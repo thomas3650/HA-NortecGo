@@ -1,0 +1,13 @@
+{
+  "domain": "nortec_go",
+  "name": "Nortec Go",
+  "codeowners": ["@thomas3650"],
+  "config_flow": false,
+  "dependencies": [],
+  "documentation": "https://github.com/thomas3650/HA-NortecGo/blob/main/docs/user/nortec_go.md",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/thomas3650/HA-NortecGo/issues",
+  "requirements": [],
+  "version": "0.0.1"
+}

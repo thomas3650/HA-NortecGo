@@ -29,3 +29,12 @@ config/
 *.egg-info/
 build/
 dist/
+
+# HA diagnostics downloads (real data goes in local/)
+config_entry-*.json
+*diagnostics*.json
+
+# HA logs and state
+*.log
+home-assistant_v2.db*
+.storage/

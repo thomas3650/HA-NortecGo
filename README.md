@@ -7,7 +7,7 @@ An unofficial Home Assistant integration for Nortec Go EV chargers (a white-labe
 
 ## Status
 
-Skeleton only; not usable yet. Follow the [changelog](CHANGELOG.md).
+Sign-in only; no entities yet. Follow the [changelog](CHANGELOG.md).
 
 ## Installation
 

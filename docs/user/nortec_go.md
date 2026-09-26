@@ -52,8 +52,9 @@ Email
 Password
 : Your Nortec Go password. It is used once to sign in and is not stored.
 
-Home Assistant stores only the session that the sign-in returns, and renews it by itself. The integration
-is named after your charger.
+Home Assistant stores your email, the session that the sign-in returns and a device ID, never the password.
+It renews the session by itself. The integration is named after your charger, or *Nortec Go* if the charger
+has no name.
 
 ## Configuration options
 

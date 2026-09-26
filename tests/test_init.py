@@ -125,7 +125,10 @@ async def test_setup_errors(
     mock_client.get_charger.side_effect = error
     await _setup(hass, mock_config_entry)
 
-    assert mock_config_entry.state is state
+    entry_state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
+    assert entry_state is state
+    if entry_state is ConfigEntryState.SETUP_ERROR:
+        assert mock_config_entry.reason == str(error)
     mock_client.login.assert_not_awaited()
 
 
@@ -228,6 +231,9 @@ async def test_unload_entry(
 ) -> None:
     """Unload returns the entry to NOT_LOADED."""
     await _setup(hass, mock_config_entry)
+    loaded_state = mock_config_entry.state  # a local, so mypy doesn't narrow
+    assert loaded_state is ConfigEntryState.LOADED
     assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
     await hass.async_block_till_done()
-    assert mock_config_entry.state is ConfigEntryState.NOT_LOADED
+    unloaded_state = mock_config_entry.state  # a local, so mypy doesn't narrow
+    assert unloaded_state is ConfigEntryState.NOT_LOADED

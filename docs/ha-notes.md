@@ -16,8 +16,8 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 
 - `strings.json` in a custom integration holds literal text only. `[%key:…%]` references are resolved by
   core's build, not at runtime, so a custom integration would show the raw key.
-- HA adds a `name` placeholder (the entry title) to reauth and reconfigure forms by itself, next to any the
-  flow passes.
+- HA adds a `name` placeholder (the entry title) to reauth forms by itself, unless the flow passes its own.
+  Reconfigure forms don't get it.
 - `async_set_unique_id` leaves reauth flows out of its `already_in_progress` check. A user flow for a charger
   whose reauth is open therefore aborts `already_configured`; `already_in_progress` only comes from two
   overlapping user flows.

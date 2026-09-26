@@ -53,7 +53,8 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
 - Each task gets its own worktree and branch off the feature branch:
   `git worktree add ../<repo>-wt/<topic>-task-<n> -b wt/<topic>-task-<n> <feature-branch>`, then `uv sync` in it.
   Don't run `pre-commit install` there: the hooks are shared, and it points them at the worktree's `.venv`,
-  which breaks every commit once the worktree is removed.
+  which breaks every commit once the worktree is removed. If it happened, run `uv run pre-commit install`
+  in the main checkout.
   `wt/*` branches are never pushed.
 - The implementer and reviewer dispatches give the worktree's absolute path, and every command runs there
   (`cd <worktree> && …` or `git -C <worktree> …`). A subagent's shell starts in the main checkout.

@@ -49,7 +49,7 @@ Date: 2026-09-26 · Branch: `feat/config-flow` · Issue: #7
 | `tests/conftest.py` | `mock_client` and `mock_config_entry` fixtures |
 | `tests/test_config_flow.py`, `tests/test_init.py`, `tests/test_manifest.py` | New or extended tests (§4) |
 | `docs/user/nortec_go.md`, `CHANGELOG.md` | §6 |
-| `docs/decisions.md`, `docs/way-of-working.md` | D18, D19 (§7) |
+| `docs/decisions.md`, `docs/way-of-working.md` | D18, D19, D20; D8 superseded (§7) |
 
 HA's own constants are used where they exist (`CONF_EMAIL`, `CONF_PASSWORD`, `CONF_ACCESS_TOKEN`,
 `CONF_DEVICE_ID`).
@@ -179,8 +179,12 @@ flow). `dependency-transparency` stays `todo` (D15).
   `unique_id`; pin bumps (D7) come as PRs, with the manifest and dev pins kept equal by a test. Source: this
   spec.
 - **D19:** GitHub issues are the backlog. Anything found that won't be fixed in the current work becomes an
-  issue, or is added to an existing one. Added to `way-of-working.md` §6, with a follow-up issue in
-  `NortecGo` for the sibling copy (per the sync note). Source: owner request on 2026-09-26.
+  issue, or is added to an existing one. Added to `way-of-working.md` §6. Source: owner request on
+  2026-09-26.
+- **D20:** each repo owns its way of working; there is no sync duty with `NortecGo`. A learning that clearly
+  helps the other repo may be sent there as an issue. D8 becomes `superseded by D20` (its client
+  change-request route stays, and moves into D20's text), and the sync note at the top of
+  `way-of-working.md` is removed. Source: owner decision on 2026-09-26 (see NortecGo#41).
 
 ## 8. Follow-ups (issues, per D19)
 

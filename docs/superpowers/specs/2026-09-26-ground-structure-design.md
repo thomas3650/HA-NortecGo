@@ -112,7 +112,8 @@ HA-NortecGo/
   `custom_components.nortec_go.const`. The import is needed: `pytest-homeassistant-custom-component` ships
   its own `custom_components` package, and ours is only found if a test imports it first. It also holds the
   `strings.json` = `en.json` test.
-- `tests/test_quality_scale.py`: loads `quality_scale.yaml` and checks that every rule's status is `done`,
+- `tests/test_quality_scale.py`: loads `quality_scale.yaml` with `homeassistant.util.yaml.load_yaml_dict`
+  (typed, so `mypy --strict` needs no PyYAML stubs) and checks that every rule's status is `done`,
   `todo` or `exempt`, and that every `exempt` has a `comment`. hassfest skips this file for custom
   integrations, so nothing else validates it.
 
@@ -128,7 +129,9 @@ HA-NortecGo/
   marked ready, and the owner tags right after merging.
 - `scripts/develop`: creates `config/` with a `configuration.yaml` holding `default_config:` if it's missing,
   symlinks `config/custom_components/nortec_go` to the repo's folder, and runs
-  `uv run hass -c config --debug`. `config/` is gitignored.
+  `uv run --inexact hass -c config --debug`. `--inexact` keeps the packages HA installs at runtime for
+  `default_config` (a plain `uv sync` would remove them, so every start would reinstall them). `config/` is
+  gitignored.
 - `.devcontainer/devcontainer.json`: plain JSON with no comments (`check-json` rejects JSONC). It uses a Python
   image matching the pinned HA's `requires-python`, runs `uv sync` on create, and forwards port 8123. The
   file's `name` and `docs/way-of-working.md` both say it is for manual testing only.
@@ -167,7 +170,7 @@ fails with `>=3.14`), no dependencies, and no build system.
   override with `ignore_missing_imports` for `pytest_homeassistant_custom_component.*` (it ships no
   `py.typed`).
 - **pytest:** `asyncio_mode = "auto"`, `testpaths = ["tests"]`. Coverage isn't in `addopts`, so single-test TDD
-  runs aren't failed by it. The coverage gate is its own command, used by CI and the pre-commit gates:
+  runs aren't failed by it. The coverage gate is its own command, run by CI and by the gates before committing (`CLAUDE.md`):
   `uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95`.
 
 ### 2.2 pre-commit
@@ -390,7 +393,8 @@ settings step, a read-only `gh api` call confirms each value.
    - private vulnerability reporting on;
    - interaction limit `collaborators_only` for `six_months`.
 2. **LICENSE-only PR.** Branch `chore/license` off `main`, with only the Apache-2.0 `LICENSE`, as a ready PR
-   (a trivial change under `way-of-working.md` §4: the license was decided in this spec). **The owner
+   (a trivial change under `NortecGo`'s way-of-working §4 *Trivial changes*, which this work copies; the
+   license was decided in this spec). **The owner
    merges it.** Verify: `gh api repos/thomas3650/HA-NortecGo --jq .license.spdx_id` prints `Apache-2.0`.
    Then rebase `chore/ground-structure` onto `main`.
 3. Commit the spec and plan on `chore/ground-structure`, push, and open a **draft PR** with `Closes #1` and
@@ -400,10 +404,12 @@ settings step, a read-only `gh api` call confirms each value.
    (the protection has no `required_status_checks` yet, so a partial PATCH doesn't work). The body repeats the
    current values and adds the checks:
    - `required_status_checks`: `strict: true`, `checks` = `lint`, `tests`, `hassfest`, `hacs`, `gitleaks`, each
-     bound to the GitHub Actions app (`app_id: 15368`);
+     bound to the GitHub Actions app (`app_id: 15368`), with no `contexts` alongside;
    - `required_pull_request_reviews` with `required_approving_review_count: 0`;
    - `enforce_admins: true`, `required_conversation_resolution: true`;
    - `allow_force_pushes: false`, `allow_deletions: false`, `restrictions: null`.
+
+   The body is sent as a JSON file with `gh api --input <file>`.
 6. Branch review until Ready, then ready the PR. **The owner merges.**
 7. **The owner** tags `v0.0.1` on `main` and pushes the tag. `release.yml` publishes a pre-release.
 8. The controller files the issue "Renew interaction limit (expires YYYY-MM-DD)".
@@ -411,19 +417,19 @@ settings step, a read-only `gh api` call confirms each value.
 ## 5. Verification
 
 **Local, on the branch:**
-- `uv sync --locked`, `uv run pytest -q` (coverage ≥ 95%), `uv run ruff check`, `uv run ruff format --check`
+- `uv sync --locked`, the coverage gate command (§2.1), `uv run ruff check`, `uv run ruff format --check`
   and `uv run mypy` all pass.
 - `uv run pre-commit run --all-files` passes.
 - A commit attempted on `main` is refused by the hook, checked with a throwaway commit that the hook stops.
-- `scripts/develop` starts HA with no errors mentioning `nortec_go`. Nothing loads the integration yet (it
-  has no config entry, and YAML is rejected), so this only proves HA starts cleanly with the component in
-  place. The plan records which log line, if any, shows HA found it (for example the "custom integration …
-  not been tested" warning); if none appears, the check is only a clean start.
+- `scripts/develop` starts HA. The log has "We found a custom integration nortec_go which has not been
+  tested…" (HA's loader logs it for every folder in `custom_components` during the startup scan, with no
+  config entry or YAML needed), and no errors mentioning `nortec_go`.
 - Private-data scan over tracked files only (never `.venv/`, `config/` or `local/`):
-  `git grep -nE 'ory_st_[A-Za-z0-9]{8,}|[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9-]*\.[A-Za-z]{2,}'` prints nothing.
+  `git grep -nE 'ory_st_[A-Za-z0-9]{8,}|[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9-]*\.[A-Za-z]{2,}' | grep -v 'noreply@anthropic\.com'`
+  prints nothing.
   The domain part must start with a letter, so `icon@2x.png` doesn't match, and `@pytest.fixture` has no
   local part. Commit messages are checked separately:
-  `git log --format=%B main..HEAD | grep -nE '[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9-]*\.[A-Za-z]{2,}'` prints
+  `git fetch origin && git log --format=%B origin/main..HEAD | grep -nE '[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9-]*\.[A-Za-z]{2,}'` prints
   only the `noreply@anthropic.com` trailer lines.
 
 **CI:** all five checks are green on the PR.

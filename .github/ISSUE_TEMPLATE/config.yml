@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: This repository isn't accepting external issues yet
+    url: https://github.com/thomas3650/HA-NortecGo#status
+    about: The integration is at an early stage and maintained for the owner's own use. Security problems go through SECURITY.md.

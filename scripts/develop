@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Run Home Assistant locally with the nortec_go integration, for manual testing.
+# config/ is gitignored and holds a real HA config: never commit it (CLAUDE.md, hard rule 4).
+# On first start HA installs runtime packages for default_config into .venv; the next `uv sync` removes
+# them again, so they are reinstalled after each sync. That is expected.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+mkdir -p config/custom_components
+if [ ! -f config/configuration.yaml ]; then
+  printf 'default_config:\n' > config/configuration.yaml
+fi
+ln -sfn "$(pwd)/custom_components/nortec_go" config/custom_components/nortec_go
+
+exec uv run hass -c config --debug

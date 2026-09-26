@@ -1,0 +1,11 @@
+name: Feature request
+description: Suggest an enhancement for the Nortec Go integration.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User story
+      description: "As a …, I want …, so that …"
+    validations:
+      required: true

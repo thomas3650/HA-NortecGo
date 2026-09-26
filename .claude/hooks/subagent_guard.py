@@ -1,8 +1,8 @@
 r"""PreToolUse hook: refuse subagents' edits to guarded paths, git hook bypasses, whole-tree reverts and
 direct .env reads.
 
-Design: docs/superpowers/specs/2026-09-25-ways-of-working-design.md §5 and
-docs/superpowers/specs/2026-09-26-guard-hardening-design.md. Best-effort, like the main guard.
+Design: copied from the NortecGo repo; see docs/superpowers/specs/2026-09-26-ground-structure-design.md §3.3.
+Best-effort, like the main guard.
 Runs on Python >= 3.9 with the stdlib only. Exit 0 allows the call; exit 2 refuses it (stderr is shown).
 The main thread (no ``agent_id`` in the input) is never restricted.
 
@@ -29,7 +29,7 @@ switching branches (``git checkout <branch>``, ``git switch <branch>``), whole-t
 ``XDG_CONFIG_HOME=``, obfuscated commands (``xargs``, ``timeout``, ``nice``, ``find -exec``), ANSI-C
 quoting (``$'.env'``), globs that reach .env only through shell options (zsh ``*(D)`` or ``globdots``,
 bash ``dotglob``), assignments made by builtins (``printf -v``), GNU long-option prefixes of ``cp``
-(``--li``, ``--targ=``), and reads of ``captures/`` (the hard rule covers them) are not detected.
+(``--li``, ``--targ=``), and reads of ``local/`` and ``config/`` (hard rule 9 covers them) are not detected.
 Read/Grep/Glob are checked only when the hook's matcher includes them. A quoted argument made only of
 shell punctuation (``grep ">" file``) is indistinguishable from a redirect after tokenizing and is treated
 as one; search with ``grep "[>]" file`` instead. Some harmless commands are refused too:

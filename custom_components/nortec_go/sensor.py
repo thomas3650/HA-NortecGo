@@ -18,6 +18,7 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 from pynortecgo import Vehicle
 
+from .charge_control import CHARGE_STATUS_OPTIONS, charge_status
 from .coordinator import NortecGoCoordinator
 from .entity import NortecGoCarEntity, NortecGoChargerEntity
 from .entry import NortecGoConfigEntry
@@ -63,7 +64,10 @@ async def async_setup_entry(
 ) -> None:
     """Add the price sensor, and the car sensors when the account has a car."""
     coordinator = entry.runtime_data
-    entities: list[SensorEntity] = [NortecGoPriceSensor(coordinator)]
+    entities: list[SensorEntity] = [
+        NortecGoPriceSensor(coordinator),
+        NortecGoChargeStatusSensor(coordinator),
+    ]
     if coordinator.has_car:
         entities.extend(
             NortecGoCarSensor(coordinator, description) for description in CAR_SENSORS
@@ -104,6 +108,23 @@ class NortecGoPriceSensor(NortecGoChargerEntity, SensorEntity):
             "prices_today": prices_today(known, now, time_zone),
             "prices_tomorrow": prices_tomorrow(known, now, time_zone),
         }
+
+
+class NortecGoChargeStatusSensor(NortecGoChargerEntity, SensorEntity):
+    """The charge's phase and the start guard (§2.2)."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = CHARGE_STATUS_OPTIONS
+
+    def __init__(self, coordinator: NortecGoCoordinator) -> None:
+        """Name the sensor Charge status."""
+        super().__init__(coordinator, "charge_status")
+
+    @property
+    def native_value(self) -> str | None:
+        """The status, or None (unknown) for an unknown charger state."""
+        data = self.coordinator.data
+        return charge_status(data.charger, data.control)
 
 
 class NortecGoCarSensor(NortecGoCarEntity, SensorEntity):

@@ -23,7 +23,7 @@ rest and reviews them in the PR.
 |---|---|
 | Switch state | On while a charge is open and not ending: `charge_state` is `STARTING`, `CHARGING` or `PAUSED`; also while our own start is pending, unless a stop was asked for (§3.2). Off otherwise, including `STOPPING` |
 | Guard | After a start that may have left a card hold, starts are blocked until the cable has been unplugged, or the owner confirms in the repair issue. Reload and restart don't clear it (it is stored) |
-| Clearing | A read that sees the cable unplugged, a charger that goes from `BUSY_NON_RELEASED` to `AVAILABLE` (both reads begun after the block was set), a read that sees a charge open, or the repair issue's fix flow |
+| Clearing | A read that sees the cable unplugged, a charger that goes from `BUSY_NON_RELEASED` to `AVAILABLE` (both reads begun after the latest start attempt), a read that sees a charge open, or the repair issue's fix flow |
 | Status sensor | An enum sensor, *Charge status*, including `start_blocked` |
 | EVSC's repeated "on" | A no-op while a charge is open or our start is pending (§3.1). EVSC calls `turn_on` without checking the switch |
 | Pending start | *Controller.* After a successful `start_charge()` the start is pending until a read sees that a charge happened. If no read within 10 minutes sees it, the start counts as failed with a hold, and starts are blocked |
@@ -84,7 +84,8 @@ What EVSC does (its README and `coordinator.py`, checked 2026-09-26):
 
 - Charger device, key `charge` (named *Charge*, apart from the *Charging* binary sensor), no device class,
   `PARALLEL_UPDATES = 1`.
-- **`is_on`:** `ChargeControl.is_charge_on(charger)`: true when a start is pending and no stop was asked for,
+- **`is_on`:** the pure function `is_charge_on(charger, control)` on `coordinator.data.charger` and
+  `coordinator.data.control`: true when a start is pending and no stop was asked for,
   or when no stop was asked for and `charge_state` is `STARTING`, `CHARGING` or `PAUSED`. False while a stop
   is asked for during a pending start.
 - **`turn_on`** → `ChargeControl.async_start()`, **`turn_off`** → `ChargeControl.async_stop()` (§3).
@@ -126,8 +127,10 @@ all run under it.
   after the §3.4 hook, so `always_update=False`'s equality check sees a change the hook made, and entities
   read the new charger and control state together.
 - **Changes outside a read** (start, stop, the background stop, the fix flow) save the store and call
-  `coordinator.async_set_updated_data()` with the same charger and car and the new snapshot. Changes inside
-  the §3.4 hook only save.
+  set `coordinator.data = dataclasses.replace(coordinator.data, control=snapshot)`, then call
+  `coordinator.async_update_listeners()`, then ask for a read where §3 says so. Not
+  `async_set_updated_data()`: it would mark a failed coordinator as successful and cancel a requested read.
+  Changes inside the §3.4 hook only save.
 - **Saves** use `Store.async_delay_save` (sync, flushed at HA's final write), so a change made while being
   cancelled still lands.
 - **Reauth:** on an `AuthError` from its own calls, `ChargeControl` calls `entry.async_start_reauth(hass)`.
@@ -214,7 +217,7 @@ Otherwise, in order:
 2. **Pending start:** ends or times out as in §3.2. A timeout sets the block.
 3. **Block:** cleared if the cable isn't connected, a charge is open, or the remembered state is
    `BUSY_NON_RELEASED` and this read's is `AVAILABLE`. The remembered state is only from reads begun after
-   the block was set: setting the block forgets it, and it isn't stored, so a transition across a restart isn't
+   the latest start attempt (§3.4, *Stale reads*): setting the block forgets it, and it isn't stored, so a transition across a restart isn't
    seen (safe: the block stays).
 4. **Remember** `Charger.state` while a block is set.
 
@@ -275,6 +278,8 @@ gains a `state` argument. No test reaches the real API.
   - a cancelled start sets the block;
   - store round-trip, a restart keeps the block and the pending start, a wrong-shape file sets the block;
   - the repair issue created, recreated at setup, deleted on clear.
+- **`test_coordinator.py`** (control snapshot): a stop after a failed read leaves the other charger entities
+  unavailable; a start within 10 s of a requested refresh still gets its confirming read.
 - **`test_switch.py`:** state for each charge state, on while pending, off while stop asked,
   `turn_on`/`turn_off` through the HA service, translated error messages, available after a failed update
   with `turn_off` still calling `stop_charge()`.
@@ -319,7 +324,7 @@ gains a `state` argument. No test reaches the real API.
 
 - **D26: Start guard.** A start that may have left a card hold (a `ChargeStartError` with
   `hold_may_be_placed`, a cancelled start, or a start whose charge isn't seen within 10 minutes) blocks
-  further starts until a read begun after the block sees the cable unplugged, a charge open, or the charger
+  further starts until a read begun after the latest start attempt sees the cable unplugged, a charge open, or the charger
   going from `BUSY_NON_RELEASED` to `AVAILABLE`, or the owner confirms in the repair issue. A pending start
   ends without a block when a read sees a charge happened (open, or `BUSY_NON_RELEASED`) or the cable
   unplugged; reads begun before the latest start attempt change nothing. The block is stored, so reload and restart don't clear it. While a start is pending the

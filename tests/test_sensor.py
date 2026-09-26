@@ -194,7 +194,9 @@ async def test_charge_status_follows_the_control(
     mock_client.get_charger.return_value = make_charger(is_connected=True)
     await setup_integration(hass, mock_config_entry)
     await mock_config_entry.runtime_data.charge_control.async_start()
-    assert hass.states.get("sensor.garage_charger_charge_status").state == "starting"
+    state = hass.states.get("sensor.garage_charger_charge_status")
+    assert state is not None
+    assert state.state == "starting"
 
 
 async def test_car_sensors(

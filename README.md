@@ -7,8 +7,9 @@ An unofficial Home Assistant integration for Nortec Go EV chargers (a white-labe
 
 ## Status
 
-Sensors and binary sensors for [EV Smart Charging](https://github.com/jonasbkarlsson/ev_smart_charging);
-charge control comes next. Follow the [changelog](CHANGELOG.md).
+Sensors and binary sensors for [EV Smart Charging](https://github.com/jonasbkarlsson/ev_smart_charging), a
+Charge switch that starts and stops charging, a Charge status sensor, and a start guard against repeated
+card holds. Follow the [changelog](CHANGELOG.md).
 
 ## Installation
 

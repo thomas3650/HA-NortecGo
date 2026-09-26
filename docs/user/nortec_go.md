@@ -120,8 +120,11 @@ payment method, so a start is never retried.
 
 If a start may have left a card hold without a charge starting, further starts are blocked until you unplug
 the cable, Home Assistant sees a charge start (for example one started in the Nortec Go app), or you
-confirm in the repair issue that Home Assistant creates. *Charge status* shows *Start blocked* while this
-applies.
+confirm in the repair issue that Home Assistant creates. Find it under **Settings** > **System** >
+**Repairs**. *Charge status* shows *Start blocked* while this applies.
+
+Starts are also blocked, to be safe, if Home Assistant can't read its saved start guard. This clears the
+same way.
 
 After you turn *Charge* on, it shows on for up to 10 minutes while Home Assistant waits to see the charge
 start. If no charge is seen by then, starts are blocked. After a stop, the charger needs the cable unplugged

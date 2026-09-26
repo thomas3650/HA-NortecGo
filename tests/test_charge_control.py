@@ -270,6 +270,8 @@ async def test_other_pre_check_errors(
     with pytest.raises(HomeAssistantError) as exc_info:
         await control.async_start()
     assert exc_info.value.translation_key == "start_failed"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
     assert control.state == IDLE
 
 
@@ -287,6 +289,7 @@ async def test_start_hold_error_blocks(
     await hass.async_block_till_done()
     assert exc_info.value.translation_key == "start_failed_hold"
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
     assert control.state == BLOCKED
     issue = _issue(hass, entry)
     assert issue is not None
@@ -312,14 +315,25 @@ async def test_start_error_without_hold(
     with pytest.raises(HomeAssistantError) as exc_info:
         await control.async_start()
     assert exc_info.value.translation_key == "start_failed"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
     assert control.state == IDLE
 
 
-async def test_start_already_active(control: ChargeControl, client: AsyncMock) -> None:
+async def test_start_already_active(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    on_change: MagicMock,
+    request_refresh: AsyncMock,
+) -> None:
     """ChargeAlreadyActiveError: no error, a read asked for, no pending start."""
     client.start_charge.side_effect = ChargeAlreadyActiveError("x")
     await control.async_start()
+    await hass.async_block_till_done()
     assert control.state == IDLE
+    request_refresh.assert_awaited()
+    on_change.assert_not_called()
 
 
 async def test_start_auth_error_starts_reauth(
@@ -334,6 +348,8 @@ async def test_start_auth_error_starts_reauth(
         await control.async_start()
     await hass.async_block_till_done()
     assert exc_info.value.translation_key == "auth_failed"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
     assert control.state == IDLE
     flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
     assert any(flow["context"]["source"] == "reauth" for flow in flows)
@@ -536,28 +552,72 @@ async def test_stop_while_stopping_is_noop(
     client.stop_charge.assert_not_awaited()
 
 
-@pytest.mark.parametrize(
-    ("error", "key"),
-    [
-        (NoActiveChargeError("x"), None),
-        (ChargeNotStoppableError("x"), "charge_not_stoppable"),
-        (AuthError("x"), "auth_failed"),
-        (NortecGoConnectionError("x"), "stop_failed"),
-    ],
-)
-async def test_stop_errors(
-    control: ChargeControl, client: AsyncMock, error: Exception, key: str | None
+async def test_stop_no_active_charge_asks_for_a_read(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    request_refresh: AsyncMock,
 ) -> None:
-    """Stop errors map to translated errors; no active charge is not an error."""
+    """NoActiveChargeError: not an error, but a read is asked for."""
     control.on_charger_read(CHARGING, control.start_attempts)
-    client.stop_charge.side_effect = error
-    if key is None:
-        await control.async_stop()
-    else:
-        with pytest.raises(HomeAssistantError) as exc_info:
-            await control.async_stop()
-        assert exc_info.value.translation_key == key
+    client.stop_charge.side_effect = NoActiveChargeError("x")
+    await control.async_stop()
+    await hass.async_block_till_done()
     client.stop_charge.assert_awaited_once()
+    request_refresh.assert_awaited()
+
+
+async def test_stop_not_stoppable_error(
+    control: ChargeControl, client: AsyncMock
+) -> None:
+    """ChargeNotStoppableError: charge_not_stoppable, raised from None."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = ChargeNotStoppableError("x")
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_stop()
+    assert exc_info.value.translation_key == "charge_not_stoppable"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_stop_auth_error_starts_reauth(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+) -> None:
+    """AuthError starts reauth and raises auth_failed, from None."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = AuthError("x")
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_stop()
+    assert exc_info.value.translation_key == "auth_failed"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
+    client.stop_charge.assert_awaited_once()
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert any(flow["context"]["source"] == "reauth" for flow in flows)
+
+
+async def test_stop_connection_error_asks_for_a_read(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    request_refresh: AsyncMock,
+) -> None:
+    """A connection error: stop_failed, raised from None, but a read is asked for."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = NortecGoConnectionError("x")
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_stop()
+    assert exc_info.value.translation_key == "stop_failed"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
+    client.stop_charge.assert_awaited_once()
+    await hass.async_block_till_done()
+    request_refresh.assert_awaited()
 
 
 async def test_clear_block(

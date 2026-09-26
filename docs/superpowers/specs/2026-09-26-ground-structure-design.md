@@ -23,7 +23,7 @@ Put the base of the repo in place so features can be built on it:
 | Topic | Decision |
 |---|---|
 | Domain | `nortec_go` (core's snake_case convention for two-word brands) |
-| Quality target | Core quality; Silver first. `quality_scale.yaml` lists every Bronze→Platinum rule so the gap stays visible |
+| Quality target | Core quality; Silver first. `quality_scale.yaml` lists every Bronze→Platinum rule so the gap stays visible. Known gap: `dependency-transparency` (Bronze) can't be met while `pynortecgo`'s source repo is private (§1.1) |
 | Install route | HACS custom repository; the owner is the only user |
 | License | Apache-2.0 (same as HA core) |
 | Tooling | `uv` + dev-only `pyproject.toml` + `uv.lock`; ruff (core's rules), `mypy --strict`, pytest with `pytest-homeassistant-custom-component`, pre-commit |
@@ -39,6 +39,7 @@ Put the base of the repo in place so features can be built on it:
 | GitHub settings | Applied once by the controller with `gh`, each step after the owner's explicit OK; no settings script |
 | Issues | Issues on; interaction limit "collaborators only" (6 months) plus an issue-template note |
 | Real data | Anything from a real instance goes in `local/` (gitignored); `.gitignore` patterns are a backstop |
+| Brand | A neutral EV-charger icon of our own in `custom_components/nortec_go/brand/` (HA ≥ 2026.3 serves it; HACS accepts it). No Nortec or Monta marks |
 
 ## 1. Repository layout
 
@@ -50,7 +51,8 @@ HA-NortecGo/
 │   ├── const.py
 │   ├── strings.json
 │   ├── translations/en.json
-│   └── quality_scale.yaml
+│   ├── quality_scale.yaml
+│   └── brand/{icon.png,icon@2x.png}
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py
@@ -88,7 +90,16 @@ HA-NortecGo/
 - `strings.json`: a minimal valid file. `translations/en.json` is an exact copy (the core layout; HA loads
   `translations/` for custom integrations). A test asserts the two are identical.
 - `quality_scale.yaml`: every rule from Bronze to Platinum, in core's format. Each is `todo`, or `exempt` with
-  a `comment` giving the reason. The plan looks up the current rule list from HA core at implementation time.
+  a `comment` giving the reason. The plan takes the current rule list from the HA developer docs
+  (`docs/core/integration-quality-scale/rules/`) at implementation time. `dependency-transparency` is `todo`
+  with the comment "The pynortecgo source repo is private; the rule needs an open repo, tags and a public
+  publishing pipeline. Tracked in the pynortecgo repo (issue #34)." `brands` is `done`.
+- `brand/icon.png` (256×256) and `brand/icon@2x.png` (512×512): square PNGs with a transparent background,
+  showing a neutral EV-charger pictogram. The source is the Material Design Icons `ev-station` glyph, if its
+  license allows reuse in an Apache-2.0 repo (the plan checks and records the license and attribution in
+  `brand/README.md`); otherwise a pictogram drawn for this repo. Local brand images are supported from HA
+  2026.3, and HACS's `brands` check accepts `brand/icon.png` in the integration folder. If this integration
+  ever goes to core, the images move to the `home-assistant/brands` repo instead.
 - `tests/conftest.py`: enables custom integrations (`enable_custom_integrations`, autouse).
 - `tests/test_init.py`: sets up a `MockConfigEntry` for `nortec_go`, asserts it reaches `LOADED`, unloads it
   and asserts `NOT_LOADED`; plus the `strings.json` = `en.json` test.
@@ -153,18 +164,15 @@ The job name is the required check name.
 | `lint.yml` | `lint` | PR, push to main | `uv sync --locked`; `ruff check`; `ruff format --check`; `mypy` |
 | `tests.yml` | `tests` | PR, push to main | `uv sync --locked`; `pytest` (coverage ≥ 95%) |
 | `hassfest.yml` | `hassfest` | PR, push to main, weekly | `home-assistant/actions/hassfest` |
-| `hacs.yml` | `hacs` | PR, push to main, weekly | `hacs/action`, `category: integration`, `ignore: brands` (see below) |
+| `hacs.yml` | `hacs` | PR, push to main, weekly | `hacs/action`, `category: integration`, no ignores |
 | `gitleaks.yml` | `gitleaks` | PR, push to main | gitleaks over the full history (`fetch-depth: 0`) |
 | `release.yml` | `release` | push of tag `v*` | check tag = `v` + `manifest.json` version, else fail; extract that version's `CHANGELOG.md` section; `gh release create` with it as notes, `--prerelease` when the version is `0.0.x` or has a `-` suffix |
 
 - Every action is pinned to a commit SHA with a version comment.
 - `permissions: contents: read` at the top of every workflow; `release.yml` has `contents: write`.
-- **HACS ignores:**
-  - `brands` is ignored because the integration isn't in `home-assistant/brands` yet. Adding the brand is a
-    follow-up issue.
-  - If the HACS `releases` check fails on the PR because no release exists yet, `releases` is ignored too, and
-    a trivial PR removes that ignore after `v0.0.1` (§4 step 7).
-  - The reason for each ignore is written as a comment in `hacs.yml`.
+- **HACS checks:** archived, brands, description, hacs.json, information (README), integration manifest,
+  issues, license and topics. There is no releases check, so the PR passes before `v0.0.1` exists. Brands
+  pass through the local `brand/icon.png`; description and topics through §4 step 1.
 
 ### 2.4 Dependabot
 
@@ -207,8 +215,8 @@ to the HA version it pins. The PR template has a checklist line for this.
      references, links into the private `NortecGo` repo's docs, or raw API endpoints, headers and response
      shapes. The integration uses only `pynortecgo`'s public API.
   4. Never commit `.env`, `config/`, or anything taken from a real instance.
-  5. Diagnostics and logs redact tokens, email, IDs and location (`async_redact_data`), and credentials are
-     never logged. Anything taken from a real instance (diagnostics downloads, logs, dumps) goes in `local/`
+  5. Diagnostics and logs redact tokens, email, IDs and location (`async_redact_data`), and credentials and
+     usernames are never logged, even wrong ones. Anything taken from a real instance (diagnostics downloads, logs, dumps) goes in `local/`
      and is never committed.
   6. Never auto-retry `start_charge`. On `AuthError`, start reauth instead of retrying login (login is
      rate-limited; a start places a card hold).
@@ -254,7 +262,18 @@ Copied from `NortecGo` and adapted.
 
 ### 3.4 `docs/`
 
-- `README.md`: the documentation map. One table: doc, contents, read it when.
+- `README.md`: the documentation map. One table: doc, contents, read it when. A second table, **Useful
+  links**, grouped by topic, points to the upstream references:
+  - HA developer docs: creating an integration, file structure, tests file structure, manifest, config flow,
+    options flow, fetching data (`DataUpdateCoordinator`), setup failures, diagnostics, system health, brand
+    images, the development checklist, component and platform checklists, style guidelines, testing (incl.
+    snapshot tests), typing, and building a Python library for an API.
+  - Integration Quality Scale: the overview, the checklist and the rules list.
+  - home-assistant.io: the integration docs template and the documentation standards.
+  - HACS: publishing an integration, the `hacs.json` reference and the HACS action.
+  - Tools: `pytest-homeassistant-custom-component`, the hassfest action, the brands repo.
+
+  The URLs are checked (HTTP 200) when the doc is written.
 - `decisions.md`: the same header and entry format as `NortecGo`, with these entries, each linking to this
   spec:
   - D1 domain `nortec_go`
@@ -270,6 +289,8 @@ Copied from `NortecGo` and adapted.
   - D11 GitHub settings applied once with `gh`; issues limited to collaborators
   - D12 real data only in `local/`
   - D13 no Claude memory; questions as plain text (inherited)
+  - D14 a neutral brand icon of our own, in the local `brand/` folder
+  - D15 `dependency-transparency` stays `todo` while `pynortecgo`'s source repo is private; tracked upstream
 - `releasing.md`:
   - the bump PR (`manifest.json` version, the CHANGELOG section moved from *Unreleased*);
   - the owner pushes the tag;
@@ -279,14 +300,24 @@ Copied from `NortecGo` and adapted.
 - `notes.md`: dated small facts. First entry: how to renew the interaction limit
   (`gh api -X PUT repos/thomas3650/HA-NortecGo/interaction-limits -f limit=collaborators_only -f expiry=six_months`)
   and when it expires.
-- `user/nortec_go.md`: home-assistant.io page sections:
-  - front matter-style title and intro;
-  - the unofficial disclaimer;
-  - prerequisites;
-  - installation (HACS custom repository);
-  - configuration;
-  - removal;
-  - troubleshooting.
+- `user/nortec_go.md` follows home-assistant.io's `_integration_docs_template.markdown`, in its order:
+  - the front matter (title, description, `ha_iot_class: Cloud Polling`, `ha_domain: nortec_go`,
+    `ha_integration_type: hub`, `ha_codeowners`);
+  - the intro with a high-level description, a link to the product, and the unofficial disclaimer;
+  - Supported devices;
+  - Unsupported devices;
+  - Prerequisites;
+  - Installation (HACS custom repository; this section isn't in core's template, and is dropped for a core
+    submission);
+  - Configuration options;
+  - Supported functionality;
+  - Actions, Conditions and Triggers (covering Bronze's `docs-actions`, `docs-conditions` and
+    `docs-triggers`);
+  - Automation examples;
+  - Data updates;
+  - Known limitations;
+  - Troubleshooting;
+  - Removing the integration.
 
   Sections with nothing to describe yet say "Not available yet."
 
@@ -325,10 +356,7 @@ settings step, a read-only `gh api` call confirms each value.
      no force pushes, no deletions.
 5. Branch review until Ready, then ready the PR. **The owner merges.**
 6. **The owner** tags `v0.0.1` on `main` and pushes the tag. `release.yml` publishes a pre-release.
-7. If `hacs.yml` ignores `releases`, a trivial PR removes that ignore, and `hacs` must pass without it.
-8. The controller files these issues:
-   - "Renew interaction limit (expires YYYY-MM-DD)";
-   - "Add Nortec Go to home-assistant/brands, then drop the HACS `brands` ignore".
+7. The controller files the issue "Renew interaction limit (expires YYYY-MM-DD)".
 
 ## 5. Verification
 

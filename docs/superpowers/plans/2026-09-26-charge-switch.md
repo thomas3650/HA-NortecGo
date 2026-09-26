@@ -102,6 +102,7 @@ Waves: 1 → Task 1; 2 → Task 2; 3 → Tasks 3, 4, 5, 6 in parallel (disjoint 
       - `async def async_stop(self) -> None`
       - `@callback def on_charger_read(self, charger: Charger, start_attempts: int) -> None`
       - `@callback def clear_block(self) -> None`
+      - `async def async_shutdown(self) -> None`
     - `async def async_remove_charge_control(hass: HomeAssistant, entry_id: str) -> None`
   - `tests/conftest.py`: `make_charger(..., state: ChargerState = ChargerState.AVAILABLE)`.
 
@@ -297,7 +298,11 @@ def test_charge_status(
 
 Run: `uv run pytest tests/test_charge_control.py -q` — FAIL (module missing).
 
-- [ ] **Step 4: Implement `charge_control.py`**
+- [ ] **Step 4: Implement the pure functions**
+
+The block below is the whole of `charge_control.py`. **In this step write only** the imports, the
+constants, `ChargeControlState`, `charge_is_open`, `_charge_happened`, `is_charge_on` and `charge_status`
+(everything above `_parse_time`). The rest is written in Step 6, after Step 5's tests fail.
 
 Create `custom_components/nortec_go/charge_control.py`:
 
@@ -430,7 +435,10 @@ def _parse_time(value: object) -> datetime | None:
         return None
     if not isinstance(value, str):
         raise TypeError("not a string")
-    return datetime.fromisoformat(value)
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        raise ValueError("no time zone")
+    return parsed
 
 
 def _store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
@@ -474,6 +482,7 @@ class ChargeControl:
         self._stop_asked = False
         self._remembered: ChargerState | None = None
         self._last_charger: Charger | None = None
+        self._closed = False
         self.start_attempts = 0
 
     @property
@@ -517,6 +526,7 @@ class ChargeControl:
     async def async_start(self) -> None:
         """Start a charge once, unless one is on, pending or blocked (§3.1)."""
         async with self._lock:
+            self._raise_if_closed()
             if self._pending_since is not None:
                 if self._stop_asked:
                     self._stop_asked = False
@@ -545,7 +555,9 @@ class ChargeControl:
                 self._request_read()
                 return
             except ChargeStartError as err:
-                _LOGGER.warning("Starting a charge failed: %s", err)
+                _LOGGER.warning(
+                    "Starting a charge failed: %s: %s", type(err).__name__, err
+                )
                 if err.hold_may_be_placed:
                     self._set_block("start_blocked")
                     self._changed()
@@ -567,7 +579,9 @@ class ChargeControl:
                     raise ServiceValidationError(
                         translation_domain=DOMAIN, translation_key=key
                     ) from None
-                _LOGGER.warning("Starting a charge failed: %s", err)
+                _LOGGER.warning(
+                    "Starting a charge failed: %s: %s", type(err).__name__, err
+                )
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="start_failed"
                 ) from None
@@ -579,6 +593,7 @@ class ChargeControl:
     async def async_stop(self) -> None:
         """Stop the charge, or ask for the stop while a start is pending (§3.3)."""
         async with self._lock:
+            self._raise_if_closed()
             charger = self._last_charger
             if self._pending_since is not None and (
                 charger is None or not charge_is_open(charger)
@@ -608,7 +623,9 @@ class ChargeControl:
                 translation_domain=DOMAIN, translation_key="auth_failed"
             ) from None
         except NortecGoError as err:
-            _LOGGER.warning("Stopping the charge failed: %s", err)
+            _LOGGER.warning(
+                "Stopping the charge failed: %s: %s", type(err).__name__, err
+            )
             self._request_read()
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="stop_failed"
@@ -622,6 +639,9 @@ class ChargeControl:
     async def _async_background_stop(self) -> None:
         """The stop asked for during a pending start, now that the charge is open."""
         async with self._lock:
+            if self._closed:
+                _LOGGER.warning("Not stopping the charge: the integration is unloading")
+                return
             try:
                 await self._async_send_stop()
             except HomeAssistantError as err:
@@ -676,6 +696,22 @@ class ChargeControl:
         self._clear_block()
         self._changed()
 
+    async def async_shutdown(self) -> None:
+        """At unload: let a start or stop in flight finish, refuse new ones, and save.
+
+        A service call already running isn't cancelled by an unload, so without this a start
+        finishing on the old control after a reload could set a block the new one never sees.
+        """
+        async with self._lock:
+            self._closed = True
+            await self._store.async_save(self._data_to_save())
+
+    def _raise_if_closed(self) -> None:
+        if self._closed:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="unloading"
+            )
+
     def _set_block(self, issue_key: str) -> None:
         self._blocked_since = dt_util.utcnow()
         self._remembered = None
@@ -729,7 +765,7 @@ class ChargeControl:
         )
 ```
 
-Run: `uv run pytest tests/test_charge_control.py -q` — the pure-function tests PASS.
+Run: `uv run pytest tests/test_charge_control.py -q` — the pure-function tests PASS (only the Step 3 tests exist yet).
 
 - [ ] **Step 5: Write the failing `ChargeControl` tests**
 
@@ -738,11 +774,10 @@ Append to `tests/test_charge_control.py`. The fixture builds a control against a
 
 ```python
 @pytest.fixture
-def entry(hass: HomeAssistant) -> MockConfigEntry:
-    """A config entry added to hass (for reauth, tasks and the issue)."""
-    entry = MockConfigEntry(domain=DOMAIN, title="Garage charger", unique_id="1")
-    entry.add_to_hass(hass)
-    return entry
+def entry(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> MockConfigEntry:
+    """conftest's entry (with email, device ID and tokens, so reauth can run), added to hass."""
+    mock_config_entry.add_to_hass(hass)
+    return mock_config_entry
 
 
 @pytest.fixture
@@ -1219,6 +1254,72 @@ async def test_remove_charge_control(
     assert _issue(hass, entry) is None
 ```
 
+```python
+async def test_cancel_while_waiting_for_the_lock_doesnt_block(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A start cancelled while queued behind a stop made no API call: no block."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)
+    start = hass.async_create_task(control.async_start())
+    await asyncio.sleep(0)
+    start.cancel()
+    release.set()
+    await stop
+    with pytest.raises(asyncio.CancelledError):
+        await start
+    assert not control.state.blocked
+    client.start_charge.assert_not_awaited()
+
+
+async def test_shutdown_waits_and_refuses(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Shutdown lets a start in flight finish and save its block, then refuses new calls."""
+    release = asyncio.Event()
+
+    async def slow_start() -> None:
+        await release.wait()
+        raise ChargeStartError(ChargeStartStep.CONFIRM, True)
+
+    client.start_charge.side_effect = slow_start
+    start = hass.async_create_task(control.async_start())
+    await asyncio.sleep(0)
+    shutdown = hass.async_create_task(control.async_shutdown())
+    await asyncio.sleep(0)
+    assert not shutdown.done()
+    release.set()
+    with pytest.raises(HomeAssistantError):
+        await start
+    await shutdown
+    saved = hass_storage[STORE_KEY.format(entry.entry_id)]["data"]
+    assert saved["blocked_since"] is not None
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_start()
+    assert exc_info.value.translation_key == "unloading"
+    with pytest.raises(HomeAssistantError):
+        await control.async_stop()
+```
+
+Also add `{"blocked_since": "2026-09-26T20:00:00", "start_pending_since": None, "stop_asked": False}` (a
+naive time) to `test_wrong_shape_store_blocks`' parameters.
+
+- [ ] **Step 6: Implement `ChargeControl`**
+
+Run: `uv run pytest tests/test_charge_control.py -q` — the Step 5 tests FAIL (no `ChargeControl` yet).
+Now write the rest of the Step 4 block (from `_parse_time` to the end) into `charge_control.py`.
+
 Notes for the implementer:
 - `async_delay_save(..., 0)` writes on the next loop turn; `await hass.async_block_till_done()` before
   reading `hass_storage`. If a test needs the write sooner, that's a test issue, not a reason to use
@@ -1229,7 +1330,7 @@ Notes for the implementer:
 
 Run: `uv run pytest tests/test_charge_control.py -q` — fix until PASS.
 
-- [ ] **Step 6: Gates and commit**
+- [ ] **Step 7: Gates and commit**
 
 Run the gates (`CLAUDE.md` → Commands). Coverage of `charge_control.py` should be 100%; add a test for any
 missed line. Commit `feat: charge control with the start guard (#9)`.
@@ -1331,18 +1432,22 @@ async def test_timeout_on_unchanged_read_updates_entities(
 async def test_stop_after_failed_read_keeps_others_unavailable(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
-    """A control change after a failed read doesn't mark the coordinator successful (Review Focus 4)."""
+    """A stop after a failed read doesn't mark the coordinator successful (Review Focus 4)."""
     mock_client.get_charger.return_value = make_charger(
         is_connected=True, charge_state=ChargeState.CHARGING
     )
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
-    await coordinator.charge_control.async_start()  # no-op: a charge is open
     mock_client.get_charger.side_effect = NortecGoConnectionError("x")
     await coordinator.async_refresh()
     assert not coordinator.last_update_success
-    coordinator.charge_control._on_change()  # a change outside a read
+    await coordinator.charge_control.async_stop()
+    await hass.async_block_till_done()
+    mock_client.stop_charge.assert_awaited_once()
     assert not coordinator.last_update_success
+    state = hass.states.get("binary_sensor.garage_charger_charging")
+    assert state is not None
+    assert state.state == "unavailable"
 
 
 async def test_start_soon_after_a_refresh_gets_its_read(
@@ -1351,14 +1456,16 @@ async def test_start_soon_after_a_refresh_gets_its_read(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A start within the debouncer's 10 s cooldown still gets its confirming read."""
+    """A read asked for inside the debouncer's 10 s cooldown isn't dropped by a later change."""
     mock_client.get_charger.return_value = make_charger(is_connected=True)
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
-    await coordinator.async_request_refresh()
+    control = coordinator.charge_control
+    await control.async_start()  # asks for a read at once; the cooldown begins
     await hass.async_block_till_done()
+    await control.async_stop()  # stop asked; its read is deferred by the cooldown
+    await control.async_start()  # clears stop asked: a change with no new read asked
     calls = mock_client.get_charger.await_count
-    await coordinator.charge_control.async_start()
     freezer.tick(timedelta(seconds=11))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
@@ -1427,7 +1534,39 @@ async def test_removal_removes_charge_control(
     )
 ```
 
-(Import `make_charger` from `.conftest` in `test_init.py`.)
+```python
+async def test_block_from_a_start_during_reload_reaches_the_new_control(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A start that fails with a hold while the entry unloads blocks the reloaded control."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    release = asyncio.Event()
+
+    async def slow_start() -> None:
+        await release.wait()
+        raise ChargeStartError(ChargeStartStep.CONFIRM, True)
+
+    mock_client.start_charge.side_effect = slow_start
+    control = mock_config_entry.runtime_data.charge_control
+    start = hass.async_create_task(control.async_start())
+    await asyncio.sleep(0)
+    unload = hass.async_create_task(
+        hass.config_entries.async_unload(mock_config_entry.entry_id)
+    )
+    await asyncio.sleep(0)
+    release.set()
+    with pytest.raises(HomeAssistantError):
+        await start
+    assert await unload
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert mock_config_entry.runtime_data.data.control.blocked
+```
+
+Imports to add in `test_init.py`: `make_charger` from `.conftest`; `ChargeStartError`, `ChargeStartStep` from
+`pynortecgo`; `HomeAssistantError` from `homeassistant.exceptions` (`asyncio`, `ir` and `Any` are already
+imported).
 
 Run: `uv run pytest tests/test_coordinator.py tests/test_init.py -q` — FAIL.
 
@@ -1505,7 +1644,17 @@ In `custom_components/nortec_go/__init__.py`:
 - after `coordinator = NortecGoCoordinator(hass, entry, client)`: `await coordinator.charge_control.async_load()`
   (before the first refresh);
 - `async_remove_entry`: also `await async_remove_charge_control(hass, entry.entry_id)` (import from
-  `.charge_control`).
+  `.charge_control`);
+- `async_unload_entry`:
+
+```python
+async def async_unload_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> bool:
+    """Unload a config entry; the charge control saves and stops taking calls."""
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        await entry.runtime_data.charge_control.async_shutdown()
+    return unloaded
+```
 
 - [ ] **Step 4: Translations**
 
@@ -1573,6 +1722,9 @@ Add to `strings.json` and the identical `translations/en.json` (merge into the e
     },
     "stop_failed": {
       "message": "Stopping the charge failed; it may have stopped anyway. Check the charger."
+    },
+    "unloading": {
+      "message": "The Nortec Go integration is reloading. Try again in a moment."
     }
   },
   "issues": {
@@ -1880,7 +2032,8 @@ async def test_charge_status_follows_the_control(
     assert hass.states.get("sensor.garage_charger_charge_status").state == "starting"
 ```
 
-Imports to add: `STATE_UNKNOWN`, `Charger`, `ChargerState`, `ChargeState`, `CHARGE_STATUS_OPTIONS`.
+Imports to add where missing: `ATTR_DEVICE_CLASS`, `STATE_UNKNOWN`, `SensorDeviceClass`, `Charger`, `ChargerState`,
+`ChargeState`, `CHARGE_STATUS_OPTIONS`.
 (Every row of the spec's §2.2 table is covered by Task 1's `test_charge_status`; these tests check the
 entity wiring.) Run — FAIL.
 
@@ -2014,8 +2167,7 @@ Run — FAIL.
 
 from typing import Any
 
-from homeassistant import data_entry_flow
-from homeassistant.components.repairs import RepairsFlow
+from homeassistant.components.repairs import RepairsFlow, RepairsFlowResult
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
@@ -2029,13 +2181,13 @@ class StartBlockedRepairFlow(RepairsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Go to the confirm step."""
         return await self.async_step_confirm()
 
     async def async_step_confirm(
         self, user_input: dict[str, str] | None = None
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Clear the block when the owner confirms."""
         entry = self.hass.config_entries.async_get_entry(self._entry_id)
         if entry is None or entry.state is not ConfigEntryState.LOADED:
@@ -2055,9 +2207,6 @@ async def async_create_fix_flow(
     assert data is not None  # the issue is always created with its entry ID
     return StartBlockedRepairFlow(str(data["entry_id"]))
 ```
-
-If mypy rejects the `FlowResult` return type, use the type `RepairsFlow`'s methods declare in HA 2026.9
-(check `homeassistant/components/repairs/issue_handler.py`, `ConfirmRepairFlow`).
 
 - [ ] **Step 3: Run tests, gates, commit** `feat: repair fix flow for blocked starts (#9)`. hassfest runs in
 CI only; if it asks for `repairs` in `manifest.json` `dependencies`, that fix goes in the branch review round.
@@ -2085,15 +2234,13 @@ CI only; if it asks for `repairs` in `manifest.json` `dependencies`, that fix go
   - *Data updates*: add "every 5 minutes while a start is pending".
   - *Troubleshooting* (add the section if missing): "Starts are blocked" → see *Starting a charge*.
   - *Known limitations*: the five bullets of spec §7.
-  - *Actions, conditions and triggers*: replace "Not available yet." with the switch's `switch.turn_on` /
-    `switch.turn_off`.
 - [ ] **Step 2: `CHANGELOG.md`** *Unreleased → Added*: "A *Charge* switch that starts and stops charging,
   guarded against repeated starts that could place extra card holds, a *Charge status* sensor, and a repair
   issue to allow starts again after a failed start."
 - [ ] **Step 3: `quality_scale.yaml`**: `action-exceptions: done`; `repair-issues: done`;
   `entity-unavailable` as `{status: done, comment: "The Charge switch stays available after a failed read on purpose, so turn_off still reaches the charger; the other entities follow the rule."}`;
   `exception-translations` as `{status: todo, comment: "The switch's exceptions are translated; the coordinator's UpdateFailed and ConfigEntryError texts aren't yet."}`.
-  `docs-actions: done` (the switch's actions are documented). Run `uv run pytest tests/test_quality_scale.py -q`.
+  Run `uv run pytest tests/test_quality_scale.py -q`.
 - [ ] **Step 4: `docs/decisions.md`**: append D26 with the text of the spec's §8, in the log's format
   (Date 2026-09-26, Status active, Source: link to the spec, *Decisions* and §3).
 - [ ] **Step 5: Gates, commit** `docs: charge switch user docs, changelog, quality scale, D26 (#9)`.

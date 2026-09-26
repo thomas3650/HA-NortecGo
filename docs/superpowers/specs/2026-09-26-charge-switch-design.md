@@ -133,6 +133,12 @@ all run under it.
   Changes inside the §3.4 hook only save.
 - **Saves** use `Store.async_delay_save` (sync, flushed at HA's final write), so a change made while being
   cancelled still lands.
+- **Unload:** `async_unload_entry` calls `ChargeControl.async_shutdown()` after the platforms unload. It
+  takes the lock (a start or stop in flight finishes first), marks the control closed and saves with an
+  awaited `Store.async_save`. A closed control refuses starts and stops (`HomeAssistantError` `unloading`)
+  and skips the background stop. HA doesn't cancel a running service call on unload, so without this a
+  start finishing on the old control after a reload (every reauth reloads) could set a block the new control
+  never loads.
 - **Reauth:** on an `AuthError` from its own calls, `ChargeControl` calls `entry.async_start_reauth(hass)`.
 - **Raised errors** are translated (`translation_domain=DOMAIN`) and raised `from None`, so no chained
   exception (for example a `ChargeStartError`'s cause) reaches a caller's log. The control logs the error
@@ -231,7 +237,7 @@ The interval (D22) is 5 minutes while a start is pending, otherwise unchanged.
 - **Store:** `helpers.storage.Store`, version 1, key `nortec_go.<entry_id>.charge_control`:
   `{"blocked_since": ISO 8601 UTC | null, "start_pending_since": ISO 8601 UTC | null, "stop_asked": bool}`.
   No IDs. Loaded at setup before the first refresh. A missing file gives the empty state. A file of the
-  wrong shape logs a warning and sets the block (fail safe: a stored block may have been lost).
+  wrong shape (including a time without a time zone) logs a warning and sets the block (fail safe: a stored block may have been lost).
 - **Setting the block** logs a warning and creates the repair issue. After a failed start the issue's
   translation key is `start_blocked`; after a wrong-shape store it is `start_blocked_store`.
 - **Repair issue:** `ir.async_create_issue`, ID `start_blocked_<entry_id>`, `is_fixable=True`,

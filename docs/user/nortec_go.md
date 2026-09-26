@@ -157,7 +157,7 @@ To read the charger and the car now, call the `homeassistant.update_entity` acti
   replaces them.
 - Car data can be hours old (see *Last seen*), so *Connected to charger* can turn on late.
 - Days and the price times follow Home Assistant's time zone.
-- A car removed from the account stays until you reload the integration.
+- A car removed from the account, with its entities, disappears after you reload the integration.
 
 ## Troubleshooting
 

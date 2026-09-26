@@ -13,9 +13,18 @@ from homeassistant import loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL
 from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN, HomeAssistant
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.setup import async_setup_component
-from pynortecgo import AuthError, NortecGoConnectionError
+from pynortecgo import (
+    AuthError,
+    MultipleVehiclesError,
+    NortecGoConnectionError,
+    VehicleNotFoundError,
+)
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -23,6 +32,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.nortec_go.const import DOMAIN
+from custom_components.nortec_go.coordinator import car_device_identifier
 from custom_components.nortec_go.entry import tokens_from_data
 
 from .conftest import (
@@ -226,3 +236,52 @@ async def test_remove_entry_removes_stored_prices(
     assert await hass.config_entries.async_remove(mock_config_entry.entry_id)
     await hass.async_block_till_done()
     assert key not in hass_storage
+
+
+CAR_ENTITY_IDS = (
+    "sensor.family_car_battery",
+    "sensor.family_car_charge_limit",
+    "sensor.family_car_last_seen",
+    "binary_sensor.family_car_plugged_in",
+    "binary_sensor.family_car_connected_to_charger",
+)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [VehicleNotFoundError("no car"), MultipleVehiclesError("two cars")],
+)
+async def test_reload_without_car_removes_car_device(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    error: Exception,
+) -> None:
+    """A reload that finds no single car removes the car device and its entities."""
+    await setup_integration(hass, mock_config_entry)
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    identifier = car_device_identifier(str(FAKE_CHARGER_ID))
+    assert (
+        device_registry.async_get_device_by_identifier(
+            identifier, mock_config_entry.entry_id
+        )
+        is not None
+    )
+    for entity_id in CAR_ENTITY_IDS:
+        assert entity_registry.async_get(entity_id) is not None
+
+    mock_client.get_vehicle.side_effect = error
+    await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert (
+        device_registry.async_get_device_by_identifier(
+            identifier, mock_config_entry.entry_id
+        )
+        is None
+    )
+    for entity_id in CAR_ENTITY_IDS:
+        assert entity_registry.async_get(entity_id) is None
+        assert hass.states.get(entity_id) is None

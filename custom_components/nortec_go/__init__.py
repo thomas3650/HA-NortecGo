@@ -2,12 +2,12 @@
 
 from homeassistant.const import CONF_DEVICE_ID, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 from pynortecgo import Tokens
 
 from .const import DOMAIN
-from .coordinator import NortecGoCoordinator
+from .coordinator import NortecGoCoordinator, car_device_identifier
 from .entry import NortecGoConfigEntry, create_client, tokens_from_data, tokens_to_data
 from .prices import PriceStore
 
@@ -43,6 +43,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
     coordinator = NortecGoCoordinator(hass, entry, client)
     await coordinator.async_load_prices()
     await coordinator.async_config_entry_first_refresh()
+    if not coordinator.has_car:
+        # No car now: remove the car device (and so its entities) from an earlier setup.
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device_by_identifier(
+            car_device_identifier(coordinator.charger_id), entry.entry_id
+        )
+        if device is not None:
+            device_registry.async_remove_device(device.id)
     await coordinator.async_read_prices(during_setup=True)
     coordinator.async_start_timers()
 

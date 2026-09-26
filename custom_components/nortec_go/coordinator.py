@@ -141,6 +141,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         return vehicle
 
     def _log_car_error(self, err: NortecGoError) -> None:
+        """Log the first car read failure of a run at warning."""
         if not self._car_failing:
             self._car_failing = True
             _LOGGER.warning("Could not read the car; keeping its last data: %s", err)

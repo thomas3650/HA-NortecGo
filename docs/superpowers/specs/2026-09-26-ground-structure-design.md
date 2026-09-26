@@ -129,9 +129,9 @@ HA-NortecGo/
   marked ready, and the owner tags right after merging.
 - `scripts/develop`: creates `config/` with a `configuration.yaml` holding `default_config:` if it's missing,
   symlinks `config/custom_components/nortec_go` to the repo's folder, and runs
-  `uv run --inexact hass -c config --debug`. `--inexact` keeps the packages HA installs at runtime for
-  `default_config` (a plain `uv sync` would remove them, so every start would reinstall them). `config/` is
-  gitignored.
+  `uv run hass -c config --debug`. On first start HA installs runtime packages for `default_config` into the
+  venv; the next `uv sync` (for example from the gates) removes them again, so they are reinstalled after
+  each sync. This is expected and noted in the script's header comment. `config/` is gitignored.
 - `.devcontainer/devcontainer.json`: plain JSON with no comments (`check-json` rejects JSONC). It uses a Python
   image matching the pinned HA's `requires-python`, runs `uv sync` on create, and forwards port 8123. The
   file's `name` and `docs/way-of-working.md` both say it is for manual testing only.
@@ -170,7 +170,8 @@ fails with `>=3.14`), no dependencies, and no build system.
   override with `ignore_missing_imports` for `pytest_homeassistant_custom_component.*` (it ships no
   `py.typed`).
 - **pytest:** `asyncio_mode = "auto"`, `testpaths = ["tests"]`. Coverage isn't in `addopts`, so single-test TDD
-  runs aren't failed by it. The coverage gate is its own command, run by CI and by the gates before committing (`CLAUDE.md`):
+  runs aren't failed by it. The coverage gate is its own command, run by CI and by the gates before
+  committing (`CLAUDE.md`):
   `uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95`.
 
 ### 2.2 pre-commit

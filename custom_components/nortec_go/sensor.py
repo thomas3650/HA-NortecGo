@@ -1,0 +1,127 @@
+"""Nortec Go sensors: the price for EV Smart Charging and the car's values."""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
+from homeassistant.const import PERCENTAGE, EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.typing import StateType
+from homeassistant.util import dt as dt_util
+from pynortecgo import Vehicle
+
+from .coordinator import NortecGoCoordinator
+from .entity import NortecGoCarEntity, NortecGoChargerEntity
+from .entry import NortecGoConfigEntry
+from .prices import current_price, prices_today, prices_tomorrow
+
+PARALLEL_UPDATES = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class NortecGoCarSensorDescription(SensorEntityDescription):
+    """A car sensor and how to read it from the car."""
+
+    value_fn: Callable[[Vehicle], StateType | datetime]
+
+
+CAR_SENSORS: tuple[NortecGoCarSensorDescription, ...] = (
+    NortecGoCarSensorDescription(
+        key="battery",
+        device_class=SensorDeviceClass.BATTERY,
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda vehicle: vehicle.battery_level,
+    ),
+    NortecGoCarSensorDescription(
+        key="charge_limit",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda vehicle: vehicle.charge_limit,
+    ),
+    NortecGoCarSensorDescription(
+        key="last_seen",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda vehicle: vehicle.last_seen,
+    ),
+)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: NortecGoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Add the price sensor, and the car sensors when the account has a car."""
+    coordinator = entry.runtime_data
+    entities: list[SensorEntity] = [NortecGoPriceSensor(coordinator)]
+    if coordinator.has_car:
+        entities.extend(
+            NortecGoCarSensor(coordinator, description) for description in CAR_SENSORS
+        )
+    async_add_entities(entities)
+
+
+class NortecGoPriceSensor(NortecGoChargerEntity, SensorEntity):
+    """The current price, with EV Smart Charging's day lists (§3.4)."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _unrecorded_attributes = frozenset({"prices_today", "prices_tomorrow"})
+
+    def __init__(self, coordinator: NortecGoCoordinator) -> None:
+        """Set the unit from Home Assistant's currency."""
+        super().__init__(coordinator, "current_price")
+        self._attr_native_unit_of_measurement = (
+            f"{coordinator.hass.config.currency}/kWh"
+        )
+
+    @property
+    def available(self) -> bool:
+        """Always available, so the lists are always there (§4.4)."""
+        return True
+
+    @property
+    def native_value(self) -> float | None:
+        """The known price of the current slot."""
+        return current_price(self.coordinator.known_prices, dt_util.utcnow())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """prices_today and prices_tomorrow in EV Smart Charging's format."""
+        now = dt_util.utcnow()
+        time_zone = dt_util.get_default_time_zone()
+        known = self.coordinator.known_prices
+        return {
+            "prices_today": prices_today(known, now, time_zone),
+            "prices_tomorrow": prices_tomorrow(known, now, time_zone),
+        }
+
+
+class NortecGoCarSensor(NortecGoCarEntity, SensorEntity):
+    """A sensor for one of the car's values."""
+
+    entity_description: NortecGoCarSensorDescription
+
+    def __init__(
+        self,
+        coordinator: NortecGoCoordinator,
+        description: NortecGoCarSensorDescription,
+    ) -> None:
+        """Set up the sensor from its description."""
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
+
+    @property
+    def native_value(self) -> StateType | datetime:
+        """The car's value, or None when the car doesn't report it."""
+        vehicle = self.coordinator.data.vehicle
+        return None if vehicle is None else self.entity_description.value_fn(vehicle)

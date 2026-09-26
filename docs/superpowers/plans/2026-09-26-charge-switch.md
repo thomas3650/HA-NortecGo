@@ -651,6 +651,8 @@ class ChargeControl:
     def on_charger_read(self, charger: Charger, start_attempts: int) -> None:
         """Update the pending start and the block from a charger read (§3.4)."""
         self._last_charger = charger
+        if self._closed:
+            return  # unloaded: the reloaded control owns the store now
         if start_attempts != self.start_attempts:
             return  # a stale read: it began before the latest start attempt
         changed = False
@@ -1441,6 +1443,8 @@ async def test_stop_after_failed_read_keeps_others_unavailable(
     mock_client.get_charger.side_effect = NortecGoConnectionError("x")
     await coordinator.async_refresh()
     assert not coordinator.last_update_success
+    coordinator.charge_control._on_change()  # a change outside a read, before any read
+    assert not coordinator.last_update_success
     await coordinator.charge_control.async_stop()
     await hass.async_block_till_done()
     mock_client.stop_charge.assert_awaited_once()
@@ -1551,15 +1555,16 @@ async def test_block_from_a_start_during_reload_reaches_the_new_control(
     control = mock_config_entry.runtime_data.charge_control
     start = hass.async_create_task(control.async_start())
     await asyncio.sleep(0)
-    unload = hass.async_create_task(
-        hass.config_entries.async_unload(mock_config_entry.entry_id)
+    reload = hass.async_create_task(
+        hass.config_entries.async_reload(mock_config_entry.entry_id)
     )
-    await asyncio.sleep(0)
+    # Loop turns, not async_block_till_done (it would wait on the held start).
+    await asyncio.sleep(0.05)
+    assert not reload.done()  # waiting in async_shutdown for the start in flight
     release.set()
     with pytest.raises(HomeAssistantError):
         await start
-    assert await unload
-    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    assert await reload
     await hass.async_block_till_done()
     assert mock_config_entry.runtime_data.data.control.blocked
 ```

@@ -237,7 +237,8 @@ The interval (D22) is 5 minutes while a start is pending, otherwise unchanged.
 - **Store:** `helpers.storage.Store`, version 1, key `nortec_go.<entry_id>.charge_control`:
   `{"blocked_since": ISO 8601 UTC | null, "start_pending_since": ISO 8601 UTC | null, "stop_asked": bool}`.
   No IDs. Loaded at setup before the first refresh. A missing file gives the empty state. A file of the
-  wrong shape (including a time without a time zone) logs a warning and sets the block (fail safe: a stored block may have been lost).
+  wrong shape (including a time without a time zone) logs a warning and sets the block (fail safe: a stored
+  block may have been lost).
 - **Setting the block** logs a warning and creates the repair issue. After a failed start the issue's
   translation key is `start_blocked`; after a wrong-shape store it is `start_blocked_store`.
 - **Repair issue:** `ir.async_create_issue`, ID `start_blocked_<entry_id>`, `is_fixable=True`,

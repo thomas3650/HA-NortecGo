@@ -14,7 +14,8 @@ Date: 2026-09-26 · Branch: `feat/config-flow` · Issue: #7
 - **Not in this work:** entities, a `DataUpdateCoordinator`, diagnostics (#11), anything that starts or stops
   a charge, a reconfigure flow, the car (only feature 2 needs it).
 - **Done when:** the integration can be added in the UI, survives a restart without a new login, and a
-  rejected token starts reauth. Built TDD, with `pynortecgo` mocked in every test; live data only in the
+  rejected token starts reauth. In this feature only setup calls the client, so a rejected token is noticed
+  at setup (a start, restart or reload); feature 2's polling notices it at any time. Built TDD, with `pynortecgo` mocked in every test; live data only in the
   owner's manual test.
 
 ## Decisions
@@ -22,13 +23,15 @@ Date: 2026-09-26 · Branch: `feat/config-flow` · Issue: #7
 | Topic | Decision |
 |---|---|
 | Approach | Standard HA pattern: the client in `entry.runtime_data`, no coordinator until feature 2 |
-| Dependency | `pynortecgo==0.1.0`, pinned exactly in `manifest.json` and in the `dev` group; bumped by PR. A test keeps the two pins equal |
+| Dependency | `pynortecgo==0.1.0` (exact pin per D7), in `manifest.json` and in the `dev` group; bumped by PR. A test keeps the two pins equal |
 | Stored in `entry.data` | Email, access token, refresh token, `expires_at` (ISO 8601), `device_id`. Never the password |
 | Entry `unique_id` | The account's charger ID, from `get_charger()` in the flow |
 | Charger ID in `entry.data` | Not stored. The client finds the charger itself (`get_charger()` discovers it once per client and caches it), and 0.1.0 has no way to be given a known ID. The ID lives only as the `unique_id`, used for duplicate and mismatch checks. Requested upstream as NortecGo#43; once a release has it, storing and passing the ID is a new change |
-| Entry title | The charger's name (not the email, which would show in the UI and logs) |
+| Entry title | The charger's name (not the email, which would show in the UI and logs). HA puts entry titles in its setup log lines; the charger name is the one the owner chose in the app |
 | Session | HA's shared `aiohttp` session (`async_get_clientsession`) |
-| Login | Only in the user and reauth steps, on the user's submit. Setup never logs in, and nothing retries a login |
+| Login | Only in the user and reauth steps, once per submit. Setup never logs in, and nothing retries a login (hard rule 6; tested, §4) |
+| Messages | No email, password, token, charger ID or `device_id` in any log line or exception message, including `ConfigEntry*` exceptions (hard rule 5). pynortecgo's own exception texts carry none, so they may be included |
+| Stored tokens | Always `client.tokens` read after `get_charger()`, not the value `login()` returned, so a refresh during `get_charger()` can't leave stale tokens |
 | Car | Not checked in this feature |
 
 ## 1. Files
@@ -40,7 +43,7 @@ Date: 2026-09-26 · Branch: `feat/config-flow` · Issue: #7
 | `custom_components/nortec_go/entry.py` | New. `type NortecGoConfigEntry = ConfigEntry[NortecGoClient]`, and the two conversions between `Tokens` and the `entry.data` fields |
 | `custom_components/nortec_go/config_flow.py` | New. User step, reauth steps |
 | `custom_components/nortec_go/__init__.py` | `async_setup_entry`, `async_unload_entry`; `async_setup` and the YAML schema stay |
-| `custom_components/nortec_go/strings.json`, `translations/en.json` | Config steps, errors, aborts; `en.json` stays an exact copy |
+| `custom_components/nortec_go/strings.json`, `translations/en.json` | Config steps with `data` and `data_description` for every field, errors, aborts. Literal text only, no `[%key:…%]` references: only core's build resolves those, and a custom integration's `en.json` is served as-is. `en.json` stays an exact copy |
 | `custom_components/nortec_go/quality_scale.yaml` | Rules in §5 set to `done` |
 | `pyproject.toml`, `uv.lock` | `pynortecgo==0.1.0` in the `dev` group |
 | `tests/conftest.py` | `mock_client` and `mock_config_entry` fixtures |
@@ -55,23 +58,25 @@ HA's own constants are used where they exist (`CONF_EMAIL`, `CONF_PASSWORD`, `CO
 
 ### 2.1 User step
 
-1. Form: email, password.
+1. Form: email, password. After an error the form is shown again with the typed email kept
+   (`add_suggested_values_to_schema`), never the password.
 2. On submit: a new `NortecGoClient(session)` (it generates a fresh `device_id`), `login(email, password)`,
    then `get_charger()`.
 3. `async_set_unique_id(str(charger.id))` and `_abort_if_unique_id_configured()` (abort
    `already_configured`).
-4. Create the entry: title `charger.name`, data as in *Decisions*, with `device_id` from the client.
+4. Create the entry: title `charger.name`, data as in *Decisions*: tokens from `client.tokens`, `device_id`
+   from `client.device_id`.
 
 ### 2.2 Form errors (user and reauth steps)
 
 | Exception | Error key | Notes |
 |---|---|---|
 | `AuthError` | `invalid_auth` | |
-| `NortecGoConnectionError` | `cannot_connect` | |
+| `NortecGoConnectionError`, `ApiError` | `cannot_connect` | `ApiError` is transient, as in setup (§3.2) |
 | `RateLimitError` | `rate_limited` | Text asks the user to wait before trying again |
 | `ChargerNotFoundError` | `no_charger` | |
 | `MultipleChargersError` | `multiple_chargers` | Only one charger per account is supported |
-| Any other exception | `unknown` | Logged with `_LOGGER.exception`, never with the email or password |
+| `UnexpectedResponseError` and any other exception | `unknown` | Logged with `_LOGGER.exception`; the message never holds the email or password |
 
 The form is shown again with the error; nothing is retried automatically.
 
@@ -81,8 +86,8 @@ The form is shown again with the error; nothing is retried automatically.
 2. Form: password only. The description shows the stored email as a placeholder.
 3. On submit: a new client with the entry's stored `device_id` (the same device), `login(stored email,
    password)`, then `get_charger()`.
-4. If the charger ID differs from the entry's `unique_id`: abort `wrong_account`.
-5. On success: `async_update_reload_and_abort` with the new tokens (email and `device_id` unchanged); abort
+4. `async_set_unique_id(str(charger.id))` then `_abort_if_unique_id_mismatch(reason="wrong_account")`.
+5. On success: `async_update_reload_and_abort(entry, data_updates=…)` with the new tokens from `client.tokens` (email and `device_id` unchanged); abort
    reason `reauth_successful`.
 6. Errors as in §2.2.
 
@@ -93,8 +98,8 @@ The form is shown again with the error; nothing is retried automatically.
 1. Rebuild `Tokens` from `entry.data`.
 2. `NortecGoClient(session, tokens=…, device_id=…, on_tokens_refreshed=…)`.
 3. `charger = await client.get_charger()`, mapping errors as in §3.2.
-4. If `str(charger.id) != entry.unique_id`: raise `ConfigEntryError` (the account's charger has changed;
-   remove and re-add the integration).
+4. If `str(charger.id) != entry.unique_id`: raise `ConfigEntryError` with a message that says the
+   account's charger has changed and to remove and re-add the integration, without either ID.
 5. `entry.runtime_data = client`; forward to no platforms yet.
 
 ### 3.2 Setup errors
@@ -122,9 +127,11 @@ one, so nothing is closed.
 TDD: each behaviour gets a failing test first. `pynortecgo` is always mocked; no test reaches the network.
 
 - **Fixtures (`conftest.py`):**
-  - `mock_client`: patches `NortecGoClient` where `config_flow` and `__init__` import it, with
-    `AsyncMock(spec=NortecGoClient)`. `login` returns a `Tokens`, `get_charger` a `Charger`, both built from
-    `pynortecgo` model objects with obviously fake values (hard rule 7). `device_id` is a fake fixed string.
+  - `mock_client`: patches the `NortecGoClient` class where `config_flow` and `__init__` import it
+    (`autospec=True`). Both patches return the same instance, an `AsyncMock(spec=NortecGoClient)`: `login`
+    returns a `Tokens`, `get_charger` a `Charger`, `tokens` is a `Tokens` and `device_id` a fixed fake
+    string, all built from `pynortecgo` model objects with obviously fake values (hard rule 7). The fixture
+    exposes the class mock too, so tests can assert constructor kwargs and capture `on_tokens_refreshed`.
   - `mock_config_entry`: a `MockConfigEntry` with the fake data and `unique_id`.
 - **`test_config_flow.py`** (100% of `config_flow.py`):
   - the user step creates the entry with the expected title, data and `unique_id`, and no password in the
@@ -132,13 +139,17 @@ TDD: each behaviour gets a failing test first. `pynortecgo` is always mocked; no
   - each error in §2.2 shows its key, and a following submit succeeds;
   - a second setup of the same charger aborts `already_configured`;
   - reauth: success updates the tokens and keeps email and `device_id`, the stored `device_id` is passed to
-    the client, `wrong_account`, and each error in §2.2;
+    the client, `wrong_account`, and each error in §2.2 followed by a submit that ends in
+    `reauth_successful`;
+  - the typed email is kept after an error;
+  - every submit, including the error cases, awaits `login` exactly once;
   - the email and password never appear in the logs (`caplog`), including for `unknown`.
 - **`test_init.py`:**
   - setup succeeds and `runtime_data` is the client, built with the stored tokens and `device_id`;
   - each row of §3.2 leads to the expected entry state (`SETUP_RETRY`, `SETUP_ERROR`, or `SETUP_ERROR` with
     a reauth flow in progress);
-  - a charger-ID mismatch leads to `SETUP_ERROR`;
+  - a charger-ID mismatch leads to `SETUP_ERROR`, and neither ID appears in the logs;
+  - no setup path, including `AuthError`, awaits `login`;
   - calling the captured `on_tokens_refreshed` updates the token fields in `entry.data`;
   - unload returns the entry to `NOT_LOADED`;
   - the existing `async_setup` tests stay.
@@ -150,11 +161,14 @@ TDD: each behaviour gets a failing test first. `pynortecgo` is always mocked; no
 Set to `done`: `config-flow`, `config-flow-test-coverage`, `test-before-configure`, `test-before-setup`,
 `unique-config-entry`, `runtime-data`, `config-entry-unloading`, `reauthentication-flow`, `inject-websession`,
 `async-dependency`, `docs-installation-instructions`, `docs-removal-instructions`,
-`docs-installation-parameters`. `dependency-transparency` stays `todo` (D15).
+`docs-installation-parameters`, `docs-known-limitations` (§6), `docs-high-level-description` (the intro
+exists), `integration-owner` (codeowners set). `docs-configuration-parameters` becomes `exempt` (no options
+flow). `dependency-transparency` stays `todo` (D15).
 
 ## 6. User docs and changelog
 
-- `docs/user/nortec_go.md`: *Prerequisites* (one charger per account), *Configuration* (email and password;
+- `docs/user/nortec_go.md`: *Prerequisites* (keeps exactly one charger and one car per account: the car
+  isn't checked yet but features 2 and 3 need it), *Configuration* (email and password;
   what is stored, and that the password isn't), *Reauthentication*, *Removal*, *Known limitations* (one
   charger per account, unofficial API that can change). Other sections stay "Not available yet".
 - `CHANGELOG.md`, *Unreleased → Added*: setting up the integration from the UI, with reauthentication.
@@ -162,12 +176,21 @@ Set to `done`: `config-flow`, `config-flow-test-coverage`, `test-before-configur
 ## 7. Decisions log and process
 
 - **D18:** the config entry stores tokens and `device_id`, never the password; the charger ID is the
-  `unique_id`; `pynortecgo` is pinned exactly and bumped by PR. Source: this spec.
+  `unique_id`; pin bumps (D7) come as PRs, with the manifest and dev pins kept equal by a test. Source: this
+  spec.
 - **D19:** GitHub issues are the backlog. Anything found that won't be fixed in the current work becomes an
   issue, or is added to an existing one. Added to `way-of-working.md` §6, with a follow-up issue in
   `NortecGo` for the sibling copy (per the sync note). Source: owner request on 2026-09-26.
 
-## 8. Verification
+## 8. Follow-ups (issues, per D19)
+
+- D17 says to revisit CodeQL as a required check once auth code lands: #14, the owner's decision.
+- A refresh the API rejects with a status other than 401 would reach setup as `ApiError` and retry forever
+  instead of starting reauth. Whether the API does that is a client-side question for `nortecgo-af`; the
+  answer may become a NortecGo change request, and any
+  integration-side change a new issue here.
+
+## 9. Verification
 
 - The gates pass locally and in CI (`lint`, `tests`, `hassfest`, `hacs`, `gitleaks`).
 - `hassfest` accepts the manifest with `config_flow: true` and the requirement.

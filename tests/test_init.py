@@ -13,6 +13,7 @@ from homeassistant import loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL
 from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
@@ -21,6 +22,8 @@ from homeassistant.helpers import (
 from homeassistant.setup import async_setup_component
 from pynortecgo import (
     AuthError,
+    ChargeStartError,
+    ChargeStartStep,
     MultipleVehiclesError,
     NortecGoConnectionError,
     VehicleNotFoundError,
@@ -41,6 +44,7 @@ from .conftest import (
     FAKE_EMAIL,
     FAKE_TOKENS,
     NEW_TOKENS,
+    make_charger,
     setup_integration,
 )
 
@@ -285,3 +289,89 @@ async def test_reload_without_car_removes_car_device(
     for entity_id in CAR_ENTITY_IDS:
         assert entity_registry.async_get(entity_id) is None
         assert hass.states.get(entity_id) is None
+
+
+async def test_stored_block_survives_restart(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A stored block is loaded at setup: starts stay blocked and the issue is back (Review Focus 5)."""
+    key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    hass_storage[key] = {
+        "version": 1,
+        "key": key,
+        "data": {
+            "blocked_since": "2026-09-26T20:00:00+00:00",
+            "start_pending_since": None,
+            "stop_asked": False,
+        },
+    }
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    assert mock_config_entry.runtime_data.data.control.blocked
+    issue = ir.async_get(hass).async_get_issue(
+        DOMAIN, f"start_blocked_{mock_config_entry.entry_id}"
+    )
+    assert issue is not None
+
+
+async def test_removal_removes_charge_control(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Removing the entry removes the control's store and the issue."""
+    key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    hass_storage[key] = {
+        "version": 1,
+        "key": key,
+        "data": {
+            "blocked_since": "2026-09-26T20:00:00+00:00",
+            "start_pending_since": None,
+            "stop_asked": False,
+        },
+    }
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert key not in hass_storage
+    assert (
+        ir.async_get(hass).async_get_issue(
+            DOMAIN, f"start_blocked_{mock_config_entry.entry_id}"
+        )
+        is None
+    )
+
+
+async def test_block_from_a_start_during_reload_reaches_the_new_control(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A start that fails with a hold while the entry unloads blocks the reloaded control."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    release = asyncio.Event()
+
+    async def slow_start() -> None:
+        await release.wait()
+        raise ChargeStartError(ChargeStartStep.CONFIRM, True)
+
+    mock_client.start_charge.side_effect = slow_start
+    control = mock_config_entry.runtime_data.charge_control
+    start = hass.async_create_task(control.async_start())
+    await asyncio.sleep(0)
+    reload = hass.async_create_task(
+        hass.config_entries.async_reload(mock_config_entry.entry_id)
+    )
+    # Loop turns, not async_block_till_done (it would wait on the held start).
+    await asyncio.sleep(0.05)
+    assert not reload.done()  # waiting in async_shutdown for the start in flight
+    release.set()
+    with pytest.raises(HomeAssistantError):
+        await start
+    assert await reload
+    await hass.async_block_till_done()
+    assert mock_config_entry.runtime_data.data.control.blocked

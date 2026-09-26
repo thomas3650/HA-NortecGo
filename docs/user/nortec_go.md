@@ -83,7 +83,9 @@ The integration adds two devices: the charger, and the car when the account has 
 | Connected to charger | Binary sensor | On when the charger's cable is connected and the car reports it's plugged in |
 
 Values the car doesn't report show as unknown. Until the car has been read once, the car device is called
-*Car* and its entities are unavailable.
+*Car* and its entities are unavailable. If that happens when the integration is first added, the car's entity IDs start
+with `car_` (for example `sensor.car_battery`) and keep that name after the car's own name arrives; rename
+them in the entity settings if you like.
 
 ## Use cases
 

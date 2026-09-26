@@ -111,6 +111,10 @@ Where subagent-driven-development (SDD) differs, this doc wins.
 A trivial change has no behaviour change, no new decision and no new rule, for example a typo or a one-line
 doc fix. It goes straight to a branch and a ready PR: no spec, no plan, no draft.
 
+Before the first release, the owner may rule that a small, well-scoped behaviour change skips the spec and
+plan too: the controller gives a short design in chat, implements it with TDD, and opens a ready PR. The
+owner's manual test of the next feature catches what a review would have.
+
 ## 5. Model policy and guarded files
 
 | Role | Model / effort |

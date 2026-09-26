@@ -53,6 +53,12 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   can rename a device back to its placeholder.
 - HA writes an entity's attributes only while it's available. An entity whose attributes must always be
   there (such as a price list) overrides `available`.
+- HA never removes the devices of a loaded entry, and a user can't delete one in the UI unless the
+  integration implements `async_remove_config_entry_device`. A device that no longer exists (such as a car
+  removed from the account) is removed by the integration with `DeviceRegistry.async_remove_device`, which
+  also removes its entities.
+- On the day the clocks go back, two local datetimes with the same time zone compare by wall-clock time and
+  ignore `fold`, so the repeated hour sorts wrongly. Compare and sort in UTC.
 
 ## HACS
 

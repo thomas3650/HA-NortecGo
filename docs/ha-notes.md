@@ -47,7 +47,7 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - HA 2026.9 deprecates `device_registry.async_get_device` (it logs a warning from integration code and
   raises `RuntimeError` in tests); use `async_get_device_by_identifier(identifier, entry_id)`. It also
   deprecates `DeviceInfo.via_device` in favour of `via_device_id`, a registered device's ID.
-- `device_registry.async_get(id)` returns `DeviceEntry | ChildDeviceEntry | None`; pass
+- `DeviceRegistry.async_get(device_id)` returns `DeviceEntry | ChildDeviceEntry | None`; pass
   `include_child_devices=False` to get a `DeviceEntry` for mypy.
 - `async_get_or_create` with a `translation_key` sets the translated name, also on an existing device, so it
   can rename a device back to its placeholder.

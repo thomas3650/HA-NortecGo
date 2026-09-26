@@ -197,3 +197,12 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
   `enhancement` (an improvement with no version decided). Chores may have none. When in doubt, ask the owner.
 - **Why:** Not every issue is an enhancement; the labels show what v1 needs.
 - **Source:** owner request on 2026-09-26
+
+### D25: Light-weight changes before the first working release
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** Until the first working release (the first version the owner has tested locally; the `v0.0.1`
+  skeleton doesn't count), the owner may rule that a small, well-scoped behaviour change skips the spec, the
+  plan and the `full-reviewer` review. It still has an issue, a short design in chat, TDD and the gates.
+- **Why:** Nothing is released yet, so a behaviour change reaches no user, and the owner's local test before
+  the release catches what a review would have.
+- **Source:** owner rulings on 2026-09-26 (#17, and in #8's PR)

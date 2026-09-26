@@ -63,7 +63,8 @@ HA's own constants are used where they exist (`CONF_EMAIL`, `CONF_PASSWORD`, `CO
 2. On submit: a new `NortecGoClient(session)` (it generates a fresh `device_id`), `login(email, password)`,
    then `get_charger()`.
 3. `async_set_unique_id(str(charger.id))` and `_abort_if_unique_id_configured()` (abort
-   `already_configured`; `already_in_progress` if a reauth for that charger is open).
+   `already_configured`, also while a reauth for that charger is open, since HA leaves reauth flows out of
+   the in-progress check; `already_in_progress` when two add flows for one charger overlap).
 4. Create the entry: title `charger.name`, data as in *Decisions*: tokens from `client.tokens`, `device_id`
    from `client.device_id`.
 

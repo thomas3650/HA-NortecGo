@@ -15,8 +15,8 @@ Date: 2026-09-26 · Branch: `feat/config-flow` · Issue: #7
   a charge, a reconfigure flow, the car (only feature 2 needs it).
 - **Done when:** the integration can be added in the UI, survives a restart without a new login, and a
   rejected token starts reauth. In this feature only setup calls the client, so a rejected token is noticed
-  at setup (a start, restart or reload); feature 2's polling notices it at any time. Built TDD, with `pynortecgo` mocked in every test; live data only in the
-  owner's manual test.
+  at setup (a start, restart or reload); feature 2's polling notices it at any time. Built TDD, with
+  `pynortecgo` mocked in every test; live data only in the owner's manual test.
 
 ## Decisions
 
@@ -43,8 +43,8 @@ Date: 2026-09-26 · Branch: `feat/config-flow` · Issue: #7
 | `custom_components/nortec_go/entry.py` | New. `type NortecGoConfigEntry = ConfigEntry[NortecGoClient]`, and the two conversions between `Tokens` and the `entry.data` fields |
 | `custom_components/nortec_go/config_flow.py` | New. User step, reauth steps |
 | `custom_components/nortec_go/__init__.py` | `async_setup_entry`, `async_unload_entry`; `async_setup` and the YAML schema stay |
-| `custom_components/nortec_go/strings.json`, `translations/en.json` | Config steps with `data` and `data_description` for every field, errors, aborts. Literal text only, no `[%key:…%]` references: only core's build resolves those, and a custom integration's `en.json` is served as-is. `en.json` stays an exact copy |
-| `custom_components/nortec_go/quality_scale.yaml` | Rules in §5 set to `done` |
+| `custom_components/nortec_go/strings.json`, `translations/en.json` | Config steps with `data` and `data_description` for every field, errors, aborts (`already_configured`, `already_in_progress`, `reauth_successful`, `wrong_account`). Literal text only, no `[%key:…%]` references: only core's build resolves those, and a custom integration's `en.json` is served as-is. `en.json` stays an exact copy |
+| `custom_components/nortec_go/quality_scale.yaml` | Rules set as in §5 |
 | `pyproject.toml`, `uv.lock` | `pynortecgo==0.1.0` in the `dev` group |
 | `tests/conftest.py` | `mock_client` and `mock_config_entry` fixtures |
 | `tests/test_config_flow.py`, `tests/test_init.py`, `tests/test_manifest.py` | New or extended tests (§4) |
@@ -63,7 +63,7 @@ HA's own constants are used where they exist (`CONF_EMAIL`, `CONF_PASSWORD`, `CO
 2. On submit: a new `NortecGoClient(session)` (it generates a fresh `device_id`), `login(email, password)`,
    then `get_charger()`.
 3. `async_set_unique_id(str(charger.id))` and `_abort_if_unique_id_configured()` (abort
-   `already_configured`).
+   `already_configured`; `already_in_progress` if a reauth for that charger is open).
 4. Create the entry: title `charger.name`, data as in *Decisions*: tokens from `client.tokens`, `device_id`
    from `client.device_id`.
 
@@ -87,8 +87,8 @@ The form is shown again with the error; nothing is retried automatically.
 3. On submit: a new client with the entry's stored `device_id` (the same device), `login(stored email,
    password)`, then `get_charger()`.
 4. `async_set_unique_id(str(charger.id))` then `_abort_if_unique_id_mismatch(reason="wrong_account")`.
-5. On success: `async_update_reload_and_abort(entry, data_updates=…)` with the new tokens from `client.tokens` (email and `device_id` unchanged); abort
-   reason `reauth_successful`.
+5. On success: `async_update_reload_and_abort(entry, data_updates=…)` with the new tokens from
+   `client.tokens` (email and `device_id` unchanged); abort reason `reauth_successful`.
 6. Errors as in §2.2.
 
 ## 3. Entry setup and unload
@@ -186,9 +186,10 @@ flow). `dependency-transparency` stays `todo` (D15).
 
 - D17 says to revisit CodeQL as a required check once auth code lands: #14, the owner's decision.
 - A refresh the API rejects with a status other than 401 would reach setup as `ApiError` and retry forever
-  instead of starting reauth. Whether the API does that is a client-side question for `nortecgo-af`; the
-  answer may become a NortecGo change request, and any
-  integration-side change a new issue here.
+  instead of starting reauth. Only a 401 has been observed. Fixed in the client, not guarded here (setup
+  can't tell a rejected refresh from another 400/403): NortecGo#44. The integration picks it up with a pin
+  bump.
+- Passing a known charger ID to the client: NortecGo#43.
 
 ## 9. Verification
 

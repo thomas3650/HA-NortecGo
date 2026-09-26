@@ -12,6 +12,7 @@ dev = [
   "ruff",
   "mypy",
   "pre-commit",
+  "pynortecgo==0.1.0",
 ]
 
 [tool.pytest.ini_options]

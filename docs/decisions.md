@@ -206,3 +206,16 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Why:** Nothing is released yet, so a behaviour change reaches no user, and the owner's local test before
   the release catches what a review would have.
 - **Source:** owner rulings on 2026-09-26 (#17, and PR #21)
+
+### D26: Start guard
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** A start that may have left a card hold (a `ChargeStartError` with `hold_may_be_placed`, a
+  cancelled start, or a start whose charge isn't seen within 10 minutes) blocks further starts until a read
+  begun after the latest start attempt sees the cable unplugged, a charge open, or the charger going from
+  `BUSY_NON_RELEASED` to `AVAILABLE`, or the owner confirms in the repair issue. A pending start ends without
+  a block when a read sees a charge happened (open, or `BUSY_NON_RELEASED`) or the cable unplugged; reads
+  begun before the latest start attempt change nothing. The block is stored, so reload and restart don't
+  clear it. While a start is pending the charger is read every 5 minutes (extending D22).
+- **Why:** EV Smart Charging repeats "on" up to 8 times an hour, and each start can place a new hold; a
+  human looks before the next one.
+- **Source:** [charge switch spec](superpowers/specs/2026-09-26-charge-switch-design.md), Decisions and §3

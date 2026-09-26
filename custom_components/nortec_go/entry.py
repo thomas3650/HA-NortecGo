@@ -2,7 +2,7 @@
 
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ACCESS_TOKEN
@@ -12,7 +12,10 @@ from pynortecgo import NortecGoClient, Tokens
 
 from .const import CONF_EXPIRES_AT, CONF_REFRESH_TOKEN
 
-type NortecGoConfigEntry = ConfigEntry[NortecGoClient]
+if TYPE_CHECKING:
+    from .coordinator import NortecGoCoordinator
+
+type NortecGoConfigEntry = ConfigEntry[NortecGoCoordinator]
 
 
 def tokens_to_data(tokens: Tokens) -> dict[str, str]:

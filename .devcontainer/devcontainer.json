@@ -1,0 +1,14 @@
+{
+  "name": "HA-NortecGo (manual testing only; gates run on the host)",
+  "image": "mcr.microsoft.com/devcontainers/python:3.14",
+  "features": {
+    "ghcr.io/va-h/devcontainers-features/uv:1": {}
+  },
+  "postCreateCommand": "uv sync",
+  "forwardPorts": [8123],
+  "customizations": {
+    "vscode": {
+      "extensions": ["charliermarsh.ruff", "ms-python.python"]
+    }
+  }
+}

@@ -45,7 +45,7 @@ refers to it.
 - Commit messages are written with the Write tool to a file outside the repo and committed with
   `git commit -F <file>` (the subagent guard refuses heredocs). They end with the co-author trailer given in
   the dispatch.
-- Docs: plain, short sentences; lines ≤ 120 characters in `.md` files.
+- Docs: plain, short sentences; lines ≤ 120 characters in `.md` files, except table rows.
 - Tests that depend on local time set `await hass.config.async_set_time_zone("Europe/Copenhagen")` first:
   the test `hass` starts in `US/Pacific`.
 
@@ -261,6 +261,7 @@ Create `tests/test_prices.py`:
 """Tests for the price slot logic and its storage."""
 
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -366,7 +367,7 @@ def test_dst_days(now: datetime, slots: int) -> None:
     today = prices_today({}, now, TZ)
     assert len(today) == slots
     starts = [entry["time"].astimezone(UTC) for entry in today]
-    assert all(b - a == STEP for a, b in zip(starts, starts[1:], strict=False))
+    assert all(b - a == STEP for a, b in pairwise(starts))
 
 
 def test_current_price() -> None:
@@ -535,6 +536,14 @@ def current_price(known: Mapping[datetime, float], now: datetime) -> float | Non
     return known.get(slot)
 
 
+def _parse_start(value: str) -> datetime:
+    """A stored slot start as UTC; raises ValueError without a time zone."""
+    start = datetime.fromisoformat(value)
+    if start.tzinfo is None:
+        raise ValueError("slot start without a time zone")
+    return start.astimezone(UTC)
+
+
 class PriceStore:
     """The known slots of one config entry, in Home Assistant's storage."""
 
@@ -552,10 +561,7 @@ class PriceStore:
         try:
             known: KnownSlots = {}
             for item in data["slots"]:
-                start = datetime.fromisoformat(item["start"])
-                if start.tzinfo is None:
-                    raise ValueError("slot start without a time zone")
-                known[start.astimezone(UTC)] = float(item["price"])
+                known[_parse_start(item["start"])] = float(item["price"])
         except KeyError, TypeError, ValueError:
             _LOGGER.warning("Ignoring the stored prices: they have an unexpected shape")
             return {}
@@ -613,7 +619,8 @@ then commit with the message `feat: price slot logic and storage (#8)` plus the 
       `client: NortecGoClient`, `charger_id: str`, `has_car: bool`, `known_prices: KnownSlots`, and methods
       `async def async_load_prices(self) -> None`,
       `async def async_read_prices(self, *, during_setup: bool = False) -> None`,
-      `@callback def async_start_timers(self) -> None`.
+      `@callback def async_start_price_read(self) -> None` (one read as an entry background task; the price
+      timer calls it too), `@callback def async_start_timers(self) -> None`.
   - `__init__.py`: `async_setup_entry` builds the coordinator (§4.1); `async_remove_entry` removes the stored
     prices. `PLATFORMS` stays `[]` (Task 3 fills it).
 
@@ -682,7 +689,11 @@ async def copenhagen(hass: HomeAssistant) -> None:
 
 
 def _coordinator(entry: MockConfigEntry) -> NortecGoCoordinator:
+    """The entry's coordinator, with a listener so it keeps polling without entities."""
     coordinator: NortecGoCoordinator = entry.runtime_data
+    # HA only schedules the next poll while the coordinator has listeners; in Task 2
+    # there are no entities yet. Adding the first listener also schedules a poll.
+    coordinator.async_add_listener(lambda: None)
     return coordinator
 
 
@@ -805,9 +816,10 @@ async def test_no_car(
     mock_config_entry: MockConfigEntry,
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
     error: Exception,
 ) -> None:
-    """No single car: setup works without a car, and the car isn't read again."""
+    """No single car: setup works without a car, logs it once, and the car isn't read again."""
     mock_client.get_vehicle.side_effect = error
     await setup_integration(hass, mock_config_entry)
 
@@ -815,6 +827,7 @@ async def test_no_car(
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert not coordinator.has_car
     assert coordinator.data.vehicle is None
+    assert caplog.text.count("No car entities") == 1
 
     freezer.tick(INTERVAL_UNPLUGGED)
     async_fire_time_changed(hass)
@@ -866,9 +879,12 @@ async def test_later_charger_errors(
 
 
 async def test_rate_limit_retry_after(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A later RateLimitError passes its retry_after on to the coordinator."""
+    """A later RateLimitError's retry_after sets the next poll (not the 60 min interval)."""
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
 
@@ -877,21 +893,65 @@ async def test_rate_limit_retry_after(
     )
     await coordinator.async_refresh()
     assert not coordinator.last_update_success
-    assert coordinator._retry_after == 120.0  # noqa: SLF001
+    reads = mock_client.get_charger.await_count
+
+    # HA rounds timers to whole seconds, so check well before and well after 120 s.
+    freezer.tick(timedelta(seconds=60))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads
+    freezer.tick(timedelta(seconds=70))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads + 1
 
 
-async def test_later_auth_error_starts_reauth(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+@pytest.mark.parametrize(
+    "error",
+    [
+        ChargerNotFoundError("GET /example: the set charger was not found"),
+        UnexpectedResponseError("GET /example", "bad shape"),
+    ],
+)
+async def test_later_permanent_charger_errors(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    error: Exception,
 ) -> None:
-    """A later AuthError starts reauth and is not retried."""
+    """A later ChargerNotFoundError or UnexpectedResponseError fails the update; the entry stays loaded."""
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
 
-    mock_client.get_charger.side_effect = AuthError("token rejected")
+    mock_client.get_charger.side_effect = error
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+
+
+@pytest.mark.parametrize("method", ["get_charger", "get_vehicle"])
+async def test_later_auth_error_starts_reauth(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    method: str,
+) -> None:
+    """A later AuthError from the charger or car starts reauth, and polling stops."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    getattr(mock_client, method).side_effect = AuthError("token rejected")
     with patch.object(ConfigEntry, "async_start_reauth") as start_reauth:
         await coordinator.async_refresh()
     start_reauth.assert_called_once()
     mock_client.login.assert_not_awaited()
+
+    reads = mock_client.get_charger.await_count
+    freezer.tick(INTERVAL_UNPLUGGED * 2)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads
 
 
 async def test_later_car_error_keeps_car_data(
@@ -922,7 +982,10 @@ async def test_car_device_updated_on_rename(
     mock_client: AsyncMock,
     device_registry: dr.DeviceRegistry,
 ) -> None:
-    """A car read with a new name, brand or model updates the car device."""
+    """A car read with a new name, brand or model updates the car device.
+
+    The empty-name fallback to the translated "Car" needs Task 3's strings; Task 3 tests it.
+    """
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
     device = device_registry.async_get_or_create(
@@ -935,19 +998,13 @@ async def test_car_device_updated_on_rename(
         name="Other car", brand="Other", model="Model X"
     )
     await coordinator.async_refresh()
-    device = device_registry.async_get(device.id)
-    assert device is not None
-    assert (device.name, device.manufacturer, device.model) == (
+    updated = device_registry.async_get(device.id, include_child_devices=False)
+    assert updated is not None
+    assert (updated.name, updated.manufacturer, updated.model) == (
         "Other car",
         "Other",
         "Model X",
     )
-
-    mock_client.get_vehicle.return_value = make_vehicle(name="", brand=None, model=None)
-    await coordinator.async_refresh()
-    device = device_registry.async_get(device.id)
-    assert device is not None
-    assert device.name == "Other car"  # an empty name doesn't replace a real one
 
 
 async def test_prices_read_at_the_five_times(
@@ -1103,8 +1160,10 @@ async def test_unload_stops_the_timers(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """After unload, neither the price time nor the tick reads anything."""
+    """After unload, neither the polling, the price time nor the tick reads anything."""
     await setup_integration(hass, mock_config_entry)
+    # A listener keeps polling scheduled without entities (Task 2), so unload has something to stop.
+    mock_config_entry.runtime_data.async_add_listener(lambda: None)
     assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -1158,9 +1217,6 @@ async def test_remove_entry_removes_stored_prices(
   `from freezegun.api import FrozenDateTimeFactory`, and `async_fire_time_changed` from
   `pytest_homeassistant_custom_component.common`.
 
-This adds one more producer to the interface: `@callback def async_start_price_read(self) -> None` on the
-coordinator, which starts one price read as an entry background task (the price timer calls it too).
-
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_coordinator.py tests/test_init.py -q`
@@ -1181,6 +1237,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.typing import UNDEFINED
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 from pynortecgo import (
@@ -1320,20 +1377,23 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
     def _async_update_car_device(self, vehicle: Vehicle) -> None:
         """Bring the car device's name, brand and model up to date (§2.1)."""
         registry = dr.async_get(self.hass)
-        device = registry.async_get_device(
-            identifiers={car_device_identifier(self.charger_id)}
+        identifier = car_device_identifier(self.charger_id)
+        if (
+            registry.async_get_device_by_identifier(
+                identifier, self.config_entry.entry_id
+            )
+            is None
+        ):
+            return  # the entities create the device
+        # Updates the existing device; an empty name falls back to the translated "Car".
+        registry.async_get_or_create(
+            config_entry_id=self.config_entry.entry_id,
+            identifiers={identifier},
+            name=vehicle.name or UNDEFINED,
+            translation_key=None if vehicle.name else "car",
+            manufacturer=vehicle.brand or UNDEFINED,
+            model=vehicle.model or UNDEFINED,
         )
-        if device is None:
-            return
-        changes: dict[str, str] = {}
-        if vehicle.name and device.name != vehicle.name:
-            changes["name"] = vehicle.name
-        if vehicle.brand and device.manufacturer != vehicle.brand:
-            changes["manufacturer"] = vehicle.brand
-        if vehicle.model and device.model != vehicle.model:
-            changes["model"] = vehicle.model
-        if changes:
-            registry.async_update_device(device.id, **changes)  # type: ignore[arg-type]
 
     async def async_load_prices(self) -> None:
         """Load the stored slots, without yesterday's."""
@@ -1398,10 +1458,6 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         )
 ```
 
-If mypy accepts `registry.async_update_device(device.id, **changes)` without the ignore, drop the
-`# type: ignore[arg-type]` (strict mypy flags unused ignores). If it doesn't, pass the three keyword
-arguments explicitly with `UNDEFINED` for unchanged ones instead of the dict.
-
 - [ ] **Step 5: Update `entry.py`**
 
 Replace the type alias and its import so the coordinator is imported only for type checking:
@@ -1456,8 +1512,8 @@ Remove the old `try`/`except` around `get_charger()` and the exception imports o
 
 Run: `uv run pytest tests/test_coordinator.py tests/test_init.py -q`
 Expected: PASS. Then run the full gates. Coverage of `coordinator.py` must be 100%; if a branch is missed
-(for example the `device is None` return in `_async_update_car_device`, hit by every test before Task 3
-creates the device), keep it and let the existing tests cover it.
+(for example the early return in `_async_update_car_device`, hit by every test before Task 3 creates the
+device), keep it and let the existing tests cover it.
 
 - [ ] **Step 8: Commit**
 
@@ -1525,6 +1581,7 @@ from custom_components.nortec_go.const import DOMAIN, MISSING_SLOT_PRICE
 from .conftest import (
     FAKE_CHARGER_ID,
     FAKE_LAST_SEEN,
+    make_charger,
     make_forecast,
     make_vehicle,
     setup_integration,
@@ -1625,6 +1682,9 @@ async def test_current_price_stays_available_when_charger_fails(
     assert state.state == "1.0"
     assert len(state.attributes["prices_today"]) == 96
     assert hass.states.get("sensor.family_car_battery").state == STATE_UNAVAILABLE  # type: ignore[union-attr]
+    cable = hass.states.get("binary_sensor.garage_charger_cable_connected")
+    assert cable is not None
+    assert cable.state == STATE_UNAVAILABLE
 
 
 def test_price_lists_not_recorded() -> None:
@@ -1640,6 +1700,7 @@ def test_price_lists_not_recorded() -> None:
 async def test_car_sensors(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
     entity_registry: er.EntityRegistry,
 ) -> None:
     """Battery, Charge limit and Last seen on the car device."""
@@ -1679,19 +1740,24 @@ async def test_car_values_unknown(
         assert hass.states.get(entity_id).state == STATE_UNKNOWN, entity_id  # type: ignore[union-attr]
 
 
+def _device(
+    device_registry: dr.DeviceRegistry, entry: MockConfigEntry, identifier: str
+) -> dr.DeviceEntry | None:
+    return device_registry.async_get_device_by_identifier(
+        (DOMAIN, identifier), entry.entry_id
+    )
+
+
 async def test_devices(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
     device_registry: dr.DeviceRegistry,
 ) -> None:
     """A charger device and a separate car device, not linked."""
     await setup_integration(hass, mock_config_entry)
-    charger = device_registry.async_get_device(
-        identifiers={(DOMAIN, str(FAKE_CHARGER_ID))}
-    )
-    car = device_registry.async_get_device(
-        identifiers={(DOMAIN, f"{FAKE_CHARGER_ID}_car")}
-    )
+    charger = _device(device_registry, mock_config_entry, str(FAKE_CHARGER_ID))
+    car = _device(device_registry, mock_config_entry, f"{FAKE_CHARGER_ID}_car")
     assert charger is not None
     assert (charger.name, charger.manufacturer) == ("Garage charger", "Nortec")
     assert car is not None
@@ -1703,6 +1769,27 @@ async def test_devices(
     assert car.via_device_id is None
 
 
+async def test_device_name_fallbacks(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """An empty charger name uses the entry title; an empty car name becomes "Car"."""
+    mock_client.get_charger.return_value = make_charger(name="")
+    await setup_integration(hass, mock_config_entry)
+    charger = _device(device_registry, mock_config_entry, str(FAKE_CHARGER_ID))
+    assert charger is not None
+    assert charger.name == mock_config_entry.title
+
+    mock_client.get_vehicle.return_value = make_vehicle(name="")
+    await mock_config_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    car = _device(device_registry, mock_config_entry, f"{FAKE_CHARGER_ID}_car")
+    assert car is not None
+    assert car.name == "Car"
+
+
 async def test_car_placeholder_until_first_read(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
@@ -1712,9 +1799,7 @@ async def test_car_placeholder_until_first_read(
     """A car read failing at setup: device "Car", entities unavailable; a good read fixes both."""
     mock_client.get_vehicle.side_effect = NortecGoConnectionError("network down")
     await setup_integration(hass, mock_config_entry)
-    car = device_registry.async_get_device(
-        identifiers={(DOMAIN, f"{FAKE_CHARGER_ID}_car")}
-    )
+    car = _device(device_registry, mock_config_entry, f"{FAKE_CHARGER_ID}_car")
     assert car is not None
     assert car.name == "Car"
     assert hass.states.get("sensor.car_battery").state == STATE_UNAVAILABLE  # type: ignore[union-attr]
@@ -1722,9 +1807,9 @@ async def test_car_placeholder_until_first_read(
     mock_client.get_vehicle.side_effect = None
     await mock_config_entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
-    car = device_registry.async_get(car.id)
-    assert car is not None
-    assert car.name == "Family car"
+    updated = device_registry.async_get(car.id, include_child_devices=False)
+    assert updated is not None
+    assert updated.name == "Family car"
     assert hass.states.get("sensor.car_battery").state == "55.0"  # type: ignore[union-attr]
 
 
@@ -1737,12 +1822,7 @@ async def test_no_car_no_car_entities(
     """No car on the account: no car device and no car entities."""
     mock_client.get_vehicle.side_effect = VehicleNotFoundError("no car")
     await setup_integration(hass, mock_config_entry)
-    assert (
-        device_registry.async_get_device(
-            identifiers={(DOMAIN, f"{FAKE_CHARGER_ID}_car")}
-        )
-        is None
-    )
+    assert _device(device_registry, mock_config_entry, f"{FAKE_CHARGER_ID}_car") is None
     assert hass.states.get(PRICE) is not None
     for entity_id in (
         "sensor.family_car_battery",
@@ -2254,7 +2334,7 @@ In `docs/user/nortec_go.md`:
 
   ```markdown
   - A charger on a Nortec Go account.
-  - The car registered on that account, when the app shows its battery level.
+  - The car linked to that account.
   ```
 
 - *Unsupported devices*: replace "Not available yet." with "An account with more than one charger. With more

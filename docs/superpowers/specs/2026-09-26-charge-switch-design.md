@@ -126,7 +126,7 @@ all run under it.
   `ChargeControlState`, and `NortecGoData` gains a `control` field holding it. A read returns the snapshot
   after the §3.4 hook, so `always_update=False`'s equality check sees a change the hook made, and entities
   read the new charger and control state together.
-- **Changes outside a read** (start, stop, the background stop, the fix flow) save the store and call
+- **Changes outside a read** (start, stop, the background stop, the fix flow) save the store,
   set `coordinator.data = dataclasses.replace(coordinator.data, control=snapshot)`, then call
   `coordinator.async_update_listeners()`, then ask for a read where §3 says so. Not
   `async_set_updated_data()`: it would mark a failed coordinator as successful and cancel a requested read.
@@ -217,8 +217,8 @@ Otherwise, in order:
 2. **Pending start:** ends or times out as in §3.2. A timeout sets the block.
 3. **Block:** cleared if the cable isn't connected, a charge is open, or the remembered state is
    `BUSY_NON_RELEASED` and this read's is `AVAILABLE`. The remembered state is only from reads begun after
-   the latest start attempt (§3.4, *Stale reads*): setting the block forgets it, and it isn't stored, so a transition across a restart isn't
-   seen (safe: the block stays).
+   the latest start attempt (§3.4, *Stale reads*): setting the block forgets it, and it isn't stored, so a
+   transition across a restart isn't seen (safe: the block stays).
 4. **Remember** `Charger.state` while a block is set.
 
 Step 2 before step 3 means a timeout on a read that sees the cable unplugged ends the pending start
@@ -324,12 +324,13 @@ gains a `state` argument. No test reaches the real API.
 
 - **D26: Start guard.** A start that may have left a card hold (a `ChargeStartError` with
   `hold_may_be_placed`, a cancelled start, or a start whose charge isn't seen within 10 minutes) blocks
-  further starts until a read begun after the latest start attempt sees the cable unplugged, a charge open, or the charger
-  going from `BUSY_NON_RELEASED` to `AVAILABLE`, or the owner confirms in the repair issue. A pending start
-  ends without a block when a read sees a charge happened (open, or `BUSY_NON_RELEASED`) or the cable
-  unplugged; reads begun before the latest start attempt change nothing. The block is stored, so reload and restart don't clear it. While a start is pending the
-  charger is read every 5 minutes (extending D22). *Why:* EVSC repeats "on" up to 8 times an hour, and each
-  start can place a new hold; a human looks before the next one. Source: this spec, *Decisions* and §3.
+  further starts until a read begun after the latest start attempt sees the cable unplugged, a charge open,
+  or the charger going from `BUSY_NON_RELEASED` to `AVAILABLE`, or the owner confirms in the repair issue.
+  A pending start ends without a block when a read sees a charge happened (open, or `BUSY_NON_RELEASED`) or
+  the cable unplugged; reads begun before the latest start attempt change nothing. The block is stored, so
+  reload and restart don't clear it. While a start is pending the charger is read every 5 minutes (extending
+  D22). *Why:* EVSC repeats "on" up to 8 times an hour, and each start can place a new hold; a human looks
+  before the next one. Source: this spec, *Decisions* and §3.
 
 ## 9. Verification
 

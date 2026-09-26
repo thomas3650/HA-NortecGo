@@ -131,10 +131,10 @@ doc fix. It goes straight to a branch and a ready PR: no spec, no plan, no draft
   - The subagent guard hook (`.claude/hooks/subagent_guard.py`) refuses subagents everything else under
     `.claude`/`.git`, and hook bypasses.
   - The guard also refuses subagents' whole-tree reverts and direct `.env` reads.
-  - The allowlist covers only Edit and Write. A subagent can't delete or move a guarded file (`git rm`, `rm`,
+  - The allowlist covers only file-editing tools (Edit, Write, NotebookEdit). A subagent can't delete or move a guarded file (`git rm`, `rm`,
     `mv`), even an allowlisted one, so the plan gives deletes under `.claude/` to the controller.
-  - The guard refuses heredocs in Bash. Subagents write scripts and commit messages with the Write tool, to a
-    file outside the repo, and commit with `git commit -F <file>`.
+  - The guard refuses a bare heredoc (`<<`) in Bash as unparseable. Subagents write scripts and commit messages
+    with the Write tool, to a file outside the repo, and commit with `git commit -F <file>`.
   - The controller is not restricted by it.
 
 ## 6. Conventions

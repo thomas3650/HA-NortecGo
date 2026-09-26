@@ -23,9 +23,9 @@ pinned to a `master` commit SHA, which Dependabot can't bump; refresh it by hand
 
 ## 2026-09-26: The push-to-`main` deny rule matches too much
 
-`.claude/settings.json` denies `git push` commands that name `main`. The rule matches the whole Bash command
-text, so a push chained with anything that mentions `main` later (`gh pr create --base main`,
-`git fetch origin main:main`) is refused too. Run `git push` as its own command.
+`.claude/settings.json` denies `git push` commands that name `main`. In practice it also refuses a push
+chained with anything that mentions `main` later (`gh pr create --base main`, `git fetch origin main:main`).
+Run `git push` as its own command.
 
 ## 2026-09-26: Home Assistant and HACS facts
 
@@ -37,4 +37,4 @@ text, so a push chained with anything that mentions `main` later (`gh pr create 
 - hassfest requires the `manifest.json` keys in the order `domain`, `name`, then alphabetical.
 - HACS's `license` check reads the license GitHub detects on the default branch, so `LICENSE` must be on
   `main` before a PR's `hacs` check can pass.
-- HACS's `brands` check accepts a local `custom_components/<domain>/brand/icon.png` (HA 2026.3 and later).
+- Brand images: see `custom_components/nortec_go/brand/README.md`.

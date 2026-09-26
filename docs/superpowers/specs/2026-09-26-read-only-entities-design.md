@@ -69,7 +69,7 @@ Facts about the price data, from the `NortecGo` session (2026-09-26), public-saf
 | Device | Identifier | Name | Other info |
 |---|---|---|---|
 | Charger | `(DOMAIN, "<charger id>")` | `Charger.name`, or the entry title when empty | manufacturer "Nortec" |
-| Car | `(DOMAIN, "<charger id>_car")` | `Vehicle.name`, or "Car" when empty or not read yet | manufacturer `Vehicle.brand`, model `Vehicle.model` (when not `None`) |
+| Car | `(DOMAIN, "<charger id>_car")` | `Vehicle.name`, or the translated "Car" (device `translation_key` `car`) when empty or not read yet | manufacturer `Vehicle.brand`, model `Vehicle.model` (when not `None`) |
 
 - The car device has no `via_device` link: HA 2026.9 deprecates `DeviceInfo.via_device`, and the car's data
   comes from the cloud, not through the charger.
@@ -189,7 +189,7 @@ Pure functions in `prices.py`, given the known slots, `now` and HA's time zone:
 |---|---|---|
 | `AuthError` (charger or car) | `ConfigEntryAuthFailed`: reauth, setup stops | `ConfigEntryAuthFailed`: the coordinator starts reauth and stops polling. Never retried (hard rule 6) |
 | `NortecGoConnectionError`, `RateLimitError`, `ApiError` from the charger | `UpdateFailed`, so `ConfigEntryNotReady`: HA retries setup | `UpdateFailed`: charger and car entities unavailable, logged once, back at the next good read. A `RateLimitError` with `retry_after` passes it on as `UpdateFailed(retry_after=…)` |
-| `ChargerNotFoundError`, `UnexpectedResponseError` from the charger | `ConfigEntryError`: setup stops with the reason | `ConfigEntryError`: HA logs it and the entities go unavailable (HA only stops the entry during setup) |
+| `ChargerNotFoundError`, `UnexpectedResponseError` from the charger | `ConfigEntryError`: setup stops with the reason | `ConfigEntryError`: HA logs it and the charger and car entities go unavailable (HA only stops the entry during setup) |
 | `VehicleNotFoundError`, `MultipleVehiclesError` from the car | `has_car = False`: no car device (§2.2) | Last car data kept, logged once at warning |
 | Any other car error | `has_car = True`, `vehicle = None`: setup continues, the car device is "Car" and its entities are unavailable (§2.2); logged once at warning | Last car data kept, logged once at warning; back at the next good read |
 
@@ -266,7 +266,8 @@ subscriptions in entities; the timers belong to the coordinator).
   - *Automation examples*: an automation that calls `homeassistant.update_entity` on arriving home.
   - *Known limitations*: the price is spot price incl. VAT only (no fees or tariff); the currency is assumed
     to be HA's; tomorrow shows predictions until about 15:05; car data can lag by hours, so *Connected to
-    charger* can turn on late; days follow HA's time zone. The "No entities yet" line goes.
+    charger* can turn on late; days follow HA's time zone; a car removed from the account, or one that was
+    never read before it was removed, needs a reload to disappear. The "No entities yet" line goes.
 - `CHANGELOG.md`, *Unreleased → Added*: the sensors and binary sensors for EV Smart Charging.
 
 ## 8. Decisions log and process

@@ -313,7 +313,8 @@ Copied from `NortecGo` and adapted.
   - HACS: publishing an integration, the `hacs.json` reference and the HACS action.
   - Tools: `pytest-homeassistant-custom-component`, the hassfest action, the brands repo.
 
-  The URLs are checked (HTTP 200) when the doc is written.
+  The links are exactly those in [Appendix A](#appendix-a-useful-links), checked again (HTTP 200) when the
+  doc is written.
 - `decisions.md`: the same header and entry format as `NortecGo`, with these entries, each linking to this
   spec:
   - D1 domain `nortec_go`
@@ -447,3 +448,65 @@ interaction limit is set. The result goes in `notes.md`.
 - `hassfest` and `hacs` pass on `main`.
 
 **Reviews:** `full-reviewer` reviews this spec, then the plan, then the branch, each until Ready.
+
+## Appendix A: Useful links
+
+Collected while writing this spec, all returning HTTP 200 on 2026-09-26. `docs/README.md` → *Useful links*
+carries them (§3.4), so they survive after this spec becomes a snapshot.
+
+**Building an integration (HA developer docs)**
+- Creating your first integration: https://developers.home-assistant.io/docs/creating_component_index/
+- File structure: https://developers.home-assistant.io/docs/creating_integration_file_structure/
+- Tests file structure: https://developers.home-assistant.io/docs/creating_integration_tests_file_structure/
+- Manifest: https://developers.home-assistant.io/docs/creating_integration_manifest/
+- Config flow: https://developers.home-assistant.io/docs/core/integration/config_flow/
+- Options flow: https://developers.home-assistant.io/docs/core/integration/options_flow/
+- Config entries: https://developers.home-assistant.io/docs/config_entries_index/
+- Fetching data (`DataUpdateCoordinator`): https://developers.home-assistant.io/docs/integration_fetching_data/
+- Setup failures: https://developers.home-assistant.io/docs/integration_setup_failures/
+- Entities: https://developers.home-assistant.io/docs/core/entity/
+- Diagnostics: https://developers.home-assistant.io/docs/core/integration/diagnostics/
+- System health: https://developers.home-assistant.io/docs/core/integration/system_health/
+- Brand images (local `brand/` from 2026.3): https://developers.home-assistant.io/docs/core/integration/brand_images/
+- Example custom integrations: https://github.com/home-assistant/example-custom-config/tree/master/custom_components
+
+**Code standards and checklists**
+- Development checklist: https://developers.home-assistant.io/docs/development_checklist/
+- Component checklist: https://developers.home-assistant.io/docs/creating_component_code_review/
+- Platform checklist: https://developers.home-assistant.io/docs/creating_platform_code_review/
+- Style guidelines: https://developers.home-assistant.io/docs/development_guidelines/
+- Testing (incl. snapshot tests): https://developers.home-assistant.io/docs/development_testing/
+- Typing: https://developers.home-assistant.io/docs/development_typing/
+- Building a Python library for an API: https://developers.home-assistant.io/docs/api_lib_index/
+- HA core `pyproject.toml` (ruff and mypy settings): https://github.com/home-assistant/core/blob/dev/pyproject.toml
+
+**Integration Quality Scale**
+- Overview and tiers: https://developers.home-assistant.io/docs/core/integration-quality-scale/
+- Checklist: https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist/
+- Rules: https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/
+- `dependency-transparency`: https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/dependency-transparency/
+
+**User documentation (home-assistant.io)**
+- Integration docs template: https://github.com/home-assistant/home-assistant.io/blob/current/source/_integrations/_integration_docs_template.markdown
+- Creating a docs page: https://developers.home-assistant.io/docs/documenting/create-page/
+- Documentation standards: https://developers.home-assistant.io/docs/documenting/standards/
+
+**HACS**
+- Publishing, getting started: https://hacs.xyz/docs/publish/start/
+- Publishing an integration: https://hacs.xyz/docs/publish/integration/
+- What HACS checks: https://hacs.xyz/docs/publish/include/
+- The HACS action: https://hacs.xyz/docs/publish/action/ and https://github.com/hacs/action
+
+**Tools and CI**
+- `pytest-homeassistant-custom-component`: https://github.com/MatthewFlamm/pytest-homeassistant-custom-component
+- hassfest action: https://github.com/home-assistant/actions
+- Brands repo: https://github.com/home-assistant/brands
+- Material Design Icons `ev-station`: https://pictogrammers.com/library/mdi/icon/ev-station/
+- gitleaks action: https://github.com/gitleaks/gitleaks-action
+- uv: https://docs.astral.sh/uv/
+- Keep a Changelog: https://keepachangelog.com/en/1.1.0/
+
+**GitHub**
+- Dependabot options: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+- Branch protection REST API: https://docs.github.com/en/rest/branches/branch-protection
+- Interaction limits REST API: https://docs.github.com/en/rest/interactions/repos

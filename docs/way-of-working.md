@@ -1,8 +1,5 @@
 # Way of working
 
-A sibling copy lives in the private `NortecGo` repo. A process change in either copy gets a follow-up issue
-in the other repo.
-
 How changes are made in this repo. This is the one home for the process: `CLAUDE.md` imports it, and agents
 and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, and decisions in
 [`decisions.md`](decisions.md).
@@ -55,6 +52,9 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
 **Running a wave with more than one task.**
 - Each task gets its own worktree and branch off the feature branch:
   `git worktree add ../<repo>-wt/<topic>-task-<n> -b wt/<topic>-task-<n> <feature-branch>`, then `uv sync` in it.
+  Don't run `pre-commit install` there: the hooks are shared, and it points them at the worktree's `.venv`,
+  which breaks every commit once the worktree is removed. If it happened, run `uv run pre-commit install`
+  in the main checkout.
   `wt/*` branches are never pushed.
 - The implementer and reviewer dispatches give the worktree's absolute path, and every command runs there
   (`cd <worktree> && …` or `git -C <worktree> …`). A subagent's shell starts in the main checkout.
@@ -140,6 +140,8 @@ doc fix. It goes straight to a branch and a ready PR: no spec, no plan, no draft
 ## 6. Conventions
 
 - **Issues:** every non-trivial change starts from an issue. The spec links it, and the PR says `Closes #n`.
+- **Backlog:** GitHub issues are the backlog (D19). Anything found that won't be fixed in the current work
+  becomes an issue, or is added to an existing one.
 - **Merging and pushing:** the owner merges. Only the controller pushes or marks a PR ready.
 - **Git guards:** run `uv run pre-commit install` once per clone. The hooks refuse commits on `main` and pushes
   to `main`, and `.claude/settings.json` denies pushes to `main` and `--no-verify`. `main` is also protected

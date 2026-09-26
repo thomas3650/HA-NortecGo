@@ -25,7 +25,8 @@ Not available yet.
 ## Prerequisites
 
 You need a Nortec Go account with exactly one charger and one car registered, since that is what the
-client library currently supports.
+client library currently supports. The car isn't checked when you add the integration, but later features
+need it.
 
 ## Installation
 
@@ -39,9 +40,25 @@ Install via HACS as a custom repository:
 3. Search for **Nortec Go** in HACS, open it and select **Download**.
 4. Restart Home Assistant.
 
+## Configuration
+
+1. Go to **Settings** > **Devices & services** and select **Add integration**.
+2. Search for **Nortec Go** and select it.
+3. Enter the email and password you use in the Nortec Go app.
+
+Email
+: The email address of your Nortec Go account.
+
+Password
+: Your Nortec Go password. It is used once to sign in and is not stored.
+
+Home Assistant stores your email, the session that the sign-in returns and a device ID, never the password.
+It renews the session by itself. The integration is named after your charger, or *Nortec Go* if the charger
+has no name.
+
 ## Configuration options
 
-Not available yet.
+The integration has no options to change after setup.
 
 ## Supported functionality
 
@@ -61,13 +78,25 @@ Not available yet.
 
 ## Known limitations
 
-Not available yet.
+- One charger per account. An account with no charger or with more than one can't be added.
+- Unofficial: the integration uses the same private API as the app, which can change without notice.
+- No entities yet. The integration only signs in and checks the charger; sensors and charge control come
+  in later releases.
 
 ## Troubleshooting
 
-Not available yet.
+### Asked to sign in again
+
+When the stored session is rejected, Home Assistant shows a **Reauthentication required** notice for Nortec
+Go. Select it and enter your password. You sign in to the same account; signing in to an account with
+another charger is refused.
+
+### "Too many sign-in attempts"
+
+The Nortec Go service limits sign-ins. Wait a while before you try again.
 
 ## Removing the integration
 
-Once this integration has a config flow, remove it from **Settings** > **Devices & services** first.
-Then remove it in HACS and restart Home Assistant.
+1. Go to **Settings** > **Devices & services** and select **Nortec Go**.
+2. Open the menu (⋮) and select **Delete**.
+3. To remove the files as well, remove **Nortec Go** in HACS and restart Home Assistant.

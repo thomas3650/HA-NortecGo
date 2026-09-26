@@ -1165,6 +1165,7 @@ source = { virtual = "." }
 dev = [
     { name = "mypy" },
     { name = "pre-commit" },
+    { name = "pynortecgo" },
     { name = "pytest-cov" },
     { name = "pytest-homeassistant-custom-component" },
     { name = "ruff" },
@@ -1176,6 +1177,7 @@ dev = [
 dev = [
     { name = "mypy" },
     { name = "pre-commit" },
+    { name = "pynortecgo", specifier = "==0.1.0" },
     { name = "pytest-cov" },
     { name = "pytest-homeassistant-custom-component", specifier = "==0.13.366" },
     { name = "ruff" },
@@ -2216,6 +2218,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pynortecgo"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "tenacity" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/48/c8/0e156d6fc871ba583ef8a0cc6b18b342f478edbcf15b33544653a09442d3/pynortecgo-0.1.0.tar.gz", hash = "sha256:ac7939023112c0087980d1b89760c99a95073b29613c45ddbc6a5fdd2a146131", size = 16733, upload-time = "2026-09-26T11:43:09.308Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0a/54/cfc259345ae7a79eb4dfc324c980fe6d0a250bb1a56d862df648c4a06ee5/pynortecgo-0.1.0-py3-none-any.whl", hash = "sha256:e8bc409794ed1b48457c207c501b2e2b433176479a46a0263d64a1ad9f76bb65", size = 20139, upload-time = "2026-09-26T11:43:08.241Z" },
+]
+
+[[package]]
 name = "pyobjc-core"
 version = "12.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2811,6 +2826,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d2/a7/3c797c76994dc817582abdda90ee31867a9883567b0add47dbc0ccb12ce4/syrupy-6.0.0.tar.gz", hash = "sha256:bf4f5f662a7b23a9e5711bd5597e301cd09c00f31be5fa4095f79da7b0585f3d", size = 99435, upload-time = "2026-08-22T20:48:39.493Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7c/ff/4d8ae6d6070ea73ee9d466701584a75db9586ce09de98f8f1b3276efad5f/syrupy-6.0.0-py3-none-any.whl", hash = "sha256:3efa16d767bd8614413cc20057552e4aec14428c6e5ea788c1f7e03047e8a5e4", size = 58047, upload-time = "2026-08-22T20:48:38.213Z" },
+]
+
+[[package]]
+name = "tenacity"
+version = "9.1.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/c6/ee486fd809e357697ee8a44d3d69222b344920433d3b6666ccd9b374630c/tenacity-9.1.4.tar.gz", hash = "sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a", size = 49413, upload-time = "2026-02-07T10:45:33.841Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl", hash = "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55", size = 28926, upload-time = "2026-02-07T10:45:32.24Z" },
 ]
 
 [[package]]

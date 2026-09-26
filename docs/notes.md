@@ -1,7 +1,7 @@
 # Notes
 
 Small learned facts that fit no other doc, newest last. When a topic passes about three entries, propose
-moving it to its own doc.
+moving it to its own doc. Home Assistant and HACS facts live in [`ha-notes.md`](ha-notes.md).
 
 ## 2026-09-26: Interaction limit
 
@@ -27,14 +27,7 @@ pinned to a `master` commit SHA, which Dependabot can't bump; refresh it by hand
 chained with anything that mentions `main` later (`gh pr create --base main`, `git fetch origin main:main`).
 Run `git push` as its own command.
 
-## 2026-09-26: Home Assistant and HACS facts
+## 2026-09-26: ruff-format reformats Markdown code blocks
 
-- Setting up a config entry always imports the integration's `config_flow` platform, even with
-  `"config_flow": false`. An integration with no config flow yet uses `async_setup` with
-  `CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)` instead of an empty entry.
-- `pytest-homeassistant-custom-component` ships its own `custom_components` package. HA only finds ours if a
-  test imports `custom_components.nortec_go` first.
-- hassfest requires the `manifest.json` keys in the order `domain`, `name`, then alphabetical.
-- HACS's `license` check reads the license GitHub detects on the default branch, so `LICENSE` must be on
-  `main` before a PR's `hacs` check can pass.
-- Brand images: see `custom_components/nortec_go/brand/README.md`.
+The ruff-format pre-commit hook also formats Python code blocks inside `.md` files, such as specs and plans.
+A commit of a plan can fail once with "files were modified by this hook"; re-stage and commit again.

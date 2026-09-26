@@ -57,7 +57,7 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Source:** [ground-structure spec](superpowers/specs/2026-09-26-ground-structure-design.md), Decisions, §1.1
 
 ### D8: Way of working copied with a sync note; client change requests via `nortecgo-af` or `gh issue create`
-- **Date:** 2026-09-26 · **Status:** active
+- **Date:** 2026-09-26 · **Status:** superseded by D20
 - **Decision:** `docs/way-of-working.md` is copied from `NortecGo` and adapted, with a sync note in both
   repos. Anything the client needs goes to `NortecGo` as a change request, sent to the `nortecgo-af` session
   or filed with `gh issue create -R thomas3650/nortecgo --label ha-integration`.
@@ -134,3 +134,31 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Why:** Catches security problems in the integration and the workflows early, without a false positive
   blocking merges.
 - **Source:** issue #5
+
+### D18: Config entry holds tokens and device_id; charger ID is the unique ID
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** The config entry stores the email, the session tokens and the client's `device_id`, never the
+  password. The account's charger ID is the entry's `unique_id`; it isn't stored in the entry data, since
+  the client finds the charger itself. Pin bumps (D7) come as PRs, with a test keeping the manifest and dev
+  pins equal.
+- **Why:** Login is rate-limited and the password shouldn't sit in Home Assistant's storage; the charger ID
+  stops the same charger being added twice and catches a changed account at setup.
+- **Source:** [config-flow spec](superpowers/specs/2026-09-26-config-flow-design.md), Decisions
+
+### D19: GitHub issues are the backlog
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** Anything found that won't be fixed in the current work becomes a GitHub issue, or is added
+  to an existing one.
+- **Why:** One place for everything still to do, instead of notes scattered over specs and PRs.
+- **Source:** owner request on 2026-09-26; [config-flow spec](superpowers/specs/2026-09-26-config-flow-design.md), §7
+
+### D20: Each repo owns its way of working
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** This repo's `docs/way-of-working.md` is its own, with no duty to keep it in step with
+  `NortecGo`'s. A learning that clearly helps the other repo may be sent there as an issue. Anything the
+  client needs still goes to `NortecGo` as a change request, sent to the `nortecgo-af` session or filed
+  with `gh issue create -R thomas3650/nortecgo --label ha-integration`. Supersedes D8.
+- **Why:** The repos do different jobs; a sync duty costs an issue for every process change, most of
+  which don't apply to the other repo.
+- **Source:** owner decision on 2026-09-26 (NortecGo#41 closed);
+  [config-flow spec](superpowers/specs/2026-09-26-config-flow-design.md), §7

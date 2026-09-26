@@ -1,0 +1,31 @@
+{
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
+  },
+  "autoMemoryEnabled": false,
+  "permissions": {
+    "deny": [
+      "AskUserQuestion",
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push * main:*)",
+      "Bash(git push *:main)",
+      "Bash(git push *:refs/heads/main)",
+      "Bash(git commit *--no-verify*)",
+      "Bash(git push *--no-verify*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit|Bash|Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/subagent_guard.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

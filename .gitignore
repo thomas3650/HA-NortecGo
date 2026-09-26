@@ -1,0 +1,31 @@
+# Secrets
+.env
+.env.*
+*.token
+
+# Local data
+local/
+
+# Claude Code (personal settings)
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Home Assistant dev config
+config/
+
+# macOS
+.DS_Store
+
+# Build
+*.egg-info/
+build/
+dist/

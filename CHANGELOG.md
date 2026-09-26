@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file. The format is b
 - Add the integration from the UI with your Nortec Go email and password. Your email and the session are
   stored, never the password.
 - Reauthentication: when the session is rejected, Home Assistant asks for the password again.
+- If the charger is removed from your Nortec Go account, setup stops with a "charger not found" error.
 
 ## [0.0.1] - 2026-09-26
 

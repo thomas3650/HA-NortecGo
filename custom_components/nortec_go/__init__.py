@@ -13,7 +13,6 @@ from pynortecgo import (
     ApiError,
     AuthError,
     ChargerNotFoundError,
-    MultipleChargersError,
     NortecGoConnectionError,
     RateLimitError,
     Tokens,
@@ -48,24 +47,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
         device_id=entry.data[CONF_DEVICE_ID],
         on_tokens_refreshed=_async_store_tokens,
     )
+    # Read the config flow's charger directly; a removed one raises ChargerNotFoundError.
+    assert entry.unique_id is not None  # the config flow always sets it
+    client.set_charger(int(entry.unique_id))
     # pynortecgo's messages hold no tokens, emails or IDs, so they may be passed on.
     try:
-        charger = await client.get_charger()
+        await client.get_charger()
     except AuthError as err:
         raise ConfigEntryAuthFailed(str(err)) from err
     except (NortecGoConnectionError, RateLimitError, ApiError) as err:
         raise ConfigEntryNotReady(str(err)) from err
-    except (
-        UnexpectedResponseError,
-        ChargerNotFoundError,
-        MultipleChargersError,
-    ) as err:
+    except (UnexpectedResponseError, ChargerNotFoundError) as err:
         raise ConfigEntryError(str(err)) from err
-
-    if str(charger.id) != entry.unique_id:
-        raise ConfigEntryError(
-            "The account's charger has changed; remove the integration and add it again"
-        )
 
     entry.runtime_data = client
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

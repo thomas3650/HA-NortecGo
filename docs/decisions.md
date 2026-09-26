@@ -136,7 +136,7 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Source:** issue #5
 
 ### D18: Config entry holds tokens and device_id; charger ID is the unique ID
-- **Date:** 2026-09-26 · **Status:** active
+- **Date:** 2026-09-26 · **Status:** superseded by D21
 - **Decision:** The config entry stores the email, the session tokens and the client's `device_id`, never the
   password. The account's charger ID is the entry's `unique_id`; it isn't stored in the entry data, since
   the client finds the charger itself. Pin bumps (D7) come as PRs, with a test keeping the manifest and dev
@@ -162,3 +162,13 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
   which don't apply to the other repo.
 - **Source:** owner decision on 2026-09-26 (NortecGo#41 closed);
   [config-flow spec](superpowers/specs/2026-09-26-config-flow-design.md), §7
+
+### D21: Setup reads the stored charger with `set_charger()`
+- **Date:** 2026-09-26 · **Status:** active
+- **Decision:** As D18, except that setup no longer lets the client find the charger: it passes the
+  entry's `unique_id` (the charger ID from the config flow) to `set_charger()`, and a charger the API no
+  longer knows stops setup with `ChargerNotFoundError`. The config flow and reauth still find the charger by
+  logging in. `pynortecgo` is pinned to 0.2.0.
+- **Why:** Setup reads one known charger instead of discovering it on every start, so the manual
+  charger-ID check is gone; 0.2.0 also turns a rejected token refresh into `AuthError`, which starts reauth.
+- **Source:** issue #17; owner decision on 2026-09-26 to do it without a spec, as nothing is released yet

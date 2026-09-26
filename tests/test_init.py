@@ -15,7 +15,6 @@ from pynortecgo import (
     ApiError,
     AuthError,
     ChargerNotFoundError,
-    MultipleChargersError,
     NortecGoConnectionError,
     RateLimitError,
     UnexpectedResponseError,
@@ -32,8 +31,6 @@ from .conftest import (
     FAKE_EMAIL,
     FAKE_TOKENS,
     NEW_TOKENS,
-    OTHER_CHARGER_ID,
-    make_charger,
 )
 
 INTEGRATION_DIR = Path(__file__).parent.parent / "custom_components" / DOMAIN
@@ -87,7 +84,7 @@ async def test_setup_entry(
     mock_client_class: MagicMock,
     mock_client: AsyncMock,
 ) -> None:
-    """Setup builds the client from the stored tokens and device_id, reads the charger once."""
+    """Setup builds the client from stored data, sets the stored charger, reads it once."""
     await _setup(hass, mock_config_entry)
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
@@ -96,6 +93,7 @@ async def test_setup_entry(
     assert kwargs["tokens"] == FAKE_TOKENS
     assert kwargs["device_id"] == FAKE_DEVICE_ID
     assert kwargs["on_tokens_refreshed"] is not None
+    mock_client.set_charger.assert_called_once_with(FAKE_CHARGER_ID)
     mock_client.get_charger.assert_awaited_once()
     mock_client.login.assert_not_awaited()
 
@@ -110,8 +108,10 @@ async def test_setup_entry(
             UnexpectedResponseError("GET /example", "bad shape"),
             ConfigEntryState.SETUP_ERROR,
         ),
-        (ChargerNotFoundError("no charger"), ConfigEntryState.SETUP_ERROR),
-        (MultipleChargersError("two chargers"), ConfigEntryState.SETUP_ERROR),
+        (
+            ChargerNotFoundError("GET /example: the set charger was not found"),
+            ConfigEntryState.SETUP_ERROR,
+        ),
     ],
 )
 async def test_setup_errors(
@@ -167,22 +167,6 @@ async def test_setup_auth_error_starts_reauth(
     assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
     start_reauth.assert_called_once()
     mock_client.login.assert_not_awaited()
-
-
-async def test_setup_charger_changed(
-    hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
-    mock_client: AsyncMock,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Another charger on the account stops setup, and neither ID is logged."""
-    mock_client.get_charger.return_value = make_charger(OTHER_CHARGER_ID)
-    await _setup(hass, mock_config_entry)
-
-    assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
-    assert "charger has changed" in caplog.text
-    assert str(FAKE_CHARGER_ID) not in caplog.text
-    assert str(OTHER_CHARGER_ID) not in caplog.text
 
 
 async def test_setup_logs_no_credentials(

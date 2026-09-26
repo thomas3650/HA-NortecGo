@@ -1,28 +1,38 @@
 """Tests for the Nortec Go integration setup."""
 
+import asyncio
+from datetime import timedelta
 import json
 import logging
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant import loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL
 from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN, HomeAssistant
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.setup import async_setup_component
 from pynortecgo import (
-    ApiError,
     AuthError,
-    ChargerNotFoundError,
+    MultipleVehiclesError,
     NortecGoConnectionError,
-    RateLimitError,
-    UnexpectedResponseError,
+    VehicleNotFoundError,
 )
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.nortec_go.const import DOMAIN
+from custom_components.nortec_go.coordinator import car_device_identifier
 from custom_components.nortec_go.entry import tokens_from_data
 
 from .conftest import (
@@ -31,6 +41,7 @@ from .conftest import (
     FAKE_EMAIL,
     FAKE_TOKENS,
     NEW_TOKENS,
+    setup_integration,
 )
 
 INTEGRATION_DIR = Path(__file__).parent.parent / "custom_components" / DOMAIN
@@ -72,12 +83,6 @@ def test_translations_match_strings() -> None:
     assert english == strings
 
 
-async def _setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
-    entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-
 async def test_setup_entry(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
@@ -85,50 +90,16 @@ async def test_setup_entry(
     mock_client: AsyncMock,
 ) -> None:
     """Setup builds the client from stored data, sets the stored charger, reads it once."""
-    await _setup(hass, mock_config_entry)
+    await setup_integration(hass, mock_config_entry)
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    assert mock_config_entry.runtime_data is mock_client
+    assert mock_config_entry.runtime_data.client is mock_client
     kwargs = mock_client_class.call_args.kwargs
     assert kwargs["tokens"] == FAKE_TOKENS
     assert kwargs["device_id"] == FAKE_DEVICE_ID
     assert kwargs["on_tokens_refreshed"] is not None
     mock_client.set_charger.assert_called_once_with(FAKE_CHARGER_ID)
     mock_client.get_charger.assert_awaited_once()
-    mock_client.login.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    ("error", "state"),
-    [
-        (NortecGoConnectionError("network down"), ConfigEntryState.SETUP_RETRY),
-        (RateLimitError("too many requests"), ConfigEntryState.SETUP_RETRY),
-        (ApiError("GET /example", 500), ConfigEntryState.SETUP_RETRY),
-        (
-            UnexpectedResponseError("GET /example", "bad shape"),
-            ConfigEntryState.SETUP_ERROR,
-        ),
-        (
-            ChargerNotFoundError("GET /example: the set charger was not found"),
-            ConfigEntryState.SETUP_ERROR,
-        ),
-    ],
-)
-async def test_setup_errors(
-    hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
-    mock_client: AsyncMock,
-    error: Exception,
-    state: ConfigEntryState,
-) -> None:
-    """Transient errors retry setup, permanent ones stop it; neither logs in."""
-    mock_client.get_charger.side_effect = error
-    await _setup(hass, mock_config_entry)
-
-    entry_state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
-    assert entry_state is state
-    if entry_state is ConfigEntryState.SETUP_ERROR:
-        assert mock_config_entry.reason == str(error)
     mock_client.login.assert_not_awaited()
 
 
@@ -140,7 +111,7 @@ async def test_setup_retry_reuses_stored_tokens(
 ) -> None:
     """A retry after a transient error reads with the stored tokens and never logs in."""
     mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
-    await _setup(hass, mock_config_entry)
+    await setup_integration(hass, mock_config_entry)
     state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
     assert state is ConfigEntryState.SETUP_RETRY
 
@@ -154,21 +125,6 @@ async def test_setup_retry_reuses_stored_tokens(
     mock_client.login.assert_not_awaited()
 
 
-async def test_setup_auth_error_starts_reauth(
-    hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
-    mock_client: AsyncMock,
-) -> None:
-    """A rejected token stops setup and asks HA for reauth, without logging in."""
-    mock_client.get_charger.side_effect = AuthError("token rejected")
-    with patch.object(ConfigEntry, "async_start_reauth_if_available") as start_reauth:
-        await _setup(hass, mock_config_entry)
-
-    assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
-    start_reauth.assert_called_once()
-    mock_client.login.assert_not_awaited()
-
-
 async def test_setup_logs_no_credentials(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
@@ -179,7 +135,7 @@ async def test_setup_logs_no_credentials(
     caplog.set_level(logging.DEBUG, logger="custom_components.nortec_go")
     mock_client.get_charger.side_effect = AuthError("token rejected")
     with patch.object(ConfigEntry, "async_start_reauth_if_available"):
-        await _setup(hass, mock_config_entry)
+        await setup_integration(hass, mock_config_entry)
 
     assert "could not authenticate" in caplog.text
     for secret in (
@@ -197,7 +153,7 @@ async def test_tokens_refreshed_are_stored(
     mock_client_class: MagicMock,
 ) -> None:
     """New tokens from a refresh go into entry.data; email and device_id stay; no reload."""
-    await _setup(hass, mock_config_entry)
+    await setup_integration(hass, mock_config_entry)
     on_tokens_refreshed = mock_client_class.call_args.kwargs["on_tokens_refreshed"]
 
     await on_tokens_refreshed(NEW_TOKENS)
@@ -214,10 +170,118 @@ async def test_unload_entry(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
     """Unload returns the entry to NOT_LOADED."""
-    await _setup(hass, mock_config_entry)
+    await setup_integration(hass, mock_config_entry)
     loaded_state = mock_config_entry.state  # a local, so mypy doesn't narrow
     assert loaded_state is ConfigEntryState.LOADED
     assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
     await hass.async_block_till_done()
     unloaded_state = mock_config_entry.state  # a local, so mypy doesn't narrow
     assert unloaded_state is ConfigEntryState.NOT_LOADED
+
+
+async def test_unload_stops_the_timers(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """After unload, neither the polling, the price time nor the tick reads anything."""
+    await setup_integration(hass, mock_config_entry)
+    # A listener keeps polling scheduled without entities (Task 2), so unload has something to stop.
+    mock_config_entry.runtime_data.async_add_listener(lambda: None)
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    freezer.tick(timedelta(days=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_price_forecast.await_count == 1
+    assert mock_client.get_charger.await_count == 1
+
+
+async def test_unload_cancels_a_price_read_in_flight(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A scheduled price read still running at unload is cancelled."""
+    await setup_integration(hass, mock_config_entry)
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def _slow_forecast() -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    mock_client.get_price_forecast.side_effect = _slow_forecast
+    mock_config_entry.runtime_data.async_start_price_read()
+    await started.wait()
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert cancelled.is_set()
+
+
+async def test_remove_entry_removes_stored_prices(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Deleting the entry deletes its stored prices."""
+    await setup_integration(hass, mock_config_entry)
+    key = f"nortec_go.{mock_config_entry.entry_id}.prices"
+    assert key in hass_storage
+    assert await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert key not in hass_storage
+
+
+CAR_ENTITY_IDS = (
+    "sensor.family_car_battery",
+    "sensor.family_car_charge_limit",
+    "sensor.family_car_last_seen",
+    "binary_sensor.family_car_plugged_in",
+    "binary_sensor.family_car_connected_to_charger",
+)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [VehicleNotFoundError("no car"), MultipleVehiclesError("two cars")],
+)
+async def test_reload_without_car_removes_car_device(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    error: Exception,
+) -> None:
+    """A reload that finds no single car removes the car device and its entities."""
+    await setup_integration(hass, mock_config_entry)
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    identifier = car_device_identifier(str(FAKE_CHARGER_ID))
+    assert (
+        device_registry.async_get_device_by_identifier(
+            identifier, mock_config_entry.entry_id
+        )
+        is not None
+    )
+    for entity_id in CAR_ENTITY_IDS:
+        assert entity_registry.async_get(entity_id) is not None
+
+    mock_client.get_vehicle.side_effect = error
+    await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert (
+        device_registry.async_get_device_by_identifier(
+            identifier, mock_config_entry.entry_id
+        )
+        is None
+    )
+    for entity_id in CAR_ENTITY_IDS:
+        assert entity_registry.async_get(entity_id) is None
+        assert hass.states.get(entity_id) is None

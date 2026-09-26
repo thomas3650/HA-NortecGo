@@ -111,6 +111,11 @@ Where subagent-driven-development (SDD) differs, this doc wins.
 A trivial change has no behaviour change, no new decision and no new rule, for example a typo or a one-line
 doc fix. It goes straight to a branch and a ready PR: no spec, no plan, no draft.
 
+Until the first working release (the first version the owner has tested locally; the `v0.0.1` skeleton
+doesn't count), the owner may rule that a small, well-scoped behaviour change skips the spec and plan (D25).
+It still starts from an issue and its PR says `Closes #n`. The controller gives a short design in chat,
+implements it with TDD, runs the gates and opens a ready PR, with no `full-reviewer` review.
+
 ## 5. Model policy and guarded files
 
 | Role | Model / effort |
@@ -142,6 +147,8 @@ doc fix. It goes straight to a branch and a ready PR: no spec, no plan, no draft
 - **Issues:** every non-trivial change starts from an issue. The spec links it, and the PR says `Closes #n`.
 - **Backlog:** GitHub issues are the backlog (D19). Anything found that won't be fixed in the current work
   becomes an issue, or is added to an existing one.
+- **Labels:** each issue gets `v1`, `v2` or `enhancement`; chores may have none. When in doubt, ask the owner
+  (D24).
 - **Merging and pushing:** the owner merges. Only the controller pushes or marks a PR ready.
 - **Git guards:** run `uv run pre-commit install` once per clone. The hooks refuse commits on `main` and pushes
   to `main`, and `.claude/settings.json` denies pushes to `main` and `--no-verify`. `main` is also protected

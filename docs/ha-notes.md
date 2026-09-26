@@ -28,12 +28,37 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   annotations`. HA 2026.9.3's flow API (`async_show_form`, `add_suggested_values_to_schema`) is still typed
   for voluptuous schemas, so `probatio` fails mypy strict there; `config_flow.py` imports
   `voluptuous as vol  # noqa: TID251`.
+- Python 3.14 allows `except A, B:` without parentheses (PEP 758), and `ruff format` removes them.
+- The pre-commit `ruff format` hook also formats Python blocks inside `.md` files. The first commit of a
+  plan can fail because the hook changed the file; add it again and commit.
 
 ## Testing
 
 - To mock a client class, patch it with `autospec=True` and set its `return_value` to an
   `AsyncMock(spec=Client)` instance. Calling an `AsyncMock(spec=cls)` itself returns a coroutine, not a
   client.
+- A `DataUpdateCoordinator` schedules its next poll only while it has listeners. To test polling before any
+  entities exist, add one with `coordinator.async_add_listener(lambda: None)`.
+- The test `hass` starts in the `US/Pacific` time zone. A test that depends on local time calls
+  `await hass.config.async_set_time_zone(...)` first.
+
+## Devices and entities
+
+- HA 2026.9 deprecates `device_registry.async_get_device` (it logs a warning from integration code and
+  raises `RuntimeError` in tests); use `async_get_device_by_identifier(identifier, entry_id)`. It also
+  deprecates `DeviceInfo.via_device` in favour of `via_device_id`, a registered device's ID.
+- `DeviceRegistry.async_get(device_id)` returns `DeviceEntry | ChildDeviceEntry | None`; pass
+  `include_child_devices=False` to get a `DeviceEntry` for mypy.
+- `async_get_or_create` with a `translation_key` sets the translated name, also on an existing device, so it
+  can rename a device back to its placeholder.
+- HA writes an entity's attributes only while it's available. An entity whose attributes must always be
+  there (such as a price list) overrides `available`.
+- HA never removes the devices of a loaded entry, and a user can't delete one in the UI unless the
+  integration implements `async_remove_config_entry_device`. A device that no longer exists (such as a car
+  removed from the account) is removed by the integration with `DeviceRegistry.async_remove_device`, which
+  also removes its entities.
+- On the day the clocks go back, two local datetimes with the same time zone compare by wall-clock time and
+  ignore `fold`, so the repeated hour sorts wrongly. Compare and sort in UTC.
 
 ## HACS
 

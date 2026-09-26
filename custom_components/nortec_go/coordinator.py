@@ -1,0 +1,231 @@
+"""The Nortec Go coordinator: charger and car polling, price reads and the quarter-hour tick."""
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import logging
+
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.typing import UNDEFINED
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
+from pynortecgo import (
+    ApiError,
+    AuthError,
+    Charger,
+    ChargerNotFoundError,
+    ChargeState,
+    MultipleVehiclesError,
+    NortecGoClient,
+    NortecGoConnectionError,
+    NortecGoError,
+    RateLimitError,
+    UnexpectedResponseError,
+    Vehicle,
+    VehicleNotFoundError,
+)
+
+from .const import (
+    DOMAIN,
+    INTERVAL_CHARGING,
+    INTERVAL_CONNECTED,
+    INTERVAL_UNPLUGGED,
+    PRICE_READ_HOURS,
+    PRICE_READ_MINUTE,
+    TICK_MINUTES,
+)
+from .entry import NortecGoConfigEntry
+from .prices import KnownSlots, PriceStore, merge_forecast, prune
+
+_LOGGER = logging.getLogger(__name__)
+
+_CHARGE_UNDER_WAY = (ChargeState.STARTING, ChargeState.CHARGING, ChargeState.STOPPING)
+
+
+@dataclass(frozen=True)
+class NortecGoData:
+    """One read of the charger and the car. vehicle is None until the car is read."""
+
+    charger: Charger
+    vehicle: Vehicle | None
+
+
+def interval_for(charger: Charger) -> timedelta:
+    """The next polling interval for this charger state (D22)."""
+    if not charger.is_connected:
+        return INTERVAL_UNPLUGGED
+    if charger.charge_state in _CHARGE_UNDER_WAY:
+        return INTERVAL_CHARGING
+    return INTERVAL_CONNECTED
+
+
+def car_device_identifier(charger_id: str) -> tuple[str, str]:
+    """The car device's identifier, keyed on the charger (§2.1)."""
+    return (DOMAIN, f"{charger_id}_car")
+
+
+class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
+    """Reads the charger and car on a state-based interval, and the prices on a schedule."""
+
+    config_entry: NortecGoConfigEntry
+
+    def __init__(
+        self, hass: HomeAssistant, entry: NortecGoConfigEntry, client: NortecGoClient
+    ) -> None:
+        """Set up the coordinator for one entry."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=entry,
+            name=DOMAIN,
+            update_interval=INTERVAL_CONNECTED,
+            always_update=False,
+        )
+        assert entry.unique_id is not None  # the config flow always sets it
+        self.client = client
+        self.charger_id = entry.unique_id
+        self.has_car = True
+        self.known_prices: KnownSlots = {}
+        self._car_checked = False
+        self._car_failing = False
+        self._vehicle: Vehicle | None = None
+        self._price_store = PriceStore(hass, entry.entry_id)
+
+    async def _async_update_data(self) -> NortecGoData:
+        """Read the charger, then the car; set the next interval."""
+        # pynortecgo's messages hold no tokens, emails or IDs, so they may be passed on.
+        try:
+            charger = await self.client.get_charger()
+        except AuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except RateLimitError as err:
+            raise UpdateFailed(str(err), retry_after=err.retry_after) from err
+        except (NortecGoConnectionError, ApiError) as err:
+            raise UpdateFailed(str(err)) from err
+        except (ChargerNotFoundError, UnexpectedResponseError) as err:
+            raise ConfigEntryError(str(err)) from err
+
+        vehicle = await self._async_read_vehicle()
+        self.update_interval = interval_for(charger)
+        return NortecGoData(charger=charger, vehicle=vehicle)
+
+    async def _async_read_vehicle(self) -> Vehicle | None:
+        """Read the car; a car error never fails the update (§4.2)."""
+        if not self.has_car:
+            return None
+        try:
+            vehicle = await self.client.get_vehicle()
+        except AuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except (VehicleNotFoundError, MultipleVehiclesError) as err:
+            if not self._car_checked:
+                self._car_checked = True
+                self.has_car = False
+                _LOGGER.info("No car entities: %s", err)
+                return None
+            self._log_car_error(err)
+            return self._vehicle
+        except NortecGoError as err:
+            self._car_checked = True
+            self._log_car_error(err)
+            return self._vehicle
+
+        self._car_checked = True
+        if self._car_failing:
+            self._car_failing = False
+            _LOGGER.info("Reading the car works again")
+        self._vehicle = vehicle
+        self._async_update_car_device(vehicle)
+        return vehicle
+
+    def _log_car_error(self, err: NortecGoError) -> None:
+        """Log the first car read failure of a run at warning."""
+        if not self._car_failing:
+            self._car_failing = True
+            _LOGGER.warning("Could not read the car; keeping its last data: %s", err)
+
+    @callback
+    def _async_update_car_device(self, vehicle: Vehicle) -> None:
+        """Bring the car device's name, brand and model up to date (§2.1)."""
+        registry = dr.async_get(self.hass)
+        identifier = car_device_identifier(self.charger_id)
+        if (
+            registry.async_get_device_by_identifier(
+                identifier, self.config_entry.entry_id
+            )
+            is None
+        ):
+            return  # the entities create the device
+        # Updates the existing device; an empty name falls back to the translated "Car".
+        registry.async_get_or_create(
+            config_entry_id=self.config_entry.entry_id,
+            identifiers={identifier},
+            name=vehicle.name or UNDEFINED,
+            translation_key=None if vehicle.name else "car",
+            manufacturer=vehicle.brand or UNDEFINED,
+            model=vehicle.model or UNDEFINED,
+        )
+
+    async def async_load_prices(self) -> None:
+        """Load the stored slots, without yesterday's."""
+        self.known_prices = prune(
+            await self._price_store.async_load(),
+            dt_util.utcnow(),
+            dt_util.get_default_time_zone(),
+        )
+
+    async def async_read_prices(self, *, during_setup: bool = False) -> None:
+        """Read the forecast, merge, prune and save it; keep the known slots on failure (§4.3)."""
+        try:
+            forecast = await self.client.get_price_forecast()
+        except AuthError as err:
+            if during_setup:
+                raise ConfigEntryAuthFailed(str(err)) from err
+            self.config_entry.async_start_reauth(self.hass)
+            return
+        except NortecGoError as err:
+            _LOGGER.warning(
+                "Could not read the price forecast; keeping the known prices: %s", err
+            )
+            return
+        self.known_prices = prune(
+            merge_forecast(self.known_prices, forecast),
+            dt_util.utcnow(),
+            dt_util.get_default_time_zone(),
+        )
+        await self._price_store.async_save(self.known_prices)
+        self.async_update_listeners()
+
+    @callback
+    def async_start_price_read(self) -> None:
+        """Start one price read as a background task that unload cancels."""
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_read_prices(), f"{DOMAIN} price read"
+        )
+
+    @callback
+    def async_start_timers(self) -> None:
+        """Start the price reads and the quarter-hour tick; unload stops them."""
+
+        @callback
+        def _price_time(now: datetime) -> None:
+            self.async_start_price_read()
+
+        @callback
+        def _tick(now: datetime) -> None:
+            self.async_update_listeners()
+
+        self.config_entry.async_on_unload(
+            async_track_time_change(
+                self.hass,
+                _price_time,
+                hour=PRICE_READ_HOURS,
+                minute=PRICE_READ_MINUTE,
+                second=0,
+            )
+        )
+        self.config_entry.async_on_unload(
+            async_track_time_change(self.hass, _tick, minute=TICK_MINUTES, second=0)
+        )

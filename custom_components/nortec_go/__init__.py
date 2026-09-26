@@ -2,29 +2,18 @@
 
 from homeassistant.const import CONF_DEVICE_ID, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import (
-    ConfigEntryAuthFailed,
-    ConfigEntryError,
-    ConfigEntryNotReady,
-)
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
-from pynortecgo import (
-    ApiError,
-    AuthError,
-    ChargerNotFoundError,
-    NortecGoConnectionError,
-    RateLimitError,
-    Tokens,
-    UnexpectedResponseError,
-)
+from pynortecgo import Tokens
 
 from .const import DOMAIN
+from .coordinator import NortecGoCoordinator, car_device_identifier
 from .entry import NortecGoConfigEntry, create_client, tokens_from_data, tokens_to_data
+from .prices import PriceStore
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-PLATFORMS: list[Platform] = []
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -50,19 +39,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
     # Read the config flow's charger directly; a removed one raises ChargerNotFoundError.
     assert entry.unique_id is not None  # the config flow always sets it
     client.set_charger(int(entry.unique_id))
-    # pynortecgo's messages hold no tokens, emails or IDs, so they may be passed on.
-    try:
-        await client.get_charger()
-    except AuthError as err:
-        raise ConfigEntryAuthFailed(str(err)) from err
-    except (NortecGoConnectionError, RateLimitError, ApiError) as err:
-        raise ConfigEntryNotReady(str(err)) from err
-    except (UnexpectedResponseError, ChargerNotFoundError) as err:
-        raise ConfigEntryError(str(err)) from err
 
-    entry.runtime_data = client
+    coordinator = NortecGoCoordinator(hass, entry, client)
+    await coordinator.async_load_prices()
+    await coordinator.async_config_entry_first_refresh()
+    if not coordinator.has_car:
+        # No car now: remove the car device (and so its entities) from an earlier setup.
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device_by_identifier(
+            car_device_identifier(coordinator.charger_id), entry.entry_id
+        )
+        if device is not None:
+            device_registry.async_remove_device(device.id)
+    await coordinator.async_read_prices(during_setup=True)
+    coordinator.async_start_timers()
+
+    entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> None:
+    """Delete the entry's stored prices."""
+    await PriceStore(hass, entry.entry_id).async_remove()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> bool:

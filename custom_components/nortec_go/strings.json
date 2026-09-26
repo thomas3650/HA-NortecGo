@@ -38,5 +38,40 @@
       "reauth_successful": "Signed in again.",
       "wrong_account": "This account's charger isn't the one this integration was set up for. Sign in with the same account."
     }
+  },
+  "device": {
+    "car": {
+      "name": "Car"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "cable_connected": {
+        "name": "Cable connected"
+      },
+      "charging": {
+        "name": "Charging"
+      },
+      "plugged_in": {
+        "name": "Plugged in"
+      },
+      "connected_to_charger": {
+        "name": "Connected to charger"
+      }
+    },
+    "sensor": {
+      "current_price": {
+        "name": "Current price"
+      },
+      "battery": {
+        "name": "Battery"
+      },
+      "charge_limit": {
+        "name": "Charge limit"
+      },
+      "last_seen": {
+        "name": "Last seen"
+      }
+    }
   }
 }

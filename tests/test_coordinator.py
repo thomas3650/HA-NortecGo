@@ -1,0 +1,513 @@
+"""Tests for the Nortec Go coordinator: polling, errors, prices and timers."""
+
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from unittest.mock import AsyncMock, patch
+
+from freezegun.api import FrozenDateTimeFactory
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.util import dt as dt_util
+from pynortecgo import (
+    ApiError,
+    AuthError,
+    ChargerNotFoundError,
+    ChargeState,
+    MultipleVehiclesError,
+    NortecGoConnectionError,
+    RateLimitError,
+    UnexpectedResponseError,
+    VehicleNotFoundError,
+)
+import pytest
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
+
+from custom_components.nortec_go.const import (
+    DOMAIN,
+    INTERVAL_CHARGING,
+    INTERVAL_CONNECTED,
+    INTERVAL_UNPLUGGED,
+)
+from custom_components.nortec_go.coordinator import (
+    NortecGoCoordinator,
+    car_device_identifier,
+    interval_for,
+)
+
+from .conftest import (
+    FAKE_CHARGER_ID,
+    make_charger,
+    make_forecast,
+    make_vehicle,
+    setup_integration,
+)
+
+# 2026-09-27 00:00 local (CEST) is 2026-09-26 22:00 UTC.
+MIDNIGHT = datetime(2026, 9, 26, 22, 0, tzinfo=UTC)
+STORE_KEY = "nortec_go.{}.prices"
+
+
+@pytest.fixture(autouse=True)
+async def copenhagen(hass: HomeAssistant) -> None:
+    """Run every test in the owner's time zone."""
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+
+
+def _coordinator(entry: MockConfigEntry) -> NortecGoCoordinator:
+    """The entry's coordinator, with a listener so it keeps polling without entities."""
+    coordinator: NortecGoCoordinator = entry.runtime_data
+    # HA only schedules the next poll while the coordinator has listeners; in Task 2
+    # there are no entities yet. Adding the first listener also schedules a poll.
+    coordinator.async_add_listener(lambda: None)
+    return coordinator
+
+
+@pytest.mark.parametrize(
+    ("is_connected", "charge_state", "interval"),
+    [
+        (False, None, INTERVAL_UNPLUGGED),
+        (True, None, INTERVAL_CONNECTED),
+        (True, ChargeState.PAUSED, INTERVAL_CONNECTED),
+        (True, ChargeState.UNKNOWN, INTERVAL_CONNECTED),
+        (True, ChargeState.STARTING, INTERVAL_CHARGING),
+        (True, ChargeState.CHARGING, INTERVAL_CHARGING),
+        (True, ChargeState.STOPPING, INTERVAL_CHARGING),
+    ],
+)
+def test_interval_for(
+    is_connected: bool, charge_state: ChargeState | None, interval: timedelta
+) -> None:
+    """The interval follows the charger's state."""
+    charger = make_charger(is_connected=is_connected, charge_state=charge_state)
+    assert interval_for(charger) == interval
+
+
+async def test_setup_reads_charger_car_and_prices(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """Setup sets the charger, reads charger, car and prices once, and sets the interval."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+
+    coordinator = _coordinator(mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert coordinator.client is mock_client
+    assert coordinator.has_car
+    assert coordinator.data.vehicle == make_vehicle()
+    assert coordinator.update_interval == INTERVAL_CONNECTED
+    mock_client.set_charger.assert_called_once_with(FAKE_CHARGER_ID)
+    mock_client.get_vehicle.assert_awaited_once()
+    mock_client.get_price_forecast.assert_awaited_once_with()
+
+
+async def test_interval_changes_after_a_poll(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A poll that sees a charge starts polling every 5 minutes."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.update_interval == INTERVAL_UNPLUGGED
+
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING
+    )
+    freezer.tick(INTERVAL_UNPLUGGED)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert coordinator.update_interval == INTERVAL_CHARGING
+    assert mock_client.get_charger.await_count == 2
+    assert mock_client.get_vehicle.await_count == 2
+
+
+@pytest.mark.parametrize(
+    ("error", "state"),
+    [
+        (NortecGoConnectionError("network down"), ConfigEntryState.SETUP_RETRY),
+        (RateLimitError("too many requests"), ConfigEntryState.SETUP_RETRY),
+        (ApiError("GET /example", 500), ConfigEntryState.SETUP_RETRY),
+        (
+            UnexpectedResponseError("GET /example", "bad shape"),
+            ConfigEntryState.SETUP_ERROR,
+        ),
+        (
+            ChargerNotFoundError("GET /example: the set charger was not found"),
+            ConfigEntryState.SETUP_ERROR,
+        ),
+    ],
+)
+async def test_first_refresh_charger_errors(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    error: Exception,
+    state: ConfigEntryState,
+) -> None:
+    """Charger errors at setup retry or stop setup; the car isn't read."""
+    mock_client.get_charger.side_effect = error
+    await setup_integration(hass, mock_config_entry)
+
+    entry_state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
+    assert entry_state is state
+    if entry_state is ConfigEntryState.SETUP_ERROR:
+        assert mock_config_entry.reason == str(error)
+    mock_client.get_vehicle.assert_not_awaited()
+
+
+@pytest.mark.parametrize("method", ["get_charger", "get_vehicle", "get_price_forecast"])
+async def test_first_refresh_auth_error_starts_reauth(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    method: str,
+) -> None:
+    """An AuthError from any read during setup starts reauth, without logging in."""
+    getattr(mock_client, method).side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth_if_available") as start_reauth:
+        await setup_integration(hass, mock_config_entry)
+
+    assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
+    start_reauth.assert_called_once()
+    mock_client.login.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "error", [VehicleNotFoundError("no car"), MultipleVehiclesError("two cars")]
+)
+async def test_no_car(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+    error: Exception,
+) -> None:
+    """No single car: setup works without a car, logs it once, and the car isn't read again."""
+    mock_client.get_vehicle.side_effect = error
+    await setup_integration(hass, mock_config_entry)
+
+    coordinator = _coordinator(mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert not coordinator.has_car
+    assert coordinator.data.vehicle is None
+    assert caplog.text.count("No car entities") == 1
+
+    freezer.tick(INTERVAL_UNPLUGGED)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_vehicle.await_count == 1
+
+
+async def test_car_error_at_setup_continues(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Another car error at setup: loaded, car expected but not read yet; a later read fills it in."""
+    mock_client.get_vehicle.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+
+    coordinator = _coordinator(mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert coordinator.has_car
+    assert coordinator.data.vehicle is None
+    assert caplog.text.count("Could not read the car") == 1
+
+    mock_client.get_vehicle.side_effect = None
+    freezer.tick(INTERVAL_UNPLUGGED)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert coordinator.data.vehicle == make_vehicle()
+
+
+async def test_later_charger_errors(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A later charger failure fails the update, skips the car and keeps the interval."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    freezer.tick(INTERVAL_UNPLUGGED)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert not coordinator.last_update_success
+    assert coordinator.update_interval == INTERVAL_UNPLUGGED
+    assert mock_client.get_vehicle.await_count == 1
+
+
+async def test_rate_limit_retry_after(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A later RateLimitError's retry_after sets the next poll (not the 60 min interval)."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = RateLimitError(
+        "too many requests", retry_after=120.0
+    )
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    reads = mock_client.get_charger.await_count
+
+    # HA rounds timers to whole seconds, so check well before and well after 120 s.
+    freezer.tick(timedelta(seconds=60))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads
+    freezer.tick(timedelta(seconds=70))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads + 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ChargerNotFoundError("GET /example: the set charger was not found"),
+        UnexpectedResponseError("GET /example", "bad shape"),
+    ],
+)
+async def test_later_permanent_charger_errors(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    error: Exception,
+) -> None:
+    """A later ChargerNotFoundError or UnexpectedResponseError fails the update; the entry stays loaded."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = error
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+
+
+@pytest.mark.parametrize("method", ["get_charger", "get_vehicle"])
+async def test_later_auth_error_starts_reauth(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    method: str,
+) -> None:
+    """A later AuthError from the charger or car starts reauth, and polling stops."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    getattr(mock_client, method).side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth") as start_reauth:
+        await coordinator.async_refresh()
+    start_reauth.assert_called_once()
+    mock_client.login.assert_not_awaited()
+
+    reads = mock_client.get_charger.await_count
+    freezer.tick(INTERVAL_UNPLUGGED * 2)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads
+
+
+async def test_later_car_error_keeps_car_data(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A later car error keeps the last car data, logs once, and logs the recovery."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    for error in (ApiError("GET /example", 500), VehicleNotFoundError("no car")):
+        mock_client.get_vehicle.side_effect = error
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success
+        assert coordinator.data.vehicle == make_vehicle()
+    assert caplog.text.count("Could not read the car") == 1
+
+    mock_client.get_vehicle.side_effect = None
+    await coordinator.async_refresh()
+    assert "Reading the car works again" in caplog.text
+
+
+async def test_car_device_updated_on_rename(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """A car read with a new name, brand or model updates the car device.
+
+    The empty-name fallback to the translated "Car" needs Task 3's strings; Task 3 tests it.
+    """
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    # Task 2 has no device strings yet, so this device starts with the untranslated key as its name;
+    # the car read below overwrites it.
+    device = device_registry.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={car_device_identifier(str(FAKE_CHARGER_ID))},
+        translation_key="car",
+    )
+
+    mock_client.get_vehicle.return_value = make_vehicle(
+        name="Other car", brand="Other", model="Model X"
+    )
+    await coordinator.async_refresh()
+    updated = device_registry.async_get(device.id, include_child_devices=False)
+    assert updated is not None
+    assert (updated.name, updated.manufacturer, updated.model) == (
+        "Other car",
+        "Other",
+        "Model X",
+    )
+
+
+async def test_prices_read_at_the_five_times(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Prices are read at setup and at 00:05, 05:05, 10:05, 15:05, 20:05 local, not in between."""
+    freezer.move_to(MIDNIGHT - timedelta(minutes=30))  # 23:30 local
+    await setup_integration(hass, mock_config_entry)
+    assert mock_client.get_price_forecast.await_count == 1
+
+    reads = 1
+    for hours in range(24):
+        for minute in (0, 5, 30):
+            when = MIDNIGHT + timedelta(hours=hours, minutes=minute)
+            freezer.move_to(when)
+            async_fire_time_changed(hass, when)
+            await hass.async_block_till_done()
+            local_hour = when.astimezone(dt_util.get_default_time_zone()).hour
+            if minute == 5 and local_hour in (0, 5, 10, 15, 20):
+                reads += 1
+            assert mock_client.get_price_forecast.await_count == reads, when
+    assert reads == 6
+
+
+async def test_price_read_merges_and_saves(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A price read merges into the known slots, prunes yesterday and saves."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=10))
+    mock_client.get_price_forecast.return_value = make_forecast(MIDNIGHT, [1.0, 2.0])
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.known_prices == {
+        MIDNIGHT: 1.0,
+        MIDNIGHT + timedelta(minutes=15): 2.0,
+    }
+    stored = hass_storage[STORE_KEY.format(mock_config_entry.entry_id)]["data"]["slots"]
+    assert [slot["price"] for slot in stored] == [1.0, 2.0]
+
+
+async def test_stored_prices_loaded_at_setup(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stored slots of today are loaded; yesterday's are dropped; a failed read keeps them."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=10))
+    key = STORE_KEY.format(mock_config_entry.entry_id)
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": key,
+        "data": {
+            "slots": [
+                {"start": "2026-09-26T21:45:00+00:00", "price": 9.0},
+                {"start": "2026-09-26T22:00:00+00:00", "price": 1.0},
+            ]
+        },
+    }
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert _coordinator(mock_config_entry).known_prices == {MIDNIGHT: 1.0}
+
+
+async def test_failed_price_read_keeps_slots(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed scheduled read logs a warning and keeps the known slots."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=1))
+    mock_client.get_price_forecast.return_value = make_forecast(MIDNIGHT, [1.0])
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_price_forecast.side_effect = UnexpectedResponseError(
+        "GET /example", "gap"
+    )
+    await coordinator.async_read_prices()
+    assert coordinator.known_prices == {MIDNIGHT: 1.0}
+    assert "Could not read the price forecast" in caplog.text
+
+
+async def test_later_price_auth_error_starts_reauth(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """An AuthError in a scheduled price read starts reauth, without logging in."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_price_forecast.side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth") as start_reauth:
+        await coordinator.async_read_prices()
+    start_reauth.assert_called_once()
+    mock_client.login.assert_not_awaited()
+
+
+async def test_tick_updates_listeners_without_api_calls(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The quarter-hour tick calls the listeners and makes no API call."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=1, minutes=10))
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    calls = []
+    coordinator.async_add_listener(lambda: calls.append(1))
+
+    when = MIDNIGHT + timedelta(hours=1, minutes=15)
+    freezer.move_to(when)
+    async_fire_time_changed(hass, when)
+    await hass.async_block_till_done()
+    assert calls == [1]
+    assert mock_client.get_charger.await_count == 1
+    assert mock_client.get_price_forecast.await_count == 1
+
+
+def test_car_device_identifier() -> None:
+    """The car device is keyed on the charger."""
+    assert car_device_identifier("123") == (DOMAIN, "123_car")

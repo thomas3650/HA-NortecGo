@@ -89,6 +89,9 @@
           "unplugged": "Unplugged",
           "idle": "Idle"
         }
+      },
+      "last_read": {
+        "name": "Last read"
       }
     },
     "switch": {

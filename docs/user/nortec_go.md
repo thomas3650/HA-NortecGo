@@ -71,9 +71,10 @@ The integration adds two devices: the charger, and the car when the account has 
 | Current price | Sensor | The spot price for the current 15 minutes, per kWh, incl. VAT. Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
 | Cable connected | Binary sensor | On when a cable is connected to the charger |
 | Charging | Binary sensor | On while the car draws power |
-| Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it |
+| Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it; off right after a stop until the charger shows it |
 | Charge status | Sensor | Start blocked, Starting, Charging, Paused, Stopping, Waiting for replug, Unplugged or Idle |
 | Refresh | Button | Reads the charger, the car and the prices now |
+| Last read | Sensor (diagnostic) | When the charger was last read. Shows how old the other values are, also after a failed read |
 
 ### Car
 
@@ -131,6 +132,9 @@ After you turn *Charge* on, it shows on for up to 10 minutes while Home Assistan
 start. If no charge is seen by then, starts are blocked. After a stop, the charger needs the cable unplugged
 and replugged before the next start.
 
+After you turn *Charge* off, it shows off and *Charge status* shows *Stopping* for up to 2 minutes while
+Home Assistant waits for the charger to show the stop. Turning *Charge* on in that time is refused.
+
 ## Actions, conditions and triggers
 
 Not available yet.
@@ -161,19 +165,21 @@ Replace `person.me` and the entity ID with your own.
 
 ## Data updates
 
-The integration reads the charger and the car:
+The integration reads the charger:
 
-- every 60 minutes while no cable is connected,
-- every 15 minutes while a cable is connected,
-- every 5 minutes while a charge is starting, running or stopping,
-- every 5 minutes while a start is pending.
+- every 30 seconds while a charge is starting or stopping, including right after you turn *Charge* on or
+  off,
+- every 5 minutes while a charge is running,
+- every 60 minutes otherwise.
 
-It reads the price forecast when it starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. The current price
-moves to the next 15 minutes by itself, without a read.
+It reads the car with the charger, but at most about every 5 minutes. It reads the price forecast when it
+starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. The current price moves to the next 15 minutes by
+itself, without a read.
 
-To read the charger, the car and the prices now, press the *Refresh* button. From an automation, the
-`homeassistant.update_entity` action on any Nortec Go entity reads the charger and the car, but not the prices
-(see *Automation examples*).
+Turning *Charge* on or off reads the charger right away. To read the charger, the car and the prices now,
+press the *Refresh* button. From an automation, the `homeassistant.update_entity` action on any Nortec Go
+entity reads the charger, and the car if it wasn't read in the last few minutes, but not the prices (see
+*Automation examples*).
 
 ## Known limitations
 
@@ -187,8 +193,10 @@ To read the charger, the car and the prices now, press the *Refresh* button. Fro
 - Car data can be hours old (see *Last seen*), so *Connected to charger* can turn on late.
 - Days and the price times follow Home Assistant's time zone.
 - A car removed from the account, with its entities, disappears after you reload the integration.
-- An unplug and replug between two reads (up to 15 minutes apart while a cable is connected) can't be seen;
+- An unplug and replug between two reads (up to 60 minutes apart while no charge is running) can't be seen;
   use the repair issue to allow starts again in that case.
+- A charge started or resumed outside Home Assistant, for example in the Nortec Go app, can take up to 60
+  minutes to show. Press *Refresh* to see it sooner.
 - A hold that led to no charge is expected to expire by itself within about 7 days and can't be cancelled
   from Home Assistant.
 - After a stop, the charger needs the cable unplugged and replugged before the next start, so an EV Smart

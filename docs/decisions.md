@@ -237,3 +237,14 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Why:** The unit tests mock Home Assistant's startup; the owner wants proof that the integration really
   starts before reviewing a PR.
 - **Source:** owner request on 2026-09-27
+
+### D29: Pending stop and fast reads
+- **Date:** 2026-09-27 · **Status:** active
+- **Decision:** After a successful stop the switch shows off and *Charge status* *Stopping* until a read sees
+  the charge no longer on, or for 2 minutes, and a start is refused meanwhile. The charger is read every
+  30 s while *Charge status* is *starting* or *stopping*, 5 min while charging and 60 min otherwise
+  (replacing D27's intervals and D26's last sentence), and right away after a start, a stop or Refresh; the
+  car at most about every 5 minutes, and on every Refresh.
+- **Why:** The charger reports the old state for about 25 s after a stop, so the switch flipped back on and
+  a stop was pressed twice; 30 s reads were observed without a rate limit.
+- **Source:** [pending stop and fast reads spec](superpowers/specs/2026-09-27-pending-stop-fast-reads-design.md), Decisions and §2–3

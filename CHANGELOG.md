@@ -16,8 +16,13 @@ All notable changes to this project are documented in this file. The format is b
   the current price with today's and tomorrow's prices, the car's battery and charge limit, and whether
   your own car is connected to the charger.
 - A *Charge* switch that starts and stops charging, guarded against repeated starts that could place extra
-  card holds, a *Charge status* sensor, and a repair issue to allow starts again after a failed start.
+  card holds, and shown off right after a stop until the charger follows; a *Charge status* sensor; and a
+  repair issue to allow starts again after a failed start.
 - A *Refresh* button that reads the charger, the car and the prices right away.
+- A *Last read* sensor that shows when the charger was last read.
+- The charger is read every 30 seconds while a charge is starting or stopping, and right away after turning
+  *Charge* on or off.
+- The charger's device name follows a rename in the Nortec Go app.
 
 ## [0.0.1] - 2026-09-26
 

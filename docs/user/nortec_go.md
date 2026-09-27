@@ -143,7 +143,7 @@ Not available yet.
 
 ### Read the charger when you get home
 
-The charger is read once an hour while no cable is connected. To see a plugged-in car sooner, read it
+The charger is read once an hour while no charge is running. To see a plugged-in car sooner, read it
 when you arrive:
 
 ```yaml
@@ -172,7 +172,7 @@ The integration reads the charger:
 - every 5 minutes while a charge is running,
 - every 60 minutes otherwise.
 
-It reads the car with the charger, but at most about every 5 minutes. It reads the price forecast when it
+It reads the car with the charger, but at most about every 5 minutes, and on every *Refresh*. It reads the price forecast when it
 starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. The current price moves to the next 15 minutes by
 itself, without a read.
 

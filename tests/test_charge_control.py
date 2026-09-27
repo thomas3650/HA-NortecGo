@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 from datetime import timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
@@ -734,6 +734,23 @@ async def test_pending_stop_stays_on_a_stale_read(control: ChargeControl) -> Non
     assert control.state == STOP_PENDING
 
 
+async def test_pending_stop_ends_on_a_stale_read_without_the_charge_on(
+    control: ChargeControl,
+) -> None:
+    """The pending-stop check runs before the stale-read return, even on a stale read (§2.3)."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    control.on_charger_read(
+        make_charger(
+            is_connected=True,
+            charge_state=ChargeState.STOPPING,
+            state=ChargerState.BUSY_CHARGING,
+        ),
+        control.start_attempts - 1,
+    )
+    assert control.state == IDLE
+
+
 async def test_pending_stop_times_out_on_a_read(
     control: ChargeControl,
     freezer: FrozenDateTimeFactory,
@@ -822,10 +839,20 @@ async def test_turn_off_before_the_background_stop_is_noop(
 
 
 @pytest.mark.parametrize(
-    "error", [NoActiveChargeError("x"), ChargeNotStoppableError("x")]
+    "error",
+    [
+        NoActiveChargeError("x"),
+        ChargeNotStoppableError("x"),
+        AuthError("x"),
+        NortecGoConnectionError("x"),
+    ],
 )
 async def test_background_stop_without_success_ends_pending_stop(
-    hass: HomeAssistant, control: ChargeControl, client: AsyncMock, error: Exception
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    error: Exception,
 ) -> None:
     """The background stop finds no charge or fails: the pending stop it queued ends."""
     release = asyncio.Event()
@@ -835,12 +862,13 @@ async def test_background_stop_without_success_ends_pending_stop(
         raise error
 
     client.stop_charge.side_effect = slow_stop
-    await control.async_start()
-    await control.async_stop()
-    control.on_charger_read(CHARGING, control.start_attempts)
-    assert control.state == STOP_PENDING
-    release.set()
-    await hass.async_block_till_done(wait_background_tasks=True)
+    with patch.object(entry, "async_start_reauth", MagicMock()):
+        await control.async_start()
+        await control.async_stop()
+        control.on_charger_read(CHARGING, control.start_attempts)
+        assert control.state == STOP_PENDING
+        release.set()
+        await hass.async_block_till_done(wait_background_tasks=True)
     assert control.state == IDLE
 
 

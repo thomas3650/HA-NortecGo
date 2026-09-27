@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file. The format is b
   your own car is connected to the charger.
 - A *Charge* switch that starts and stops charging, guarded against repeated starts that could place extra
   card holds, a *Charge status* sensor, and a repair issue to allow starts again after a failed start.
+- A *Refresh* button that reads the charger, the car and the prices right away.
 
 ## [0.0.1] - 2026-09-26
 

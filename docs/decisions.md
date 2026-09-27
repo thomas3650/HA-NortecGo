@@ -174,7 +174,7 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Source:** issue #17; owner decision on 2026-09-26 to do it without a spec, as nothing is released yet
 
 ### D22: State-based polling, no polling settings
-- **Date:** 2026-09-26 · **Status:** active
+- **Date:** 2026-09-26 · **Status:** superseded by D27
 - **Decision:** The charger and car are read every 60 min unplugged, 15 min connected and 5 min while a
   charge is under way; prices at setup and at 00:05, 05:05, 10:05, 15:05 and 20:05. There is no options flow
   and no refresh button; `homeassistant.update_entity` reads the charger and car now.
@@ -219,6 +219,15 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Why:** EV Smart Charging repeats "on" up to 8 times an hour, and each start can place a new hold; a
   human looks before the next one.
 - **Source:** [charge switch spec](superpowers/specs/2026-09-26-charge-switch-design.md), Decisions and §3
+
+### D27: State-based polling and a Refresh button
+- **Date:** 2026-09-27 · **Status:** active
+- **Decision:** D22's schedule stands: the charger and car are read every 60 / 15 / 5 min by the charger's
+  state (5 min also while a start is pending, D26), and prices at setup and five fixed times; there are no
+  polling settings. A *Refresh* button on the charger reads the charger, the car and the prices now.
+- **Why:** The owner wants a one-press refresh in the UI; `homeassistant.update_entity` needs an automation
+  and doesn't read prices.
+- **Source:** issue #27; owner ruling on 2026-09-27 under D25 (no spec)
 
 ### D28: Smoke start before a PR is ready
 - **Date:** 2026-09-27 · **Status:** active

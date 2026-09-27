@@ -12,5 +12,6 @@ Closes #
 - [ ] `docs/user/nortec_go.md` updated (user-visible changes)
 - [ ] No private data: IDs, tokens, emails, captures, raw API details, links into the private repo
 - [ ] `pytest-homeassistant-custom-component` bump → `hacs.json` `homeassistant` minimum raised
+- [ ] `pynortecgo` bump → the checklist in `docs/releasing.md` → *Bumping `pynortecgo`* done
 - [ ] Lasting decision → `docs/decisions.md` entry
 - [ ] `full-reviewer` run on the branch (non-trivial changes)

@@ -198,11 +198,6 @@ class ChargeControl:
             stop_pending=self._stop_pending_since is not None,
         )
 
-    @property
-    def start_pending(self) -> bool:
-        """A start is pending (the coordinator reads every 5 minutes then)."""
-        return self._pending_since is not None
-
     async def async_load(self) -> None:
         """Load the stored state; a wrong shape blocks starts to be safe (§3.5)."""
         data = await self._store.async_load()

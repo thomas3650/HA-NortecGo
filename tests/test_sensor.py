@@ -285,7 +285,7 @@ async def test_device_name_fallbacks(
     assert charger.name == mock_config_entry.title
 
     mock_client.get_vehicle.return_value = make_vehicle(name="")
-    await mock_config_entry.runtime_data.async_refresh()
+    await mock_config_entry.runtime_data.async_read_now(with_car=True)
     await hass.async_block_till_done()
     car = _device(device_registry, mock_config_entry, f"{FAKE_CHARGER_ID}_car")
     assert car is not None
@@ -307,7 +307,7 @@ async def test_car_placeholder_until_first_read(
     assert hass.states.get("sensor.car_battery").state == STATE_UNAVAILABLE  # type: ignore[union-attr]
 
     mock_client.get_vehicle.side_effect = None
-    await mock_config_entry.runtime_data.async_refresh()
+    await mock_config_entry.runtime_data.async_read_now(with_car=True)
     await hass.async_block_till_done()
     updated = device_registry.async_get(car.id, include_child_devices=False)
     assert updated is not None

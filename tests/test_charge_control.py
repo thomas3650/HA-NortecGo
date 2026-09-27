@@ -1022,13 +1022,6 @@ async def test_shutdown_waits_and_refuses(
         await control.async_stop()
 
 
-async def test_start_pending_property(control: ChargeControl) -> None:
-    """start_pending follows the pending start."""
-    assert not control.start_pending
-    await control.async_start()
-    assert control.start_pending
-
-
 async def test_stop_with_a_pending_start_and_a_charge_seen(
     control: ChargeControl, client: AsyncMock
 ) -> None:

@@ -27,6 +27,8 @@ PRICE_STORE_KEY: Final = "nortec_go.{entry_id}.prices"
 
 # The charge switch's start guard (D26).
 START_CONFIRM_TIMEOUT: Final = timedelta(minutes=10)
+# How long the switch shows off after a stop while the charger still reports the charge (D29).
+STOP_CONFIRM_TIMEOUT: Final = timedelta(minutes=2)
 CHARGE_CONTROL_STORE_VERSION: Final = 1
 CHARGE_CONTROL_STORE_KEY: Final = "nortec_go.{entry_id}.charge_control"
 START_BLOCKED_ISSUE_ID: Final = "start_blocked_{entry_id}"

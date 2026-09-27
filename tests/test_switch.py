@@ -13,7 +13,12 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-from pynortecgo import CableNotConnectedError, ChargeState, NortecGoConnectionError
+from pynortecgo import (
+    CableNotConnectedError,
+    ChargerState,
+    ChargeState,
+    NortecGoConnectionError,
+)
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -123,3 +128,24 @@ async def test_switch_available_after_failed_read(
     assert _state(hass, "binary_sensor.garage_charger_charging") == STATE_UNAVAILABLE
     await _call(hass, SERVICE_TURN_OFF)
     mock_client.stop_charge.assert_awaited_once()
+
+
+async def test_switch_off_right_after_a_stop(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """After a stop the switch stays off while the charger still says CHARGING; on is refused."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        state=ChargerState.BUSY_CHARGING,
+    )
+    await setup_integration(hass, mock_config_entry)
+    assert _state(hass) == STATE_ON
+    await _call(hass, SERVICE_TURN_OFF)
+    await hass.async_block_till_done()
+    assert _state(hass) == STATE_OFF
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await _call(hass, SERVICE_TURN_ON)
+    assert exc_info.value.translation_key == "stop_pending"
+    assert "A stop is under way" in str(exc_info.value)
+    mock_client.start_charge.assert_not_awaited()

@@ -68,17 +68,20 @@ STOP_PENDING = ChargeControlState(stop_pending=True)
 
 Add to `test_is_charge_on`'s parameter list:
 
-```python
-((ChargeState.CHARGING, STOP_PENDING, False),)
-((ChargeState.PAUSED, STOP_PENDING, False),)
+```text
+        (ChargeState.CHARGING, STOP_PENDING, False),
+        (ChargeState.PAUSED, STOP_PENDING, False),
 ```
 
 Add to `test_charge_status`'s parameter list:
 
-```python
-((CHARGING, STOP_PENDING, "stopping"),)
-((CHARGING, ChargeControlState(blocked=True, stop_pending=True), "start_blocked"),)
+```text
+        (CHARGING, STOP_PENDING, "stopping"),
+        (CHARGING, ChargeControlState(blocked=True, stop_pending=True), "start_blocked"),
 ```
+
+(The rows are items of the existing `parametrize` lists, each ending with a comma.) Add to the
+`test_is_charge_on` docstring: "; off while our stop is pending".
 
 Change the import from `custom_components.nortec_go.const` to:
 
@@ -242,13 +245,23 @@ async def test_start_after_the_timeout_takes_the_normal_checks(
 async def test_background_stop_shows_off_at_once(
     hass: HomeAssistant, control: ChargeControl, client: AsyncMock
 ) -> None:
-    """The read that queues the background stop already shows the switch off and Stopping."""
+    """While the background stop is in flight the switch is off and Stopping.
+
+    The background task starts eagerly, so stop_charge waits on an event to keep it in flight.
+    """
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
     await control.async_start()
     await control.async_stop()
     control.on_charger_read(CHARGING, control.start_attempts)
     assert control.state == STOP_PENDING
     assert not is_charge_on(CHARGING, control.state)
     assert charge_status(CHARGING, control.state) == "stopping"
+    release.set()
     await hass.async_block_till_done(wait_background_tasks=True)
     client.stop_charge.assert_awaited_once()
     assert control.state == STOP_PENDING
@@ -257,11 +270,17 @@ async def test_background_stop_shows_off_at_once(
 async def test_turn_off_before_the_background_stop_is_noop(
     hass: HomeAssistant, control: ChargeControl, client: AsyncMock
 ) -> None:
-    """A turn_off before the queued background stop runs sends no second stop (Review Focus 1)."""
+    """A turn_off queued ahead of the background stop sends no second stop (Review Focus 1)."""
     await control.async_start()
     await control.async_stop()
-    control.on_charger_read(CHARGING, control.start_attempts)
-    await control.async_stop()
+    await control._lock.acquire()  # noqa: SLF001
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)  # the turn_off queues for the lock first
+    control.on_charger_read(
+        CHARGING, control.start_attempts
+    )  # the background stop second
+    control._lock.release()  # noqa: SLF001
+    await stop
     await hass.async_block_till_done(wait_background_tasks=True)
     client.stop_charge.assert_awaited_once()
 
@@ -273,10 +292,18 @@ async def test_background_stop_without_success_ends_pending_stop(
     hass: HomeAssistant, control: ChargeControl, client: AsyncMock, error: Exception
 ) -> None:
     """The background stop finds no charge or fails: the pending stop it queued ends."""
-    client.stop_charge.side_effect = error
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+        raise error
+
+    client.stop_charge.side_effect = slow_stop
     await control.async_start()
     await control.async_stop()
     control.on_charger_read(CHARGING, control.start_attempts)
+    assert control.state == STOP_PENDING
+    release.set()
     await hass.async_block_till_done(wait_background_tasks=True)
     assert control.state == IDLE
 
@@ -290,6 +317,9 @@ async def test_pending_stop_is_not_stored(
     """The stored shape keeps its three keys; the pending stop never reaches it (Review Focus 5)."""
     control.on_charger_read(CHARGING, control.start_attempts)
     await control.async_stop()
+    async_fire_time_changed(hass)  # any delayed save's timer
+    await hass.async_block_till_done()
+    assert STORE_KEY.format(entry.entry_id) not in hass_storage
     await control.async_shutdown()
     saved = hass_storage[STORE_KEY.format(entry.entry_id)]["data"]
     assert saved == {
@@ -564,7 +594,7 @@ git commit -F <message file>   # "docs: re-check pynortecgo's exception texts on
 - Modify: `custom_components/nortec_go/coordinator.py`
 - Modify: `custom_components/nortec_go/charge_control.py` (remove the `start_pending` property)
 - Modify: `custom_components/nortec_go/button.py`
-- Test: `tests/test_coordinator.py`, `tests/test_charge_control.py`, `tests/test_button.py`
+- Test: `tests/test_coordinator.py`, `tests/test_charge_control.py`, `tests/test_button.py`, `tests/test_sensor.py`
 
 **Interfaces:**
 - Consumes: `ChargeControlState.stop_pending`, `charge_status(charger, control)` from Task 1.
@@ -788,6 +818,16 @@ async def test_read_at_kept_on_a_control_change(
 
 In `tests/test_charge_control.py`, delete `test_start_pending_property`.
 
+These existing tests refresh right after setup and expect a car read, which the car skip now leaves out
+(the car's last try is under 4.5 minutes old). In each, replace every `async_refresh()` call with
+`async_read_now(with_car=True)` (on `coordinator` or `mock_config_entry.runtime_data`, as the test has it):
+
+- `tests/test_coordinator.py::test_later_auth_error_starts_reauth`
+- `tests/test_coordinator.py::test_later_car_error_keeps_car_data`
+- `tests/test_coordinator.py::test_car_device_updated_on_rename`
+- `tests/test_sensor.py::test_device_name_fallbacks`
+- `tests/test_sensor.py::test_car_placeholder_until_first_read`
+
 - [ ] **Step 3: Write the button test**
 
 Add to `tests/test_button.py`:
@@ -913,14 +953,14 @@ Its module docstring stays; the class docstring stays.
 - [ ] **Step 8: Run the tests and the gates**
 
 Run: `uv run pytest -q && uv run ruff check && uv run ruff format --check && uv run mypy`
-Expected: all pass. If a test elsewhere builds `NortecGoData` or imports the removed constants, update it the same way (none did at planning time).
+Expected: all pass. If a test elsewhere builds `NortecGoData` or imports the removed constants, update it the same way. The five tests listed in Step 2 are the ones known to need the car read.
 Run: `uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95 -q`
 Expected: PASS.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add custom_components/nortec_go/const.py custom_components/nortec_go/coordinator.py custom_components/nortec_go/charge_control.py custom_components/nortec_go/button.py tests/test_coordinator.py tests/test_charge_control.py tests/test_button.py
+git add custom_components/nortec_go/const.py custom_components/nortec_go/coordinator.py custom_components/nortec_go/charge_control.py custom_components/nortec_go/button.py tests/test_coordinator.py tests/test_charge_control.py tests/test_button.py tests/test_sensor.py
 git commit -F <message file>   # "feat: read every 30 s while a charge starts or stops, and right away after an action (#30)"
 ```
 
@@ -1044,7 +1084,7 @@ git commit -F <message file>   # "feat: Last read sensor on the charger (#30)"
 
 ### Task 5: Charger device rename and the charger read's catch-all
 
-**Model:** sonnet
+**Model:** sonnet — the rename copies the existing car-device pattern; no new mapping of model fields to entities.
 **Wave:** 3
 
 **Files:**
@@ -1124,8 +1164,10 @@ async def test_unknown_client_error_fails_the_read(
 
 - [ ] **Step 2: Run the tests and see them fail**
 
-Run: `uv run pytest tests/test_coordinator.py -q -k "rename or unknown_client"`
-Expected: FAIL (the device keeps "Garage charger"; the unknown error logs "Unexpected error fetching").
+Run: `uv run pytest tests/test_coordinator.py -q -k "charger_device_follows or unknown_client_error"`
+Expected: FAIL in `test_charger_device_follows_a_rename` (the device keeps "Garage charger") and
+`test_unknown_client_error_fails_the_read` (the error reaches HA's generic handler). The guard test
+`test_charger_rename_before_the_device_exists` passes before and after.
 
 - [ ] **Step 3: Implement**
 

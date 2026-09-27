@@ -30,7 +30,9 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
    are none, say so in the PR description.
 9. **Branch review:** `full-reviewer` on the branch until Ready. A learning found during the review goes
    through step 8 too, and the next review round checks it.
-10. **Ready:** update the PR description (Rulings, learnings), then `gh pr ready` only when the owner's
+10. **Ready:** run `scripts/smoke` on the branch (Home Assistant must start and set up the integration with
+    no errors from it; stop any running dev instance first), update the PR description (Rulings, learnings,
+    the smoke result), then `gh pr ready` only when the owner's
     review is needed, and tell the owner.
 11. **Merge:** the owner merges.
 
@@ -114,7 +116,8 @@ doc fix. It goes straight to a branch and a ready PR: no spec, no plan, no draft
 Until the first working release (the first version the owner has tested locally; the `v0.0.1` skeleton
 doesn't count), the owner may rule that a small, well-scoped behaviour change skips the spec and plan (D25).
 It still starts from an issue and its PR says `Closes #n`. The controller gives a short design in chat,
-implements it with TDD, runs the gates and opens a ready PR, with no `full-reviewer` review.
+implements it with TDD, runs the gates and `scripts/smoke`, and opens a ready PR, with no `full-reviewer`
+review.
 
 ## 5. Model policy and guarded files
 
@@ -161,7 +164,9 @@ implements it with TDD, runs the gates and opens a ready PR, with no `full-revie
   private data from this side.
 - **Quality scale:** a PR that completes a rule sets it to `done` in `quality_scale.yaml`.
 - **Devcontainer:** manual testing only, never the gate environment.
-- **Gates:** the commands in `CLAUDE.md` → Commands; `hassfest` and `hacs` run in CI only.
+- **Gates:** the commands in `CLAUDE.md` → Commands; `hassfest` and `hacs` run in CI only. `scripts/smoke`
+  runs before a PR is marked ready (step 10); it needs the owner's dev config in `config/`, so it runs locally,
+  never in CI.
 
 | The controller may | The controller may not |
 |---|---|

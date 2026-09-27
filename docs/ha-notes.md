@@ -32,6 +32,13 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - The pre-commit `ruff format` hook also formats Python blocks inside `.md` files. The first commit of a
   plan can fail because the hook changed the file; add it again and commit.
 
+- `hass --debug` turns on asyncio debug mode, not debug logging, and HA logs only warnings and up unless
+  the config sets a `logger`. `hass --verbose` logs INFO and DEBUG; `--log-file <path>` writes the log
+  elsewhere than `config/`.
+- On macOS, `hass` started in the background of a non-interactive shell (`hass … &`) crashed during startup
+  in the Bluetooth integration (CoreBluetooth via PyObjC). Run it in the foreground with a timer instead
+  (`scripts/smoke`).
+
 ## Testing
 
 - To mock a client class, patch it with `autospec=True` and set its `return_value` to an

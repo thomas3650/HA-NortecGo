@@ -6,6 +6,7 @@ from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 from pynortecgo import Tokens
 
+from .charge_control import async_remove_charge_control
 from .const import DOMAIN
 from .coordinator import NortecGoCoordinator, car_device_identifier
 from .entry import NortecGoConfigEntry, create_client, tokens_from_data, tokens_to_data
@@ -13,7 +14,12 @@ from .prices import PriceStore
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -41,6 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
     client.set_charger(int(entry.unique_id))
 
     coordinator = NortecGoCoordinator(hass, entry, client)
+    await coordinator.charge_control.async_load()
     await coordinator.async_load_prices()
     await coordinator.async_config_entry_first_refresh()
     if not coordinator.has_car:
@@ -60,10 +67,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> None:
-    """Delete the entry's stored prices."""
+    """Delete the entry's stored prices and charge control, and its repair issue."""
     await PriceStore(hass, entry.entry_id).async_remove()
+    await async_remove_charge_control(hass, entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> bool:
-    """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload a config entry; the charge control saves and stops taking calls."""
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        await entry.runtime_data.charge_control.async_shutdown()
+    return unloaded

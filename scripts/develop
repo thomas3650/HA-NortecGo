@@ -13,4 +13,9 @@ if [ ! -f config/configuration.yaml ]; then
 fi
 ln -sfn "$(pwd)/custom_components/nortec_go" config/custom_components/nortec_go
 
+# --setup-only prepares config/ and stops; VS Code's F5 (.vscode/launch.json) uses it, then starts HA itself.
+if [ "${1:-}" = "--setup-only" ]; then
+  exit 0
+fi
+
 exec uv run hass -c config --debug

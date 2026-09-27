@@ -19,13 +19,20 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
-from pynortecgo import NortecGoConnectionError, VehicleNotFoundError
+from pynortecgo import (
+    Charger,
+    ChargerState,
+    ChargeState,
+    NortecGoConnectionError,
+    VehicleNotFoundError,
+)
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
 
+from custom_components.nortec_go.charge_control import CHARGE_STATUS_OPTIONS
 from custom_components.nortec_go.const import DOMAIN, MISSING_SLOT_PRICE
 
 from .conftest import (
@@ -145,6 +152,51 @@ def test_price_lists_not_recorded() -> None:
         "prices_today",
         "prices_tomorrow",
     } <= NortecGoPriceSensor._unrecorded_attributes  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    ("charger", "expected"),
+    [
+        (make_charger(is_connected=False), "unplugged"),
+        (make_charger(is_connected=True), "idle"),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            "charging",
+        ),
+        (
+            make_charger(is_connected=True, state=ChargerState.BUSY_NON_RELEASED),
+            "not_released",
+        ),
+        (make_charger(is_connected=True, state=ChargerState.UNKNOWN), STATE_UNKNOWN),
+    ],
+)
+async def test_charge_status_sensor(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    charger: Charger,
+    expected: str,
+) -> None:
+    """Charge status is an enum sensor with the spec's options."""
+    mock_client.get_charger.return_value = charger
+    await setup_integration(hass, mock_config_entry)
+    state = hass.states.get("sensor.garage_charger_charge_status")
+    assert state is not None
+    assert state.state == expected
+    assert state.attributes[ATTR_DEVICE_CLASS] == SensorDeviceClass.ENUM
+    assert state.attributes["options"] == CHARGE_STATUS_OPTIONS
+
+
+async def test_charge_status_follows_the_control(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A pending start shows starting at once, without a read."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    await mock_config_entry.runtime_data.charge_control.async_start()
+    state = hass.states.get("sensor.garage_charger_charge_status")
+    assert state is not None
+    assert state.state == "starting"
 
 
 async def test_car_sensors(

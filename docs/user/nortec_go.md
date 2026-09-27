@@ -71,6 +71,8 @@ The integration adds two devices: the charger, and the car when the account has 
 | Current price | Sensor | The spot price for the current 15 minutes, per kWh, incl. VAT. Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
 | Cable connected | Binary sensor | On when a cable is connected to the charger |
 | Charging | Binary sensor | On while the car draws power |
+| Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it |
+| Charge status | Sensor | Start blocked, Starting, Charging, Paused, Stopping, Waiting for replug, Unplugged or Idle |
 | Refresh | Button | Reads the charger, the car and the prices now |
 
 ### Car
@@ -101,9 +103,33 @@ hours. Set it up with these entities:
 | EV SOC entity | Battery |
 | EV target SOC entity | Charge limit |
 | EV connected entity | Connected to charger |
+| Charger control entity | Charge |
+| Charging state entity | Charging (or leave it empty) |
 
 *Connected to charger* is on only when your own car is at your charger. A guest car plugged into the
 charger leaves it off, so EV Smart Charging leaves the charger alone and the guest charges normally.
+
+Use *Charging* as the charging state entity, not the *Charge* switch: *Charge* stays on while the charge is
+paused and right after a start, so EV Smart Charging's retry wouldn't fire when it should. Keep *Continuous
+charging preferred* on: after a stop the charger needs the cable unplugged and replugged before it can
+start again, so planning one continuous session suits it best.
+
+## Starting a charge
+
+Turning on *Charge* starts a charge; turning it off stops one. Each start can place a card hold on your
+payment method, so a start is never retried.
+
+If a start may have left a card hold without a charge starting, further starts are blocked until you unplug
+the cable, Home Assistant sees a charge start (for example one started in the Nortec Go app), or you
+confirm in the repair issue that Home Assistant creates. Find it under **Settings** > **System** >
+**Repairs**. *Charge status* shows *Start blocked* while this applies.
+
+Starts are also blocked, to be safe, if Home Assistant can't read its saved start guard. This clears the
+same way.
+
+After you turn *Charge* on, it shows on for up to 10 minutes while Home Assistant waits to see the charge
+start. If no charge is seen by then, starts are blocked. After a stop, the charger needs the cable unplugged
+and replugged before the next start.
 
 ## Actions, conditions and triggers
 
@@ -139,7 +165,8 @@ The integration reads the charger and the car:
 
 - every 60 minutes while no cable is connected,
 - every 15 minutes while a cable is connected,
-- every 5 minutes while a charge is starting, running or stopping.
+- every 5 minutes while a charge is starting, running or stopping,
+- every 5 minutes while a start is pending.
 
 It reads the price forecast when it starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. The current price
 moves to the next 15 minutes by itself, without a read.
@@ -160,6 +187,14 @@ To read the charger, the car and the prices now, press the *Refresh* button. Fro
 - Car data can be hours old (see *Last seen*), so *Connected to charger* can turn on late.
 - Days and the price times follow Home Assistant's time zone.
 - A car removed from the account, with its entities, disappears after you reload the integration.
+- An unplug and replug between two reads (up to 15 minutes apart while a cable is connected) can't be seen;
+  use the repair issue to allow starts again in that case.
+- A hold that led to no charge is expected to expire by itself within about 7 days and can't be cancelled
+  from Home Assistant.
+- After a stop, the charger needs the cable unplugged and replugged before the next start, so an EV Smart
+  Charging plan with more than one session needs a replug between them too.
+- EV Smart Charging logs the integration's start errors as its own failed action.
+- No live power reading.
 
 ## Troubleshooting
 
@@ -176,6 +211,10 @@ The charger you added is no longer on your Nortec Go account. Remove the integra
 ### "Too many sign-in attempts"
 
 The Nortec Go service limits sign-ins. Wait a while before you try again.
+
+### "Starts are blocked"
+
+See *Starting a charge*.
 
 ## Removing the integration
 

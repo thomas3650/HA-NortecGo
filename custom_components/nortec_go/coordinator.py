@@ -1,6 +1,6 @@
 """The Nortec Go coordinator: charger and car polling, price reads and the quarter-hour tick."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 import logging
 
@@ -27,6 +27,7 @@ from pynortecgo import (
     VehicleNotFoundError,
 )
 
+from .charge_control import ChargeControl, ChargeControlState
 from .const import (
     DOMAIN,
     INTERVAL_CHARGING,
@@ -46,10 +47,14 @@ _CHARGE_UNDER_WAY = (ChargeState.STARTING, ChargeState.CHARGING, ChargeState.STO
 
 @dataclass(frozen=True)
 class NortecGoData:
-    """One read of the charger and the car. vehicle is None until the car is read."""
+    """One read of the charger and the car, with the charge control's state.
+
+    vehicle is None until the car is read.
+    """
 
     charger: Charger
     vehicle: Vehicle | None
+    control: ChargeControlState
 
 
 def interval_for(charger: Charger) -> timedelta:
@@ -85,6 +90,13 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         )
         assert entry.unique_id is not None  # the config flow always sets it
         self.client = client
+        self.charge_control = ChargeControl(
+            hass,
+            entry,
+            client,
+            on_change=self._async_control_changed,
+            request_refresh=self.async_request_refresh,
+        )
         self.charger_id = entry.unique_id
         self.has_car = True
         self.known_prices: KnownSlots = {}
@@ -95,6 +107,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
 
     async def _async_update_data(self) -> NortecGoData:
         """Read the charger, then the car; set the next interval."""
+        start_attempts = self.charge_control.start_attempts
         # pynortecgo's messages hold no tokens, emails or IDs, so they may be passed on.
         try:
             charger = await self.client.get_charger()
@@ -107,9 +120,28 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         except (ChargerNotFoundError, UnexpectedResponseError) as err:
             raise ConfigEntryError(str(err)) from err
 
+        self.charge_control.on_charger_read(charger, start_attempts)
         vehicle = await self._async_read_vehicle()
-        self.update_interval = interval_for(charger)
-        return NortecGoData(charger=charger, vehicle=vehicle)
+        self.update_interval = (
+            INTERVAL_CHARGING
+            if self.charge_control.start_pending
+            else interval_for(charger)
+        )
+        return NortecGoData(
+            charger=charger, vehicle=vehicle, control=self.charge_control.state
+        )
+
+    @callback
+    def _async_control_changed(self) -> None:
+        """Carry a control change made outside a read to the entities.
+
+        Not async_set_updated_data: it would mark a failed coordinator as successful and
+        cancel a requested read.
+        """
+        if self.data is None:
+            return
+        self.data = replace(self.data, control=self.charge_control.state)
+        self.async_update_listeners()
 
     async def _async_read_vehicle(self) -> Vehicle | None:
         """Read the car; a car error never fails the update (§4.2)."""

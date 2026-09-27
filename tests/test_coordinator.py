@@ -1,8 +1,9 @@
 """Tests for the Nortec Go coordinator: polling, errors, prices and timers."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -26,11 +27,13 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
+from custom_components.nortec_go.charge_control import ChargeControlState
 from custom_components.nortec_go.const import (
     DOMAIN,
     INTERVAL_CHARGING,
     INTERVAL_CONNECTED,
     INTERVAL_UNPLUGGED,
+    START_CONFIRM_TIMEOUT,
 )
 from custom_components.nortec_go.coordinator import (
     NortecGoCoordinator,
@@ -511,3 +514,133 @@ async def test_tick_updates_listeners_without_api_calls(
 def test_car_device_identifier() -> None:
     """The car device is keyed on the charger."""
     assert car_device_identifier("123") == (DOMAIN, "123_car")
+
+
+async def test_data_carries_the_control_snapshot(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """NortecGoData.control is the control's snapshot."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.data.control == ChargeControlState()
+
+
+async def test_interval_while_start_pending(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A pending start reads every 5 minutes."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    await coordinator.charge_control.async_start()
+    await hass.async_block_till_done()
+    assert coordinator.update_interval == INTERVAL_CHARGING
+    assert coordinator.data.control.start_pending
+
+
+async def test_read_counter_handoff(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A read that began before a start attempt doesn't end the pending start (Review Focus 1)."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    control = coordinator.charge_control
+    read_started = asyncio.Event()
+    release_read = asyncio.Event()
+
+    async def slow_get_charger() -> Any:
+        read_started.set()
+        await release_read.wait()
+        return make_charger(
+            is_connected=False
+        )  # would end the pending start if trusted
+
+    mock_client.get_charger.side_effect = slow_get_charger
+    refresh = hass.async_create_task(coordinator.async_refresh())
+    await read_started.wait()
+    mock_client.get_charger.side_effect = None
+    await control.async_start()
+    release_read.set()
+    await refresh
+    assert control.state.start_pending
+
+
+async def test_timeout_on_unchanged_read_updates_entities(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A timeout on a read equal to the last one still reaches listeners (Review Focus 3)."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    await coordinator.charge_control.async_start()
+    await hass.async_block_till_done()
+    listener = MagicMock()
+    coordinator.async_add_listener(listener)
+    freezer.tick(START_CONFIRM_TIMEOUT)
+    await coordinator.async_refresh()
+    assert coordinator.data.control.blocked
+    listener.assert_called()
+
+
+async def test_stop_after_failed_read_keeps_others_unavailable(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A stop after a failed read doesn't mark the coordinator successful (Review Focus 4)."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING
+    )
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_charger.side_effect = NortecGoConnectionError("x")
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    # A change outside a read, before any read.
+    coordinator.charge_control._on_change()  # noqa: SLF001
+    assert not coordinator.last_update_success
+    await coordinator.charge_control.async_stop()
+    await hass.async_block_till_done()
+    mock_client.stop_charge.assert_awaited_once()
+    assert not coordinator.last_update_success
+    state = hass.states.get("binary_sensor.garage_charger_charging")
+    assert state is not None
+    assert state.state == "unavailable"
+
+
+async def test_start_soon_after_a_refresh_gets_its_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A read asked for inside the debouncer's 10 s cooldown isn't dropped by a later change."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    control = coordinator.charge_control
+    await control.async_start()  # asks for a read at once; the cooldown begins
+    await hass.async_block_till_done()
+    await control.async_stop()  # stop asked; its read is deferred by the cooldown
+    await control.async_start()  # clears stop asked: a change with no new read asked
+    calls = mock_client.get_charger.await_count
+    freezer.tick(timedelta(seconds=11))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count > calls
+
+
+async def test_control_change_before_the_first_read_is_ignored(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A control change before any data exists doesn't make up data or call listeners."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = NortecGoCoordinator(hass, mock_config_entry, mock_client)
+    listener = MagicMock()
+    remove_listener = coordinator.async_add_listener(listener)
+    coordinator.charge_control._on_change()  # noqa: SLF001
+    remove_listener()  # also stops the poll the first listener scheduled
+    assert coordinator.data is None
+    listener.assert_not_called()

@@ -50,14 +50,15 @@ def make_charger(
     *,
     is_connected: bool = False,
     charge_state: ChargeState | None = None,
+    state: ChargerState = ChargerState.AVAILABLE,
 ) -> Charger:
     """Return a charger; idle and unplugged unless told otherwise."""
     return Charger(
         id=charger_id,
         name=name,
         max_kw=11.0,
-        state=ChargerState.AVAILABLE,
-        state_raw="available",
+        state=state,
+        state_raw=state.value,
         is_connected=is_connected,
         charge_state=charge_state,
         charge_state_raw=None if charge_state is None else charge_state.value,

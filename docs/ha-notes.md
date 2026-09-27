@@ -41,6 +41,18 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   entities exist, add one with `coordinator.async_add_listener(lambda: None)`.
 - The test `hass` starts in the `US/Pacific` time zone. A test that depends on local time calls
   `await hass.config.async_set_time_zone(...)` first.
+- `Store.async_delay_save(..., 0)` writes on a timer, which `hass.async_block_till_done()` doesn't wait for.
+  Call `async_fire_time_changed(hass)` before reading `hass_storage`.
+
+## Coordinators and actions
+
+- `DataUpdateCoordinator.async_set_updated_data` sets `last_update_success` to true, cancels a requested
+  refresh and restarts the timer. To push state that didn't come from a read, replace `coordinator.data`
+  and call `async_update_listeners()`.
+- HA skips unavailable entities in an entity action (`switch.turn_off`) without an error, so an entity whose
+  action must always reach the device stays available after a failed read.
+- Unloading an entry doesn't cancel an entity action that is still running. Code that saves state from such
+  a call has to finish before the reloaded entry loads it (for example, take the same lock in unload).
 
 ## Devices and entities
 

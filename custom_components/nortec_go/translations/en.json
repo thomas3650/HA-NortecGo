@@ -89,6 +89,9 @@
           "unplugged": "Unplugged",
           "idle": "Idle"
         }
+      },
+      "last_read": {
+        "name": "Last read"
       }
     },
     "switch": {
@@ -136,6 +139,9 @@
     },
     "stop_failed": {
       "message": "Stopping the charge failed; it may have stopped anyway. Check the charger."
+    },
+    "stop_pending": {
+      "message": "A stop is under way. Try again when it has ended."
     },
     "unloading": {
       "message": "The Nortec Go integration is reloading. Try again in a moment."

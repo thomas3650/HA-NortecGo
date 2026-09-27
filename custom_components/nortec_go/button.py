@@ -33,6 +33,6 @@ class NortecGoRefreshButton(NortecGoChargerEntity, ButtonEntity):
         return True
 
     async def async_press(self) -> None:
-        """Read the charger and the car (debounced), then the prices."""
-        await self.coordinator.async_request_refresh()
+        """Read the charger and the car now, then the prices."""
+        await self.coordinator.async_read_now(with_car=True)
         await self.coordinator.async_read_prices()

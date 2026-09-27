@@ -32,9 +32,16 @@ git push origin vX.Y.Z
 
 ## Bumping `pynortecgo`
 
-Once the integration depends on the `pynortecgo` client library, `requirements` in `manifest.json` pins it
-to an exact version, for example `pynortecgo==X.Y.Z`. A new client release gets its own pull request that
-bumps this pin and runs the usual gates before merging.
+`requirements` in `manifest.json` pins the `pynortecgo` client library to an exact version, for example
+`pynortecgo==X.Y.Z`, and `pyproject.toml` pins the same version. A new client release gets its own pull
+request that bumps both pins, runs the usual gates, and works through this checklist before merging:
+
+- [ ] Read the new version's exception messages, including errors it wraps from lower layers, and confirm
+  they hold no email, password, token, IDs or request bodies. The integration passes them into logs and
+  `ConfigEntry*` errors (`CLAUDE.md`, hard rule 5).
+- [ ] Look for new exception classes the charger, car, price, start and stop calls can raise, and give each
+  the right handling. The charger read's catch-all only keeps an unknown error from crashing the read.
+- [ ] Read the client's changelog for breaking changes to the models the entities use.
 
 ## Bumping Home Assistant
 

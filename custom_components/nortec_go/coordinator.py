@@ -27,12 +27,13 @@ from pynortecgo import (
     VehicleNotFoundError,
 )
 
-from .charge_control import ChargeControl, ChargeControlState
+from .charge_control import ChargeControl, ChargeControlState, charge_status
 from .const import (
+    CAR_READ_MIN_AGE,
     DOMAIN,
+    INTERVAL_CHANGING,
     INTERVAL_CHARGING,
-    INTERVAL_CONNECTED,
-    INTERVAL_UNPLUGGED,
+    INTERVAL_IDLE,
     PRICE_READ_HOURS,
     PRICE_READ_MINUTE,
     TICK_MINUTES,
@@ -42,28 +43,28 @@ from .prices import KnownSlots, PriceStore, merge_forecast, prune
 
 _LOGGER = logging.getLogger(__name__)
 
-_CHARGE_UNDER_WAY = (ChargeState.STARTING, ChargeState.CHARGING, ChargeState.STOPPING)
-
 
 @dataclass(frozen=True)
 class NortecGoData:
     """One read of the charger and the car, with the charge control's state.
 
-    vehicle is None until the car is read.
+    vehicle is None until the car is read. read_at is when the charger was last read
+    successfully.
     """
 
     charger: Charger
     vehicle: Vehicle | None
     control: ChargeControlState
+    read_at: datetime
 
 
-def interval_for(charger: Charger) -> timedelta:
-    """The next polling interval for this charger state (D22)."""
-    if not charger.is_connected:
-        return INTERVAL_UNPLUGGED
-    if charger.charge_state in _CHARGE_UNDER_WAY:
+def interval_for(charger: Charger, control: ChargeControlState) -> timedelta:
+    """The next polling interval, from the charge status the sensor shows (D29)."""
+    if charge_status(charger, control) in ("starting", "stopping"):
+        return INTERVAL_CHANGING
+    if charger.charge_state is ChargeState.CHARGING:
         return INTERVAL_CHARGING
-    return INTERVAL_CONNECTED
+    return INTERVAL_IDLE
 
 
 def car_device_identifier(charger_id: str) -> tuple[str, str]:
@@ -85,7 +86,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=INTERVAL_CONNECTED,
+            update_interval=INTERVAL_IDLE,
             always_update=False,
         )
         assert entry.unique_id is not None  # the config flow always sets it
@@ -95,7 +96,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             entry,
             client,
             on_change=self._async_control_changed,
-            request_refresh=self.async_request_refresh,
+            request_refresh=self.async_read_now,
         )
         self.charger_id = entry.unique_id
         self.has_car = True
@@ -103,10 +104,12 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self._car_checked = False
         self._car_failing = False
         self._vehicle: Vehicle | None = None
+        self._car_read_at: datetime | None = None
+        self._read_car_next = False
         self._price_store = PriceStore(hass, entry.entry_id)
 
     async def _async_update_data(self) -> NortecGoData:
-        """Read the charger, then the car; set the next interval."""
+        """Read the charger, then the car when due; set the next interval."""
         start_attempts = self.charge_control.start_attempts
         # pynortecgo's messages hold no tokens, emails or IDs, so they may be passed on.
         try:
@@ -119,16 +122,31 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             raise UpdateFailed(str(err)) from err
         except (ChargerNotFoundError, UnexpectedResponseError) as err:
             raise ConfigEntryError(str(err)) from err
+        except NortecGoError as err:
+            # Last: the specific errors above are its subclasses. A later client version may add more.
+            raise UpdateFailed(str(err)) from err
 
         self.charge_control.on_charger_read(charger, start_attempts)
-        vehicle = await self._async_read_vehicle()
-        self.update_interval = (
-            INTERVAL_CHARGING
-            if self.charge_control.start_pending
-            else interval_for(charger)
-        )
+        self._async_update_charger_device(charger)
+        read_at = dt_util.utcnow()
+        if self._car_due(read_at):
+            self._car_read_at = read_at
+            self._read_car_next = False
+            vehicle = await self._async_read_vehicle()
+        else:
+            vehicle = self._vehicle
+        control = self.charge_control.state
+        self.update_interval = interval_for(charger, control)
         return NortecGoData(
-            charger=charger, vehicle=vehicle, control=self.charge_control.state
+            charger=charger, vehicle=vehicle, control=control, read_at=read_at
+        )
+
+    def _car_due(self, now: datetime) -> bool:
+        """Read the car the first time, when asked, or when its last try is old enough (§3.2)."""
+        return (
+            self._read_car_next
+            or self._car_read_at is None
+            or now - self._car_read_at >= CAR_READ_MIN_AGE
         )
 
     @callback
@@ -140,8 +158,17 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         """
         if self.data is None:
             return
-        self.data = replace(self.data, control=self.charge_control.state)
+        control = self.charge_control.state
+        self.data = replace(self.data, control=control)
+        # Before the read right away: if that read fails, HA reuses this interval.
+        self.update_interval = interval_for(self.data.charger, control)
         self.async_update_listeners()
+
+    async def async_read_now(self, *, with_car: bool = False) -> None:
+        """Read the charger now, not debounced; the car too when asked (§3.3)."""
+        if with_car:
+            self._read_car_next = True
+        await self.async_refresh()
 
     async def _async_read_vehicle(self) -> Vehicle | None:
         """Read the car; a car error never fails the update (§4.2)."""
@@ -199,6 +226,19 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             manufacturer=vehicle.brand or UNDEFINED,
             model=vehicle.model or UNDEFINED,
         )
+
+    @callback
+    def _async_update_charger_device(self, charger: Charger) -> None:
+        """Follow a rename of the charger in the app (#22); the owner's own name still wins."""
+        registry = dr.async_get(self.hass)
+        device = registry.async_get_device_by_identifier(
+            (DOMAIN, self.charger_id), self.config_entry.entry_id
+        )
+        if device is None:
+            return  # the entities create the device
+        name = charger.name or self.config_entry.title
+        if device.name != name:
+            registry.async_update_device(device.id, name=name)
 
     async def async_load_prices(self) -> None:
         """Load the stored slots, without yesterday's."""

@@ -50,6 +50,10 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   `await hass.config.async_set_time_zone(...)` first.
 - `Store.async_delay_save(..., 0)` writes on a timer, which `hass.async_block_till_done()` doesn't wait for.
   Call `async_fire_time_changed(hass)` before reading `hass_storage`.
+- `hass.async_create_task` and `ConfigEntry.async_create_background_task` start the task eagerly: it runs
+  up to its first real wait before the caller's next line. With an `AsyncMock` that never waits, a
+  "background" task has finished by then. To test the state while it is in flight, make the mock wait on an
+  `asyncio.Event`.
 
 ## Coordinators and actions
 
@@ -60,6 +64,12 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   action must always reach the device stays available after a failed read.
 - Unloading an entry doesn't cancel an entity action that is still running. Code that saves state from such
   a call has to finish before the reloaded entry loads it (for example, take the same lock in unload).
+- `async_request_refresh()` is debounced with a 10 s cooldown: a second request within it runs only when the
+  cooldown ends. `async_refresh()` skips the cooldown and takes the debouncer's lock, so it never overlaps
+  another read. After a failed read the next one is scheduled with the current `update_interval`.
+- A coordinator schedules its next read at whole loop seconds plus a random 0.05–0.5 s, so a read can come
+  up to about 1 s before one full interval has passed. A time threshold compared with the interval needs a
+  margin, and a test that fires the timer ticks a second more than the interval.
 
 ## Devices and entities
 

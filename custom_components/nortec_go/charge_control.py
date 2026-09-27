@@ -1,4 +1,4 @@
-"""The Nortec Go charge control: start and stop, the pending start and the start guard (D26)."""
+"""The Nortec Go charge control: start and stop, the pending start and stop, and the start guard (D26, D29)."""
 
 import asyncio
 from collections.abc import Callable, Coroutine
@@ -37,6 +37,7 @@ from .const import (
     DOMAIN,
     START_BLOCKED_ISSUE_ID,
     START_CONFIRM_TIMEOUT,
+    STOP_CONFIRM_TIMEOUT,
 )
 from .entry import NortecGoConfigEntry
 
@@ -78,6 +79,7 @@ class ChargeControlState:
     blocked: bool = False
     start_pending: bool = False
     stop_asked: bool = False
+    stop_pending: bool = False
 
 
 def charge_is_open(charger: Charger) -> bool:
@@ -94,8 +96,8 @@ def _charge_happened(charger: Charger) -> bool:
 
 
 def is_charge_on(charger: Charger, control: ChargeControlState) -> bool:
-    """The Charge switch's state (§2.1)."""
-    if control.stop_asked:
+    """The Charge switch's state (§2.1; the pending stop, D29)."""
+    if control.stop_pending or control.stop_asked:
         return False
     return control.start_pending or charger.charge_state in _CHARGE_ON
 
@@ -104,6 +106,8 @@ def charge_status(charger: Charger, control: ChargeControlState) -> str | None:
     """The Charge status sensor's value (§2.2); None is Home Assistant's unknown."""
     if control.blocked:
         return "start_blocked"
+    if control.stop_pending:
+        return "stopping"
     if control.start_pending and not charge_is_open(charger):
         return "stopping" if control.stop_asked else "starting"
     if (
@@ -178,6 +182,7 @@ class ChargeControl:
         self._blocked_since: datetime | None = None
         self._pending_since: datetime | None = None
         self._stop_asked = False
+        self._stop_pending_since: datetime | None = None
         self._remembered: ChargerState | None = None
         self._last_charger: Charger | None = None
         self._closed = False
@@ -190,12 +195,8 @@ class ChargeControl:
             blocked=self._blocked_since is not None,
             start_pending=self._pending_since is not None,
             stop_asked=self._stop_asked,
+            stop_pending=self._stop_pending_since is not None,
         )
-
-    @property
-    def start_pending(self) -> bool:
-        """A start is pending (the coordinator reads every 5 minutes then)."""
-        return self._pending_since is not None
 
     async def async_load(self) -> None:
         """Load the stored state; a wrong shape blocks starts to be safe (§3.5)."""
@@ -223,6 +224,12 @@ class ChargeControl:
         """Start a charge once, unless one is on, pending or blocked (§3.1)."""
         async with self._lock:
             self._raise_if_closed()
+            if self._expire_stop_pending():
+                self._on_change()
+            if self._stop_pending_since is not None:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key="stop_pending"
+                )
             if self._pending_since is not None:
                 if self._stop_asked:
                     self._stop_asked = False
@@ -290,6 +297,10 @@ class ChargeControl:
         """Stop the charge, or ask for the stop while a start is pending (§3.3)."""
         async with self._lock:
             self._raise_if_closed()
+            if self._expire_stop_pending():
+                self._on_change()
+            if self._stop_pending_since is not None:
+                return
             charger = self._last_charger
             if self._pending_since is not None and (
                 charger is None or not charge_is_open(charger)
@@ -304,21 +315,27 @@ class ChargeControl:
             await self._async_send_stop()
 
     async def _async_send_stop(self) -> None:
-        """Call stop_charge() once, under the lock; raises translated errors."""
+        """Call stop_charge() once, under the lock; raises translated errors.
+
+        A successful stop is pending until a read sees the charge no longer on (D29).
+        """
         try:
             await self._client.stop_charge()
         except NoActiveChargeError:
-            pass
+            stopped = False
         except ChargeNotStoppableError:
+            self._clear_stop_pending()
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="charge_not_stoppable"
             ) from None
         except AuthError:
+            self._clear_stop_pending()
             self._entry.async_start_reauth(self._hass)
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="auth_failed"
             ) from None
         except NortecGoError as err:
+            self._clear_stop_pending()
             _LOGGER.warning(
                 "Stopping the charge failed: %s: %s", type(err).__name__, err
             )
@@ -326,14 +343,21 @@ class ChargeControl:
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="stop_failed"
             ) from None
+        else:
+            stopped = True
         if self._pending_since is not None:
             self._pending_since = None
             self._stop_asked = False
-            self._changed()
+            self._save()
+        self._stop_pending_since = dt_util.utcnow() if stopped else None
+        self._on_change()
         self._request_read()
 
     async def _async_background_stop(self) -> None:
-        """The stop asked for during a pending start, now that the charge is open."""
+        """The stop asked for during a pending start, now that the charge is open.
+
+        It owns the pending stop set when it was queued, so it doesn't make the no-op check.
+        """
         async with self._lock:
             if self._closed:
                 _LOGGER.warning("Not stopping the charge: the integration is unloading")
@@ -349,6 +373,15 @@ class ChargeControl:
         self._last_charger = charger
         if self._closed:
             return  # unloaded: the reloaded control owns the store now
+        # The pending stop (D29), before the stale-read check: that check is about start
+        # attempts, and a read begun before the stop saw the charge on, so it can't end it early.
+        if (
+            self._stop_pending_since is not None
+            and charger.charge_state not in _CHARGE_ON
+        ):
+            self._stop_pending_since = None
+        else:
+            self._expire_stop_pending()
         if start_attempts != self.start_attempts:
             return  # a stale read: it began before the latest start attempt
         changed = False
@@ -356,6 +389,7 @@ class ChargeControl:
             if self._stop_asked and charge_is_open(charger):
                 self._pending_since = None
                 self._stop_asked = False
+                self._stop_pending_since = dt_util.utcnow()
                 changed = True
                 self._entry.async_create_background_task(
                     self._hass, self._async_background_stop(), f"{DOMAIN} stop"
@@ -409,6 +443,26 @@ class ChargeControl:
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="unloading"
             )
+
+    def _expire_stop_pending(self) -> bool:
+        """Clear a pending stop older than STOP_CONFIRM_TIMEOUT; True when it was cleared."""
+        if (
+            self._stop_pending_since is None
+            or dt_util.utcnow() - self._stop_pending_since < STOP_CONFIRM_TIMEOUT
+        ):
+            return False
+        _LOGGER.warning(
+            "No stop seen within %s; showing the charger's state again",
+            STOP_CONFIRM_TIMEOUT,
+        )
+        self._stop_pending_since = None
+        return True
+
+    def _clear_stop_pending(self) -> None:
+        """End a pending stop outside a read; it isn't stored, so only tell the coordinator."""
+        if self._stop_pending_since is not None:
+            self._stop_pending_since = None
+            self._on_change()
 
     def _set_block(self, issue_key: str) -> None:
         self._blocked_since = dt_util.utcnow()

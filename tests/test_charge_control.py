@@ -1,9 +1,10 @@
 """Tests for the Nortec Go charge control: start, stop, pending start and the start guard."""
 
 import asyncio
+import contextlib
 from datetime import timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
@@ -44,13 +45,18 @@ from custom_components.nortec_go.charge_control import (
     charge_status,
     is_charge_on,
 )
-from custom_components.nortec_go.const import DOMAIN, START_CONFIRM_TIMEOUT
+from custom_components.nortec_go.const import (
+    DOMAIN,
+    START_CONFIRM_TIMEOUT,
+    STOP_CONFIRM_TIMEOUT,
+)
 
 from .conftest import make_charger
 
 IDLE = ChargeControlState()
 PENDING = ChargeControlState(start_pending=True)
-PENDING_STOP = ChargeControlState(start_pending=True, stop_asked=True)
+STOP_ASKED = ChargeControlState(start_pending=True, stop_asked=True)
+STOP_PENDING = ChargeControlState(stop_pending=True)
 BLOCKED = ChargeControlState(blocked=True)
 CONNECTED = make_charger(is_connected=True)
 CHARGING = make_charger(
@@ -86,14 +92,16 @@ def test_charge_is_open(charger: Any, expected: bool) -> None:
         (ChargeState.STOPPING, IDLE, False),
         (ChargeState.UNKNOWN, IDLE, False),
         (None, PENDING, True),
-        (None, PENDING_STOP, False),
-        (ChargeState.CHARGING, PENDING_STOP, False),
+        (None, STOP_ASKED, False),
+        (ChargeState.CHARGING, STOP_ASKED, False),
+        (ChargeState.CHARGING, STOP_PENDING, False),
+        (ChargeState.PAUSED, STOP_PENDING, False),
     ],
 )
 def test_is_charge_on(
     charge_state: ChargeState | None, control: ChargeControlState, expected: bool
 ) -> None:
-    """On for an open, not ending charge, or a pending start without a stop asked."""
+    """On for an open, not ending charge, or a pending start without a stop asked; off while our stop is pending."""
     charger = make_charger(is_connected=True, charge_state=charge_state)
     assert is_charge_on(charger, control) is expected
 
@@ -103,7 +111,7 @@ def test_is_charge_on(
     [
         (CHARGING, BLOCKED, "start_blocked"),
         (CONNECTED, PENDING, "starting"),
-        (CONNECTED, PENDING_STOP, "stopping"),
+        (CONNECTED, STOP_ASKED, "stopping"),
         (CHARGING, PENDING, "charging"),
         (make_charger(is_connected=True, state=ChargerState.UNKNOWN), IDLE, None),
         (make_charger(is_connected=True, charge_state=ChargeState.UNKNOWN), IDLE, None),
@@ -135,6 +143,12 @@ def test_is_charge_on(
         ),
         (make_charger(is_connected=False), IDLE, "unplugged"),
         (CONNECTED, IDLE, "idle"),
+        (CHARGING, STOP_PENDING, "stopping"),
+        (
+            CHARGING,
+            ChargeControlState(blocked=True, stop_pending=True),
+            "start_blocked",
+        ),
     ],
 )
 def test_charge_status(
@@ -502,11 +516,11 @@ async def test_stop_during_pending_start(
     await control.async_start()
     await control.async_stop()
     client.stop_charge.assert_not_awaited()
-    assert control.state == PENDING_STOP
+    assert control.state == STOP_ASKED
     control.on_charger_read(CHARGING, control.start_attempts)
     await hass.async_block_till_done(wait_background_tasks=True)
     client.stop_charge.assert_awaited_once()
-    assert control.state == IDLE
+    assert control.state == STOP_PENDING
 
 
 async def test_turn_on_after_turn_off_clears_stop_asked(
@@ -618,6 +632,270 @@ async def test_stop_connection_error_asks_for_a_read(
     client.stop_charge.assert_awaited_once()
     await hass.async_block_till_done()
     request_refresh.assert_awaited()
+
+
+async def test_stop_sets_pending_stop(
+    control: ChargeControl, client: AsyncMock, on_change: MagicMock
+) -> None:
+    """A successful stop is pending: the switch shows off until the charger follows."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    client.stop_charge.assert_awaited_once()
+    assert control.state == STOP_PENDING
+    on_change.assert_called()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        NoActiveChargeError("x"),
+        ChargeNotStoppableError("x"),
+        NortecGoConnectionError("x"),
+    ],
+)
+async def test_stop_without_success_sets_no_pending_stop(
+    control: ChargeControl, client: AsyncMock, error: Exception
+) -> None:
+    """No charge to stop, or a failed stop: nothing to wait for."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = error
+    with contextlib.suppress(HomeAssistantError):
+        await control.async_stop()
+    assert control.state == IDLE
+
+
+async def test_stop_while_stop_pending_is_noop(
+    control: ChargeControl, client: AsyncMock
+) -> None:
+    """A second turn_off while the stop is pending makes no API call."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_start_while_stop_pending_is_refused(
+    control: ChargeControl, client: AsyncMock
+) -> None:
+    """turn_on while a stop is pending raises stop_pending; no start, no attempt counted."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    attempts = control.start_attempts
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await control.async_start()
+    assert exc_info.value.translation_key == "stop_pending"
+    client.start_charge.assert_not_awaited()
+    assert control.start_attempts == attempts
+
+
+@pytest.mark.parametrize(
+    "charger",
+    [
+        make_charger(
+            is_connected=True,
+            charge_state=ChargeState.STOPPING,
+            state=ChargerState.BUSY_CHARGING,
+        ),
+        make_charger(is_connected=True, charge_state=ChargeState.COMPLETED),
+        make_charger(is_connected=True, state=ChargerState.BUSY_NON_RELEASED),
+        make_charger(is_connected=False),
+    ],
+)
+async def test_pending_stop_ends_when_the_charge_is_not_on(
+    control: ChargeControl, charger: Any
+) -> None:
+    """A read with STOPPING, COMPLETED or no open charge ends the pending stop."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    control.on_charger_read(charger, control.start_attempts)
+    assert control.state == IDLE
+
+
+@pytest.mark.parametrize("charge_state", [ChargeState.CHARGING, ChargeState.PAUSED])
+async def test_pending_stop_stays_while_the_charge_is_on(
+    control: ChargeControl, charge_state: ChargeState
+) -> None:
+    """A read that still shows the charge on (the charger lags) keeps the pending stop."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    control.on_charger_read(
+        make_charger(is_connected=True, charge_state=charge_state),
+        control.start_attempts,
+    )
+    assert control.state == STOP_PENDING
+
+
+async def test_pending_stop_stays_on_a_stale_read(control: ChargeControl) -> None:
+    """A stale read (begun before the latest start attempt) still showing CHARGING keeps it."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    control.on_charger_read(CHARGING, control.start_attempts - 1)
+    assert control.state == STOP_PENDING
+
+
+async def test_pending_stop_ends_on_a_stale_read_without_the_charge_on(
+    control: ChargeControl,
+) -> None:
+    """The pending-stop check runs before the stale-read return, even on a stale read (§2.3)."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    control.on_charger_read(
+        make_charger(
+            is_connected=True,
+            charge_state=ChargeState.STOPPING,
+            state=ChargerState.BUSY_CHARGING,
+        ),
+        control.start_attempts - 1,
+    )
+    assert control.state == IDLE
+
+
+async def test_pending_stop_times_out_on_a_read(
+    control: ChargeControl,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """After 2 minutes a read ends the pending stop, with a warning."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    freezer.tick(STOP_CONFIRM_TIMEOUT - timedelta(seconds=1))
+    control.on_charger_read(CHARGING, control.start_attempts)
+    assert control.state == STOP_PENDING
+    freezer.tick(timedelta(seconds=1))
+    control.on_charger_read(CHARGING, control.start_attempts)
+    assert control.state == IDLE
+    assert "No stop seen within" in caplog.text
+
+
+async def test_stop_after_the_timeout_without_a_read(
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """With no read for 2 minutes, turn_off counts the pending stop as ended and stops again."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    freezer.tick(STOP_CONFIRM_TIMEOUT)
+    await control.async_stop()
+    assert client.stop_charge.await_count == 2
+    assert "No stop seen within" in caplog.text
+
+
+async def test_start_after_the_timeout_takes_the_normal_checks(
+    control: ChargeControl, client: AsyncMock, freezer: FrozenDateTimeFactory
+) -> None:
+    """With no read for 2 minutes, turn_on isn't refused; the open charge makes it a no-op."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    freezer.tick(STOP_CONFIRM_TIMEOUT)
+    await control.async_start()
+    client.start_charge.assert_not_awaited()
+    assert control.state == IDLE
+
+
+async def test_background_stop_shows_off_at_once(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """While the background stop is in flight the switch is off and Stopping.
+
+    The background task starts eagerly, so stop_charge waits on an event to keep it in flight.
+    """
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    await control.async_start()
+    await control.async_stop()
+    control.on_charger_read(CHARGING, control.start_attempts)
+    assert control.state == STOP_PENDING
+    assert not is_charge_on(CHARGING, control.state)
+    assert charge_status(CHARGING, control.state) == "stopping"
+    release.set()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+    assert control.state == STOP_PENDING
+
+
+async def test_turn_off_before_the_background_stop_is_noop(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A turn_off queued ahead of the background stop sends no second stop (Review Focus 1)."""
+    await control.async_start()
+    await control.async_stop()
+    await control._lock.acquire()  # noqa: SLF001
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)  # the turn_off queues for the lock first
+    control.on_charger_read(
+        CHARGING, control.start_attempts
+    )  # the background stop second
+    control._lock.release()  # noqa: SLF001
+    await stop
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        NoActiveChargeError("x"),
+        ChargeNotStoppableError("x"),
+        AuthError("x"),
+        NortecGoConnectionError("x"),
+    ],
+)
+async def test_background_stop_without_success_ends_pending_stop(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    error: Exception,
+) -> None:
+    """The background stop finds no charge or fails: the pending stop it queued ends."""
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+        raise error
+
+    client.stop_charge.side_effect = slow_stop
+    with patch.object(entry, "async_start_reauth", MagicMock()):
+        await control.async_start()
+        await control.async_stop()
+        control.on_charger_read(CHARGING, control.start_attempts)
+        assert control.state == STOP_PENDING
+        release.set()
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert control.state == IDLE
+
+
+async def test_pending_stop_is_not_stored(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    hass_storage: dict[str, Any],
+) -> None:
+    """The stored shape keeps its three keys; the pending stop never reaches it (Review Focus 5)."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    async_fire_time_changed(hass)  # any delayed save's timer
+    await hass.async_block_till_done()
+    assert STORE_KEY.format(entry.entry_id) not in hass_storage
+    await control.async_shutdown()
+    saved = hass_storage[STORE_KEY.format(entry.entry_id)]["data"]
+    assert saved == {
+        "blocked_since": None,
+        "start_pending_since": None,
+        "stop_asked": False,
+    }
+    again = ChargeControl(
+        hass, entry, AsyncMock(), on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await again.async_load()
+    assert again.state == IDLE
 
 
 async def test_clear_block(
@@ -772,13 +1050,6 @@ async def test_shutdown_waits_and_refuses(
         await control.async_stop()
 
 
-async def test_start_pending_property(control: ChargeControl) -> None:
-    """start_pending follows the pending start."""
-    assert not control.start_pending
-    await control.async_start()
-    assert control.start_pending
-
-
 async def test_stop_with_a_pending_start_and_a_charge_seen(
     control: ChargeControl, client: AsyncMock
 ) -> None:
@@ -789,7 +1060,7 @@ async def test_stop_with_a_pending_start_and_a_charge_seen(
     assert control.state == PENDING
     await control.async_stop()
     client.stop_charge.assert_awaited_once()
-    assert control.state == IDLE
+    assert control.state == STOP_PENDING
 
 
 async def test_background_stop_error_is_logged(

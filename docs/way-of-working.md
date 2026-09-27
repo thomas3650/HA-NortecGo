@@ -12,7 +12,9 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
 4. **Spec** in `docs/superpowers/specs/`, then `full-reviewer` until Ready.
 5. **Plan:** `superpowers:writing-plans`, in `docs/superpowers/plans/`, with a `Model:` tag on every task
    (and a `Guarded files:` line where needed; see §5) and a `Wave:` number on every task, written for
-   parallel work (see [Parallel waves](#parallel-waves)). Then `full-reviewer` until Ready.
+   parallel work (see [Parallel waves](#parallel-waves)). Then `full-reviewer` until Ready. The `ruff-format`
+   hook reformats Python blocks in Markdown, so a fragment that isn't a whole statement (parametrize rows,
+   say) goes in a `text` block.
 6. **Draft PR:** once the spec and plan are both Ready, commit them, push, and open a **draft** PR with
    `Closes #n` and links to the spec and plan. The owner reviews the spec and plan there.
 7. **Execute:** `superpowers:subagent-driven-development`. For each task:

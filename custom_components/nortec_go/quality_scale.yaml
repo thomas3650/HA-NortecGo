@@ -1,7 +1,9 @@
 rules:
   # Bronze
   action-setup: todo
-  appropriate-polling: done
+  appropriate-polling:
+    status: done
+    comment: "30 s only while a charge is starting or stopping, 5 min while charging, 60 min otherwise (D29)."
   brands:
     status: done
     comment: "Local brand/ folder (HA >= 2026.3), accepted by HACS; moves to home-assistant/brands for a core submission."
@@ -36,7 +38,7 @@ rules:
   docs-installation-parameters: done
   entity-unavailable:
     status: done
-    comment: "The Charge switch stays available after a failed read on purpose, so turn_off still reaches the charger; the other entities follow the rule."
+    comment: "The Charge switch, the Current price sensor, the Refresh button and the Last read sensor stay available after a failed read on purpose (turn_off still reaches the charger; the price lists and the last read's time stay visible); the other entities follow the rule."
   integration-owner: done
   log-when-unavailable: done
   parallel-updates: done

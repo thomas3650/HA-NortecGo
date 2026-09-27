@@ -1,4 +1,4 @@
-"""Nortec Go sensors: the price for EV Smart Charging and the car's values."""
+"""Nortec Go sensors: the price for EV Smart Charging, the charge status, the last read and the car's values."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -67,6 +67,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         NortecGoPriceSensor(coordinator),
         NortecGoChargeStatusSensor(coordinator),
+        NortecGoLastReadSensor(coordinator),
     ]
     if coordinator.has_car:
         entities.extend(
@@ -125,6 +126,27 @@ class NortecGoChargeStatusSensor(NortecGoChargerEntity, SensorEntity):
         """The status, or None (unknown) for an unknown charger state."""
         data = self.coordinator.data
         return charge_status(data.charger, data.control)
+
+
+class NortecGoLastReadSensor(NortecGoChargerEntity, SensorEntity):
+    """When the charger was last read successfully (§4)."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: NortecGoCoordinator) -> None:
+        """Name the sensor Last read."""
+        super().__init__(coordinator, "last_read")
+
+    @property
+    def available(self) -> bool:
+        """Always available: after a failed read it shows how old the data is."""
+        return True
+
+    @property
+    def native_value(self) -> datetime:
+        """The last successful read's time."""
+        return self.coordinator.data.read_at
 
 
 class NortecGoCarSensor(NortecGoCarEntity, SensorEntity):

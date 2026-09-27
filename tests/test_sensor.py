@@ -199,6 +199,46 @@ async def test_charge_status_follows_the_control(
     assert state.state == "starting"
 
 
+LAST_READ = "sensor.garage_charger_last_read"
+
+
+async def test_last_read_sensor(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    entity_registry: er.EntityRegistry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Last read shows when the charger was read, as a diagnostic timestamp."""
+    freezer.move_to("2026-09-27 10:00:00+00:00")
+    await setup_integration(hass, mock_config_entry)
+    state = hass.states.get(LAST_READ)
+    assert state is not None
+    assert state.state == "2026-09-27T10:00:00+00:00"
+    assert state.attributes["device_class"] == "timestamp"
+    registry_entry = entity_registry.async_get(LAST_READ)
+    assert registry_entry is not None
+    assert registry_entry.entity_category is EntityCategory.DIAGNOSTIC
+
+
+async def test_last_read_available_after_a_failed_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """After a failed read Last read stays available and keeps the last good time."""
+    freezer.move_to("2026-09-27 10:00:00+00:00")
+    await setup_integration(hass, mock_config_entry)
+    mock_client.get_charger.side_effect = NortecGoConnectionError("x")
+    freezer.tick(timedelta(minutes=1))
+    await mock_config_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    state = hass.states.get(LAST_READ)
+    assert state is not None
+    assert state.state == "2026-09-27T10:00:00+00:00"
+
+
 async def test_car_sensors(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
@@ -285,7 +325,7 @@ async def test_device_name_fallbacks(
     assert charger.name == mock_config_entry.title
 
     mock_client.get_vehicle.return_value = make_vehicle(name="")
-    await mock_config_entry.runtime_data.async_refresh()
+    await mock_config_entry.runtime_data.async_read_now(with_car=True)
     await hass.async_block_till_done()
     car = _device(device_registry, mock_config_entry, f"{FAKE_CHARGER_ID}_car")
     assert car is not None
@@ -307,7 +347,7 @@ async def test_car_placeholder_until_first_read(
     assert hass.states.get("sensor.car_battery").state == STATE_UNAVAILABLE  # type: ignore[union-attr]
 
     mock_client.get_vehicle.side_effect = None
-    await mock_config_entry.runtime_data.async_refresh()
+    await mock_config_entry.runtime_data.async_read_now(with_car=True)
     await hass.async_block_till_done()
     updated = device_registry.async_get(car.id, include_child_devices=False)
     assert updated is not None

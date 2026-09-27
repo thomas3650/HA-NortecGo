@@ -9,14 +9,17 @@ from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util import dt as dt_util
 from pynortecgo import (
     ApiError,
     AuthError,
     ChargerNotFoundError,
+    ChargerState,
     ChargeState,
     MultipleVehiclesError,
     NortecGoConnectionError,
+    NortecGoError,
     RateLimitError,
     UnexpectedResponseError,
     VehicleNotFoundError,
@@ -30,9 +33,9 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.nortec_go.charge_control import ChargeControlState
 from custom_components.nortec_go.const import (
     DOMAIN,
+    INTERVAL_CHANGING,
     INTERVAL_CHARGING,
-    INTERVAL_CONNECTED,
-    INTERVAL_UNPLUGGED,
+    INTERVAL_IDLE,
     START_CONFIRM_TIMEOUT,
 )
 from custom_components.nortec_go.coordinator import (
@@ -69,24 +72,72 @@ def _coordinator(entry: MockConfigEntry) -> NortecGoCoordinator:
     return coordinator
 
 
+_PENDING = ChargeControlState(start_pending=True)
+
+
 @pytest.mark.parametrize(
-    ("is_connected", "charge_state", "interval"),
+    ("charger", "control", "interval"),
     [
-        (False, None, INTERVAL_UNPLUGGED),
-        (True, None, INTERVAL_CONNECTED),
-        (True, ChargeState.PAUSED, INTERVAL_CONNECTED),
-        (True, ChargeState.UNKNOWN, INTERVAL_CONNECTED),
-        (True, ChargeState.STARTING, INTERVAL_CHARGING),
-        (True, ChargeState.CHARGING, INTERVAL_CHARGING),
-        (True, ChargeState.STOPPING, INTERVAL_CHARGING),
+        (make_charger(is_connected=True), _PENDING, INTERVAL_CHANGING),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.STARTING),
+            _PENDING,
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            _PENDING,
+            INTERVAL_CHARGING,
+        ),
+        (
+            make_charger(is_connected=True),
+            ChargeControlState(start_pending=True, stop_asked=True),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_pending=True),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.STARTING),
+            ChargeControlState(),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.STOPPING),
+            ChargeControlState(),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(),
+            INTERVAL_CHARGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.PAUSED),
+            ChargeControlState(),
+            INTERVAL_IDLE,
+        ),
+        (make_charger(is_connected=True), ChargeControlState(), INTERVAL_IDLE),
+        (make_charger(is_connected=False), ChargeControlState(), INTERVAL_IDLE),
+        (
+            make_charger(is_connected=True, state=ChargerState.BUSY_NON_RELEASED),
+            ChargeControlState(),
+            INTERVAL_IDLE,
+        ),
+        (
+            make_charger(is_connected=True),
+            ChargeControlState(blocked=True),
+            INTERVAL_IDLE,
+        ),
     ],
 )
 def test_interval_for(
-    is_connected: bool, charge_state: ChargeState | None, interval: timedelta
+    charger: Any, control: ChargeControlState, interval: timedelta
 ) -> None:
-    """The interval follows the charger's state."""
-    charger = make_charger(is_connected=is_connected, charge_state=charge_state)
-    assert interval_for(charger) == interval
+    """30 s while starting or stopping, 5 min while charging, 60 min otherwise (D29)."""
+    assert interval_for(charger, control) == interval
 
 
 async def test_setup_reads_charger_car_and_prices(
@@ -101,7 +152,7 @@ async def test_setup_reads_charger_car_and_prices(
     assert coordinator.client is mock_client
     assert coordinator.has_car
     assert coordinator.data.vehicle == make_vehicle()
-    assert coordinator.update_interval == INTERVAL_CONNECTED
+    assert coordinator.update_interval == INTERVAL_IDLE
     mock_client.set_charger.assert_called_once_with(FAKE_CHARGER_ID)
     mock_client.get_vehicle.assert_awaited_once()
     mock_client.get_price_forecast.assert_awaited_once_with()
@@ -116,12 +167,12 @@ async def test_interval_changes_after_a_poll(
     """A poll that sees a charge starts polling every 5 minutes."""
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
-    assert coordinator.update_interval == INTERVAL_UNPLUGGED
+    assert coordinator.update_interval == INTERVAL_IDLE
 
     mock_client.get_charger.return_value = make_charger(
         is_connected=True, charge_state=ChargeState.CHARGING
     )
-    freezer.tick(INTERVAL_UNPLUGGED)
+    freezer.tick(INTERVAL_IDLE)
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert coordinator.update_interval == INTERVAL_CHARGING
@@ -201,7 +252,7 @@ async def test_no_car(
     assert coordinator.data.vehicle is None
     assert caplog.text.count("No car entities") == 1
 
-    freezer.tick(INTERVAL_UNPLUGGED)
+    freezer.tick(INTERVAL_IDLE)
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert mock_client.get_vehicle.await_count == 1
@@ -225,7 +276,7 @@ async def test_car_error_at_setup_continues(
     assert caplog.text.count("Could not read the car") == 1
 
     mock_client.get_vehicle.side_effect = None
-    freezer.tick(INTERVAL_UNPLUGGED)
+    freezer.tick(INTERVAL_IDLE)
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert coordinator.data.vehicle == make_vehicle()
@@ -242,11 +293,11 @@ async def test_later_charger_errors(
     coordinator = _coordinator(mock_config_entry)
 
     mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
-    freezer.tick(INTERVAL_UNPLUGGED)
+    freezer.tick(INTERVAL_IDLE)
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert not coordinator.last_update_success
-    assert coordinator.update_interval == INTERVAL_UNPLUGGED
+    assert coordinator.update_interval == INTERVAL_IDLE
     assert mock_client.get_vehicle.await_count == 1
 
 
@@ -301,6 +352,27 @@ async def test_later_permanent_charger_errors(
     assert mock_config_entry.state is ConfigEntryState.LOADED
 
 
+async def test_unknown_client_error_fails_the_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A NortecGoError subclass this integration doesn't know fails the read cleanly."""
+
+    class FutureClientError(NortecGoError):
+        """A client error type from a later pynortecgo version."""
+
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_charger.side_effect = FutureClientError("something new")
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert isinstance(coordinator.last_exception, UpdateFailed)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert "Unexpected error" not in caplog.text
+
+
 @pytest.mark.parametrize("method", ["get_charger", "get_vehicle"])
 async def test_later_auth_error_starts_reauth(
     hass: HomeAssistant,
@@ -315,12 +387,12 @@ async def test_later_auth_error_starts_reauth(
 
     getattr(mock_client, method).side_effect = AuthError("token rejected")
     with patch.object(ConfigEntry, "async_start_reauth") as start_reauth:
-        await coordinator.async_refresh()
+        await coordinator.async_read_now(with_car=True)
     start_reauth.assert_called_once()
     mock_client.login.assert_not_awaited()
 
     reads = mock_client.get_charger.await_count
-    freezer.tick(INTERVAL_UNPLUGGED * 2)
+    freezer.tick(INTERVAL_IDLE * 2)
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert mock_client.get_charger.await_count == reads
@@ -338,13 +410,13 @@ async def test_later_car_error_keeps_car_data(
 
     for error in (ApiError("GET /example", 500), VehicleNotFoundError("no car")):
         mock_client.get_vehicle.side_effect = error
-        await coordinator.async_refresh()
+        await coordinator.async_read_now(with_car=True)
         assert coordinator.last_update_success
         assert coordinator.data.vehicle == make_vehicle()
     assert caplog.text.count("Could not read the car") == 1
 
     mock_client.get_vehicle.side_effect = None
-    await coordinator.async_refresh()
+    await coordinator.async_read_now(with_car=True)
     assert "Reading the car works again" in caplog.text
 
 
@@ -371,13 +443,60 @@ async def test_car_device_updated_on_rename(
     mock_client.get_vehicle.return_value = make_vehicle(
         name="Other car", brand="Other", model="Model X"
     )
-    await coordinator.async_refresh()
+    await coordinator.async_read_now(with_car=True)
     updated = device_registry.async_get(device.id, include_child_devices=False)
     assert updated is not None
     assert (updated.name, updated.manufacturer, updated.model) == (
         "Other car",
         "Other",
         "Model X",
+    )
+
+
+async def test_charger_device_follows_a_rename(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """A rename in the app renames the charger device; an empty name falls back to the title."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    identifier = (DOMAIN, str(FAKE_CHARGER_ID))
+
+    mock_client.get_charger.return_value = make_charger(name="Driveway charger")
+    await coordinator.async_refresh()
+    device = device_registry.async_get_device_by_identifier(
+        identifier, mock_config_entry.entry_id
+    )
+    assert device is not None
+    assert device.name == "Driveway charger"
+
+    mock_client.get_charger.return_value = make_charger(name="")
+    await coordinator.async_refresh()
+    device = device_registry.async_get_device_by_identifier(
+        identifier, mock_config_entry.entry_id
+    )
+    assert device is not None
+    assert device.name == mock_config_entry.title
+
+
+async def test_charger_rename_before_the_device_exists(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Before the entities create the device, a read creates none."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = NortecGoCoordinator(hass, mock_config_entry, mock_client)
+    mock_client.get_charger.return_value = make_charger(name="Driveway charger")
+    await coordinator.async_refresh()
+    assert (
+        device_registry.async_get_device_by_identifier(
+            (DOMAIN, str(FAKE_CHARGER_ID)), mock_config_entry.entry_id
+        )
+        is None
     )
 
 
@@ -528,13 +647,13 @@ async def test_data_carries_the_control_snapshot(
 async def test_interval_while_start_pending(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
-    """A pending start reads every 5 minutes."""
+    """A pending start reads every 30 s."""
     mock_client.get_charger.return_value = make_charger(is_connected=True)
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
     await coordinator.charge_control.async_start()
     await hass.async_block_till_done()
-    assert coordinator.update_interval == INTERVAL_CHARGING
+    assert coordinator.update_interval == INTERVAL_CHANGING
     assert coordinator.data.control.start_pending
 
 
@@ -610,28 +729,6 @@ async def test_stop_after_failed_read_keeps_others_unavailable(
     assert state.state == "unavailable"
 
 
-async def test_start_soon_after_a_refresh_gets_its_read(
-    hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
-    mock_client: AsyncMock,
-    freezer: FrozenDateTimeFactory,
-) -> None:
-    """A read asked for inside the debouncer's 10 s cooldown isn't dropped by a later change."""
-    mock_client.get_charger.return_value = make_charger(is_connected=True)
-    await setup_integration(hass, mock_config_entry)
-    coordinator = _coordinator(mock_config_entry)
-    control = coordinator.charge_control
-    await control.async_start()  # asks for a read at once; the cooldown begins
-    await hass.async_block_till_done()
-    await control.async_stop()  # stop asked; its read is deferred by the cooldown
-    await control.async_start()  # clears stop asked: a change with no new read asked
-    calls = mock_client.get_charger.await_count
-    freezer.tick(timedelta(seconds=11))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    assert mock_client.get_charger.await_count > calls
-
-
 async def test_control_change_before_the_first_read_is_ignored(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
@@ -644,3 +741,135 @@ async def test_control_change_before_the_first_read_is_ignored(
     remove_listener()  # also stops the poll the first listener scheduled
     assert coordinator.data is None
     listener.assert_not_called()
+
+
+async def test_actions_within_the_cooldown_each_read_right_away(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A start and a stop within HA's 10 s debounce cooldown each read at once (Review Focus 4)."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    calls = mock_client.get_charger.await_count
+    await coordinator.charge_control.async_start()
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == calls + 1
+    await (
+        coordinator.charge_control.async_stop()
+    )  # a stop asked during the pending start
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == calls + 2
+
+
+async def test_start_whose_read_fails_is_read_again_after_30_s(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The control change sets the 30 s interval before its read, so a failed read retries soon (Review Focus 2)."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_charger.side_effect = NortecGoConnectionError("x")
+    await coordinator.charge_control.async_start()
+    await hass.async_block_till_done()
+    assert not coordinator.last_update_success
+    assert coordinator.update_interval == INTERVAL_CHANGING
+    mock_client.get_charger.side_effect = None
+    calls = mock_client.get_charger.await_count
+    freezer.tick(
+        INTERVAL_CHANGING + timedelta(seconds=1)
+    )  # HA adds a sub-second offset
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == calls + 1
+
+
+async def test_car_skipped_on_fast_reads(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """30 s reads skip the car until its last try is 4.5 minutes old."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.STARTING
+    )
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.update_interval == INTERVAL_CHANGING
+    vehicles = mock_client.get_vehicle.await_count
+    chargers = mock_client.get_charger.await_count
+    # Direct refreshes: HA's timer adds a random sub-second offset, and the car rule is
+    # about the clock, not the timer.
+    for _ in range(8):  # 4 minutes of 30 s reads
+        freezer.tick(INTERVAL_CHANGING)
+        await coordinator.async_refresh()
+    assert mock_client.get_charger.await_count == chargers + 8
+    assert mock_client.get_vehicle.await_count == vehicles
+    freezer.tick(INTERVAL_CHANGING)  # 4.5 minutes after the last car read
+    await coordinator.async_refresh()
+    assert mock_client.get_vehicle.await_count == vehicles + 1
+
+
+async def test_car_read_on_an_early_charging_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A 5-minute read that comes a second early still reads the car (Review Focus 3)."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING
+    )
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    vehicles = mock_client.get_vehicle.await_count
+    freezer.tick(INTERVAL_CHARGING - timedelta(seconds=1))
+    await coordinator.async_refresh()
+    assert mock_client.get_vehicle.await_count == vehicles + 1
+
+
+async def test_read_now_with_car(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """async_read_now skips a fresh car unless asked; the read that reads it clears the ask."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    vehicles = mock_client.get_vehicle.await_count
+    await coordinator.async_read_now()
+    assert mock_client.get_vehicle.await_count == vehicles
+    await coordinator.async_read_now(with_car=True)
+    assert mock_client.get_vehicle.await_count == vehicles + 1
+    await coordinator.async_read_now()
+    assert mock_client.get_vehicle.await_count == vehicles + 1
+
+
+async def test_read_at_on_every_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Each successful read stamps read_at, so listeners hear of a read with unchanged data."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    first = coordinator.data.read_at
+    listener = MagicMock()
+    coordinator.async_add_listener(listener)
+    freezer.tick(timedelta(seconds=5))
+    await coordinator.async_refresh()
+    assert coordinator.data.read_at == first + timedelta(seconds=5)
+    listener.assert_called()
+
+
+async def test_read_at_kept_on_a_control_change(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A change outside a read keeps the last read's time."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    read_at = coordinator.data.read_at
+    coordinator.charge_control._on_change()  # noqa: SLF001
+    assert coordinator.data.read_at == read_at

@@ -67,3 +67,18 @@ async def test_press_after_failed_read_does_not_raise(
     button = hass.states.get(ENTITY_ID)
     assert button is not None
     assert button.state != "unavailable"
+
+
+async def test_press_twice_reads_twice(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """Two presses within HA's 10 s debounce cooldown each read the charger and the car."""
+    await setup_integration(hass, mock_config_entry)
+    chargers = mock_client.get_charger.await_count
+    vehicles = mock_client.get_vehicle.await_count
+
+    await _press(hass)
+    await _press(hass)
+
+    assert mock_client.get_charger.await_count == chargers + 2
+    assert mock_client.get_vehicle.await_count == vehicles + 2

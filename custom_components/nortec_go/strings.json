@@ -59,6 +59,11 @@
         "name": "Connected to charger"
       }
     },
+    "button": {
+      "refresh": {
+        "name": "Refresh"
+      }
+    },
     "sensor": {
       "current_price": {
         "name": "Current price"

@@ -71,6 +71,7 @@ The integration adds two devices: the charger, and the car when the account has 
 | Current price | Sensor | The spot price for the current 15 minutes, per kWh, incl. VAT. Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
 | Cable connected | Binary sensor | On when a cable is connected to the charger |
 | Charging | Binary sensor | On while the car draws power |
+| Refresh | Button | Reads the charger, the car and the prices now |
 
 ### Car
 
@@ -143,8 +144,9 @@ The integration reads the charger and the car:
 It reads the price forecast when it starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. The current price
 moves to the next 15 minutes by itself, without a read.
 
-To read the charger and the car now, call the `homeassistant.update_entity` action on any Nortec Go entity
-(see *Automation examples*). It doesn't read the prices.
+To read the charger, the car and the prices now, press the *Refresh* button. From an automation, the
+`homeassistant.update_entity` action on any Nortec Go entity reads the charger and the car, but not the prices
+(see *Automation examples*).
 
 ## Known limitations
 

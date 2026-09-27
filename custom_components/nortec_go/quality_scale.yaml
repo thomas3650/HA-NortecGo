@@ -28,13 +28,15 @@ rules:
   unique-config-entry: done
 
   # Silver
-  action-exceptions: todo
+  action-exceptions: done
   config-entry-unloading: done
   docs-configuration-parameters:
     status: exempt
     comment: "The integration has no options flow."
   docs-installation-parameters: done
-  entity-unavailable: done
+  entity-unavailable:
+    status: done
+    comment: "The Charge switch stays available after a failed read on purpose, so turn_off still reaches the charger; the other entities follow the rule."
   integration-owner: done
   log-when-unavailable: done
   parallel-updates: done
@@ -58,10 +60,12 @@ rules:
   entity-device-class: done
   entity-disabled-by-default: todo
   entity-translations: done
-  exception-translations: todo
+  exception-translations:
+    status: todo
+    comment: "The switch's exceptions are translated; the coordinator's UpdateFailed and ConfigEntryError texts aren't yet."
   icon-translations: todo
   reconfiguration-flow: todo
-  repair-issues: todo
+  repair-issues: done
   stale-devices: todo
 
   # Platinum

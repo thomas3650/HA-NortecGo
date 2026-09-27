@@ -71,6 +71,98 @@
       },
       "last_seen": {
         "name": "Last seen"
+      },
+      "charge_status": {
+        "name": "Charge status",
+        "state": {
+          "start_blocked": "Start blocked",
+          "starting": "Starting",
+          "charging": "Charging",
+          "paused": "Paused",
+          "stopping": "Stopping",
+          "not_released": "Waiting for replug",
+          "unplugged": "Unplugged",
+          "idle": "Idle"
+        }
+      }
+    },
+    "switch": {
+      "charge": {
+        "name": "Charge"
+      }
+    }
+  },
+  "exceptions": {
+    "start_blocked": {
+      "message": "Starts are blocked after a failed start that may have placed a card hold. Unplug and replug the cable, or confirm in the repair issue."
+    },
+    "charger_state_unknown": {
+      "message": "The charger reports a state this integration doesn't know, so it won't start a charge."
+    },
+    "cable_not_connected": {
+      "message": "No cable is connected to the charger."
+    },
+    "charger_not_released": {
+      "message": "The charger still holds the last charge. Unplug and replug the cable, then start again."
+    },
+    "no_payment_source": {
+      "message": "The Nortec Go account has no saved card to pay for a charge."
+    },
+    "multiple_payment_sources": {
+      "message": "The Nortec Go account has more than one saved card. Only one card is supported."
+    },
+    "no_vehicle": {
+      "message": "The Nortec Go account has no car."
+    },
+    "multiple_vehicles": {
+      "message": "The Nortec Go account has more than one car. Only one car is supported."
+    },
+    "start_failed_hold": {
+      "message": "Starting the charge failed after a card hold may have been placed. Starts are blocked; see the repair issue."
+    },
+    "start_failed": {
+      "message": "Starting the charge failed. No card hold was placed. Check the Home Assistant logs."
+    },
+    "auth_failed": {
+      "message": "The Nortec Go session was rejected. Sign in again from the repair notice."
+    },
+    "charge_not_stoppable": {
+      "message": "The charge can't be stopped right now."
+    },
+    "stop_failed": {
+      "message": "Stopping the charge failed; it may have stopped anyway. Check the charger."
+    },
+    "unloading": {
+      "message": "The Nortec Go integration is reloading. Try again in a moment."
+    }
+  },
+  "issues": {
+    "start_blocked": {
+      "title": "Charge starts are blocked on {name}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Allow charge starts again on {name}",
+            "description": "A charge start failed after a card hold may have been placed, so starts are blocked to avoid another hold. A hold that led to no charge is expected to expire by itself.\n\nCheck the charger in the Nortec Go app. Then unplug and replug the cable, or select **Submit** to allow starts again."
+          }
+        },
+        "abort": {
+          "not_loaded": "The Nortec Go integration isn't loaded. Reload it and try again."
+        }
+      }
+    },
+    "start_blocked_store": {
+      "title": "Charge starts are blocked on {name}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Allow charge starts again on {name}",
+            "description": "The saved start guard couldn't be read, so starts are blocked to be safe.\n\nCheck the charger in the Nortec Go app. Then unplug and replug the cable, or select **Submit** to allow starts again."
+          }
+        },
+        "abort": {
+          "not_loaded": "The Nortec Go integration isn't loaded. Reload it and try again."
+        }
       }
     }
   }

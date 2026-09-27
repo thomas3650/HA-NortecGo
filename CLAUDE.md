@@ -25,7 +25,7 @@ uv run pytest -q                 # tests, fast, no coverage
 uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95   # coverage gate
 uv run ruff check && uv run ruff format --check && uv run mypy
 uv run pre-commit install        # once per clone: local hooks incl. no-commit and no-push to main
-scripts/develop                  # run Home Assistant locally with the integration (config/ is gitignored)
+scripts/develop                  # run Home Assistant locally with the integration (config/ is gitignored); or F5 in VS Code
 ```
 
 ## Way of working

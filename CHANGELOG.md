@@ -15,6 +15,8 @@ All notable changes to this project are documented in this file. The format is b
 - Sensors and binary sensors for [EV Smart Charging](https://github.com/jonasbkarlsson/ev_smart_charging):
   the current price with today's and tomorrow's prices, the car's battery and charge limit, and whether
   your own car is connected to the charger.
+- A *Charge* switch that starts and stops charging, guarded against repeated starts that could place extra
+  card holds, a *Charge status* sensor, and a repair issue to allow starts again after a failed start.
 
 ## [0.0.1] - 2026-09-26
 

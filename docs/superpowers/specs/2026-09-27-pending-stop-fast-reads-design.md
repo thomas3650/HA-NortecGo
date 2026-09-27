@@ -60,7 +60,7 @@ Facts used, public-safe:
 
 | File | Change |
 |---|---|
-| `custom_components/nortec_go/charge_control.py` | The pending stop (§2); `is_charge_on` and `charge_status` take it into account |
+| `custom_components/nortec_go/charge_control.py` | The pending stop (§2); `is_charge_on` and `charge_status` take it into account; the `start_pending` property goes (`interval_for` uses the snapshot), with its test |
 | `custom_components/nortec_go/coordinator.py` | The interval (§3.1), the car skip (§3.2), `async_read_now` (§3.3), `read_at` (§4), the device rename (§5), the catch-all (§6) |
 | `custom_components/nortec_go/const.py` | `INTERVAL_CHANGING` (30 s), `CAR_READ_MIN_AGE` (§3.2), `STOP_CONFIRM_TIMEOUT` (2 min); `INTERVAL_CONNECTED` goes; `INTERVAL_UNPLUGGED` becomes `INTERVAL_IDLE`; the polling comment cites D29 |
 | `custom_components/nortec_go/button.py` | Refresh reads right away, the car included (§3.3) |
@@ -98,7 +98,8 @@ stored shape and `async_load` are unchanged, and a change to the pending stop al
 ### 2.2 Start and stop while it is pending
 
 Both run under the lock, after `_raise_if_closed()`. First, a pending stop older than
-`STOP_CONFIRM_TIMEOUT` counts as ended and is cleared (so "for 2 minutes" holds even while reads fail).
+`STOP_CONFIRM_TIMEOUT` counts as ended and is cleared, with the same warning as §2.3 step 2 (so "for 2
+minutes" holds even while reads fail).
 Then, if a stop is still pending:
 
 - **`async_stop`** returns at once, with no API call.
@@ -306,7 +307,7 @@ TDD; `pynortecgo` always mocked; fixtures built from `pynortecgo` model objects 
   *Stopping* until a read sees the charge no longer on, or for 2 minutes, and a start is refused meanwhile.
   The charger is read every 30 s while *Charge status* is *starting* or *stopping*, 5 min while charging
   and 60 min otherwise (replacing D27's intervals and D26's last sentence), and right away after a start, a
-  stop or Refresh. *Why:* the charger reports the old state for about 25 s after a stop, so the switch
+  stop or Refresh; the car at most about every 5 minutes, and on every Refresh. *Why:* the charger reports the old state for about 25 s after a stop, so the switch
   flipped back on and a stop was pressed twice; 30 s reads were observed without a rate limit. Source: this
   spec, *Decisions* and §2–3.
 - D26 and D27 stay active; D29 names the parts it replaces (D27's no polling settings, price reads and

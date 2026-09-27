@@ -122,8 +122,12 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             raise UpdateFailed(str(err)) from err
         except (ChargerNotFoundError, UnexpectedResponseError) as err:
             raise ConfigEntryError(str(err)) from err
+        except NortecGoError as err:
+            # Last: the specific errors above are its subclasses. A later client version may add more.
+            raise UpdateFailed(str(err)) from err
 
         self.charge_control.on_charger_read(charger, start_attempts)
+        self._async_update_charger_device(charger)
         read_at = dt_util.utcnow()
         if self._car_due(read_at):
             self._car_read_at = read_at
@@ -222,6 +226,19 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             manufacturer=vehicle.brand or UNDEFINED,
             model=vehicle.model or UNDEFINED,
         )
+
+    @callback
+    def _async_update_charger_device(self, charger: Charger) -> None:
+        """Follow a rename of the charger in the app (#22); the owner's own name still wins."""
+        registry = dr.async_get(self.hass)
+        device = registry.async_get_device_by_identifier(
+            (DOMAIN, self.charger_id), self.config_entry.entry_id
+        )
+        if device is None:
+            return  # the entities create the device
+        name = charger.name or self.config_entry.title
+        if device.name != name:
+            registry.async_update_device(device.id, name=name)
 
     async def async_load_prices(self) -> None:
         """Load the stored slots, without yesterday's."""

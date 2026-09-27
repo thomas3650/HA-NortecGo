@@ -9,6 +9,7 @@ from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util import dt as dt_util
 from pynortecgo import (
     ApiError,
@@ -18,6 +19,7 @@ from pynortecgo import (
     ChargeState,
     MultipleVehiclesError,
     NortecGoConnectionError,
+    NortecGoError,
     RateLimitError,
     UnexpectedResponseError,
     VehicleNotFoundError,
@@ -350,6 +352,27 @@ async def test_later_permanent_charger_errors(
     assert mock_config_entry.state is ConfigEntryState.LOADED
 
 
+async def test_unknown_client_error_fails_the_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A NortecGoError subclass this integration doesn't know fails the read cleanly."""
+
+    class FutureClientError(NortecGoError):
+        """A client error type from a later pynortecgo version."""
+
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_charger.side_effect = FutureClientError("something new")
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert isinstance(coordinator.last_exception, UpdateFailed)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert "Unexpected error" not in caplog.text
+
+
 @pytest.mark.parametrize("method", ["get_charger", "get_vehicle"])
 async def test_later_auth_error_starts_reauth(
     hass: HomeAssistant,
@@ -427,6 +450,53 @@ async def test_car_device_updated_on_rename(
         "Other car",
         "Other",
         "Model X",
+    )
+
+
+async def test_charger_device_follows_a_rename(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """A rename in the app renames the charger device; an empty name falls back to the title."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    identifier = (DOMAIN, str(FAKE_CHARGER_ID))
+
+    mock_client.get_charger.return_value = make_charger(name="Driveway charger")
+    await coordinator.async_refresh()
+    device = device_registry.async_get_device_by_identifier(
+        identifier, mock_config_entry.entry_id
+    )
+    assert device is not None
+    assert device.name == "Driveway charger"
+
+    mock_client.get_charger.return_value = make_charger(name="")
+    await coordinator.async_refresh()
+    device = device_registry.async_get_device_by_identifier(
+        identifier, mock_config_entry.entry_id
+    )
+    assert device is not None
+    assert device.name == mock_config_entry.title
+
+
+async def test_charger_rename_before_the_device_exists(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Before the entities create the device, a read creates none."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = NortecGoCoordinator(hass, mock_config_entry, mock_client)
+    mock_client.get_charger.return_value = make_charger(name="Driveway charger")
+    await coordinator.async_refresh()
+    assert (
+        device_registry.async_get_device_by_identifier(
+            (DOMAIN, str(FAKE_CHARGER_ID)), mock_config_entry.entry_id
+        )
+        is None
     )
 
 

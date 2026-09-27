@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Start Home Assistant with the integration and the owner's dev config (config/), let the entry set up, and
+# fail on any error from the integration. Run before a PR is marked ready (docs/way-of-working.md, step 10).
+# It only reads the charger, car and prices; it never starts or stops a charge. The full log stays in
+# local/ (never committed); only the integration's error lines are printed.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+if pgrep -fq "(homeassistant|hass) -c config"; then
+  echo "smoke: Home Assistant is already running with config/; stop it first (two instances would share the session)." >&2
+  exit 2
+fi
+
+scripts/develop --setup-only
+mkdir -p local
+log=local/smoke.log
+
+# Run in the foreground and stop after a fixed time: started in the background, HA's Bluetooth
+# (CoreBluetooth via PyObjC) crashes the process on macOS before setup finishes.
+seconds="${SMOKE_SECONDS:-75}"
+# --verbose logs the INFO lines checked below; the log goes to local/, not config/.
+rm -f "$log"
+uv run perl -e 'alarm shift; exec @ARGV' "$seconds" hass -c config --verbose --log-file "$log" >/dev/null 2>&1 || true
+initialized=$(grep -c "Home Assistant initialized" "$log" || true)
+
+failed=0
+if [ "$initialized" -eq 0 ]; then
+  echo "smoke: Home Assistant didn't finish starting within $seconds s (see $log)." >&2
+  failed=1
+fi
+if ! grep -q "Setting up nortec_go\.sensor" "$log"; then
+  echo "smoke: nortec_go wasn't set up; is a Nortec Go entry configured in config/?" >&2
+  failed=1
+fi
+errors=$(grep -E "(ERROR|CRITICAL).*(nortec_go|custom_components)" "$log" || true)
+if [ -n "$errors" ]; then
+  echo "smoke: errors from the integration:" >&2
+  echo "$errors" >&2
+  failed=1
+fi
+
+if [ "$failed" -eq 0 ]; then
+  echo "smoke: OK (Home Assistant started and nortec_go set up without errors)"
+fi
+exit "$failed"

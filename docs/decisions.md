@@ -219,3 +219,12 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Why:** EV Smart Charging repeats "on" up to 8 times an hour, and each start can place a new hold; a
   human looks before the next one.
 - **Source:** [charge switch spec](superpowers/specs/2026-09-26-charge-switch-design.md), Decisions and §3
+
+### D28: Smoke start before a PR is ready
+- **Date:** 2026-09-27 · **Status:** active
+- **Decision:** Before a PR is marked ready, `scripts/smoke` starts Home Assistant with the owner's dev
+  config and fails unless the integration sets up with no errors from it. It only reads; it never starts or
+  stops a charge.
+- **Why:** The unit tests mock Home Assistant's startup; the owner wants proof that the integration really
+  starts before reviewing a PR.
+- **Source:** owner request on 2026-09-27

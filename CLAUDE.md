@@ -11,7 +11,7 @@ Assistant. It talks only to the public API of `pynortecgo`, an async client that
 - `custom_components/nortec_go/` — the integration
 - `tests/` — tests against the integration, with `pynortecgo` mocked
 - `docs/` — the docs; the map is `docs/README.md`
-- `scripts/` — dev scripts, including `scripts/develop`
+- `scripts/` — dev scripts, including `scripts/develop` and `scripts/smoke`
 - `.devcontainer/` — optional, for manual testing only; never the gate environment
 - `.claude/` — project settings, the subagent guard hook, agents (`implementer`, `task-reviewer`,
   `full-reviewer`)
@@ -26,6 +26,7 @@ uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-
 uv run ruff check && uv run ruff format --check && uv run mypy
 uv run pre-commit install        # once per clone: local hooks incl. no-commit and no-push to main
 scripts/develop                  # run Home Assistant locally with the integration (config/ is gitignored); or F5 in VS Code
+scripts/smoke                    # start HA with the dev config and fail on integration errors; before a PR is ready
 ```
 
 ## Way of working

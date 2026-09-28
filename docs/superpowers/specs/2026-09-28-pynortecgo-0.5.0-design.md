@@ -28,6 +28,7 @@ Answered by the owner in the brainstorm (2026-09-28), unless marked *controller*
 | Process | This bump gets the full flow; #24 follows under D25 (short design in chat, no spec or plan) |
 | Which price | The total price per kWh incl. VAT (`PriceSlot.price` since 0.3.0), for the *Current price* sensor and EV Smart Charging's `prices_today` / `prices_tomorrow` |
 | Currency | In this work (#20): the unit is `<forecast currency>/kWh`, falling back to Home Assistant's currency while none is known |
+| Switch while the car pauses | Stays on: the charge is open and the car resumes it; turning it off sends a real stop (§2) |
 | Stored spot prices | *Controller.* The price store goes to version 2; the migration from version 1 drops the stored slots rather than mixing spot and total prices in one day. Only stores written by unreleased builds (the owner's dev config) have version 1 |
 | Last known currency | *Controller.* Kept across a forecast whose `currency` is `None`, and stored with the slots, so a failed price read at startup still has it |
 | Extra request while charging | *Controller.* Accepted, no change: `get_charger()` makes a second request while a charge is open (0.5.0), so two requests per read, 4 a minute at the 30 s reads while starting or stopping |

@@ -71,9 +71,10 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   cooldown ends. `async_refresh()` skips the cooldown and takes the debouncer's lock, so it never overlaps
   another read. After a failed read the next one is scheduled with the current `update_interval`. Setting
   `update_interval` doesn't move a read that is already scheduled.
-- A setup that fails after the entry's code has started (`ConfigEntryNotReady`, `ConfigEntryAuthFailed`,
-  `ConfigEntryError`) never calls `async_unload_entry`, but Home Assistant still runs the entry's on-unload
-  callbacks. Timers or tasks set up before the first refresh are cleaned up with `entry.async_on_unload`.
+- A setup that fails for any reason (for example `ConfigEntryNotReady`, `ConfigEntryAuthFailed`,
+  `ConfigEntryError`, an unexpected exception or a `False` return) never calls `async_unload_entry`, but Home
+  Assistant still runs the entry's on-unload callbacks. Timers or tasks set up before the first refresh are
+  cleaned up with `entry.async_on_unload`.
 - A coordinator schedules its next read at whole loop seconds plus a random 0.05–0.5 s, so a read can come
   up to about 1 s before one full interval has passed. A time threshold compared with the interval needs a
   margin, and a test that fires the timer ticks a second more than the interval.

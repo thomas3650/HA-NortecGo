@@ -624,6 +624,37 @@ async def test_overdue_start_at_load_decided_by_the_first_read(
     await control.async_shutdown()
 
 
+async def test_overdue_start_at_load_blocks_after_the_grace_without_evidence(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An overdue stored start whose first read brings no evidence blocks once the grace is over (§8)."""
+    key = STORE_KEY.format(entry.entry_id)
+    hass_storage[key] = {
+        "version": 1,
+        "key": key,
+        "data": {
+            "blocked_since": None,
+            "start_pending_since": (dt_util.utcnow() - timedelta(hours=8)).isoformat(),
+            "stop_asked": False,
+        },
+    }
+    control = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await control.async_load()
+    control.on_charger_read(CONNECTED, control.start_attempts)
+    await _fire(hass, freezer, START_LOAD_GRACE - timedelta(seconds=1))
+    assert control.state == PENDING
+    await _fire(hass, freezer, timedelta(seconds=1))
+    assert control.state == BLOCKED
+    assert _issue(hass, entry) is not None
+    await control.async_shutdown()
+
+
 async def test_stale_read_changes_nothing(
     control: ChargeControl, client: AsyncMock
 ) -> None:

@@ -37,6 +37,9 @@ as one; search with ``grep "[>]" file`` instead. Some harmless commands are refu
 (``ls .env``, ``grep -n .env .gitignore``), ``[.]env`` quoted or not (the hook can't see quotes; write
 ``"\.env"``), and words with more than 4096 brace alternatives. Grep's ``glob`` is
 checked only when the search covers the repo root (no ``path``, or the root or an ancestor).
+
+The allowlist is per worktree: ``<git dir>/subagent-guard-allow`` of the worktree the target file is in
+(``git rev-parse --absolute-git-dir``); relative lines resolve against that worktree's top level.
 """
 
 from __future__ import annotations
@@ -46,11 +49,13 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-ALLOW_FILE = ROOT / ".git" / "subagent-guard-allow"
+ALLOW_NAME = "subagent-guard-allow"
+PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 GUARDED_PARTS = {".claude", ".git"}
 CASE_FOLD = sys.platform == "darwin"
 FILE_TOOLS = {"Edit": "file_path", "Write": "file_path", "NotebookEdit": "notebook_path"}
@@ -94,10 +99,46 @@ def has_git_part(resolved: str) -> bool:
     return ".git" in Path(resolved).parts
 
 
+def nearest_existing_dir(resolved: str) -> str:
+    """The target's directory, or its nearest ancestor that exists (a Write may create directories)."""
+    path = Path(resolved)
+    candidate = path if path.is_dir() else path.parent
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    return str(candidate)
+
+
+def worktree_of(resolved: str) -> tuple[str, Path] | None:
+    """The top level (normalized) and absolute git dir of the worktree holding the target, or None."""
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            nearest_existing_dir(resolved),
+            "rev-parse",
+            "--show-toplevel",
+            "--absolute-git-dir",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 2:
+        return None
+    return norm(lines[0]), Path(lines[1])
+
+
 def is_guarded(resolved: str) -> bool:
     if GUARDED_PARTS.intersection(Path(resolved).parts):
         return True
-    return resolved == norm(str(ROOT / ".pre-commit-config.yaml"))
+    if Path(resolved).name != PRE_COMMIT_CONFIG:
+        return False
+    if resolved == norm(str(ROOT / PRE_COMMIT_CONFIG)):
+        return True
+    worktree = worktree_of(resolved)
+    return worktree is not None and norm(str(Path(resolved).parent)) == worktree[0]
 
 
 def expand_braces(word: str) -> list[str]:
@@ -136,12 +177,17 @@ def glob_reaches_env(pattern: str) -> bool:
     return any(fnmatch.fnmatchcase(".env", b) for b in env_basenames(pattern))
 
 
-def allowlist() -> set[str]:
+def allowlist(target: str) -> set[str]:
+    """The Guarded files of the task running in the worktree that holds the target."""
+    worktree = worktree_of(target)
+    if worktree is None:
+        return set()
+    top, git_dir = worktree
     try:
-        lines = ALLOW_FILE.read_text(encoding="utf-8").splitlines()
+        lines = (git_dir / ALLOW_NAME).read_text(encoding="utf-8").splitlines()
     except FileNotFoundError:
         return set()
-    return {resolve(line.strip(), str(ROOT)) for line in lines if line.strip()}
+    return {resolve(line.strip(), top) for line in lines if line.strip()}
 
 
 def check_root() -> None:
@@ -159,7 +205,7 @@ def check_file(tool: str, tool_input: dict, cwd: str | None) -> None:
         return
     if has_git_part(target):
         raise Refuse(f"{raw} is under .git; subagents never edit it")
-    if target not in allowlist():
+    if target not in allowlist(target):
         raise Refuse(f"{raw} is a guarded file and is not in this task's Guarded files")
 
 

@@ -8,6 +8,7 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
 
 1. **Issue:** a user story.
 2. **Branch:** `<type>/<topic>`, where the type is `feat`, `fix`, `docs`, `chore` or `process`.
+   Label the issue `active` (see §6 *Labels*).
 3. **Brainstorm:** `superpowers:brainstorming`.
 4. **Spec** in `docs/superpowers/specs/`, then `full-reviewer` until Ready.
 5. **Plan:** `superpowers:writing-plans`, in `docs/superpowers/plans/`, with a `Model:` tag on every task
@@ -154,7 +155,9 @@ review.
   becomes an issue, or is added to an existing one.
 - **Labels:** each issue gets one urgency label: `v1` (needed for version 1), `v2` (can wait for version 2)
   or `v3` (nice to have, after version 2); chores may have none. Type labels come on top: `bug` for a bug,
-  and `enhancement` or `documentation` where they fit. When in doubt, ask the owner (D30).
+  and `enhancement` or `documentation` where they fit. `active` marks the issues being worked on now: it goes
+  on when the issue's branch is created, and comes off if the work stops before the PR is merged (a merge
+  closes the issue). When in doubt, ask the owner (D30).
 - **Merging and pushing:** the owner merges. Only the controller pushes or marks a PR ready.
 - **Git guards:** run `uv run pre-commit install` once per clone. The hooks refuse commits on `main` and pushes
   to `main`, and `.claude/settings.json` denies pushes to `main` and `--no-verify`. `main` is also protected

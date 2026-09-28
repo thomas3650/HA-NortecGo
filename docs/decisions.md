@@ -254,6 +254,8 @@ superseded. How to add one:
 - **Date:** 2026-09-28 · **Status:** active
 - **Decision:** Each issue gets one urgency label: `v1` (needed for version 1), `v2` (can wait for version 2)
   or `v3` (nice to have, after version 2); chores may have none. `bug`, `enhancement` and `documentation`
-  are type labels added on top, and `enhancement` no longer means "no version decided".
-- **Why:** The owner wants every issue ranked by urgency and bugs marked as such (replacing D24).
+  are type labels added on top, and `enhancement` no longer means "no version decided". `active` marks an
+  issue whose work has started and not stopped.
+- **Why:** The owner wants every issue ranked by urgency, bugs marked as such (replacing D24), and to see
+  what is being worked on; GitHub has no filterable in-progress state without a Projects board.
 - **Source:** owner rulings on 2026-09-28 (#46)

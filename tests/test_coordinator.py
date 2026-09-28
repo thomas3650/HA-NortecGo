@@ -544,6 +544,9 @@ async def test_price_read_merges_and_saves(
         MIDNIGHT + timedelta(minutes=15): 2.0,
     }
     stored = hass_storage[STORE_KEY.format(mock_config_entry.entry_id)]["data"]["slots"]
+    data = hass_storage[STORE_KEY.format(mock_config_entry.entry_id)]["data"]
+    assert data["currency"] == "DKK"
+    assert coordinator.price_currency == "DKK"
     assert [slot["price"] for slot in stored] == [1.0, 2.0]
 
 
@@ -558,14 +561,15 @@ async def test_stored_prices_loaded_at_setup(
     freezer.move_to(MIDNIGHT + timedelta(hours=10))
     key = STORE_KEY.format(mock_config_entry.entry_id)
     hass_storage[key] = {
-        "version": 1,
+        "version": 2,
         "minor_version": 1,
         "key": key,
         "data": {
+            "currency": "DKK",
             "slots": [
                 {"start": "2026-09-26T21:45:00+00:00", "price": 9.0},
                 {"start": "2026-09-26T22:00:00+00:00", "price": 1.0},
-            ]
+            ],
         },
     }
     mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
@@ -573,6 +577,55 @@ async def test_stored_prices_loaded_at_setup(
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert _coordinator(mock_config_entry).known_prices == {MIDNIGHT: 1.0}
+    assert _coordinator(mock_config_entry).price_currency == "DKK"
+
+
+async def test_version_1_store_migrates_at_setup(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A version 1 store (spot prices) loads as empty; the setup's read refills it as version 2."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=10))
+    key = STORE_KEY.format(mock_config_entry.entry_id)
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": key,
+        "data": {"slots": [{"start": "2026-09-26T22:00:00+00:00", "price": 9.0}]},
+    }
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT + timedelta(hours=10), [2.0]
+    )
+    await setup_integration(hass, mock_config_entry)
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.known_prices == {MIDNIGHT + timedelta(hours=10): 2.0}
+    assert hass_storage[key]["version"] == 2
+    assert hass_storage[key]["data"]["currency"] == "DKK"
+
+
+async def test_price_currency_kept_when_forecast_has_none(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A forecast without a currency keeps the last known one, in memory and stored."""
+    mock_client.get_price_forecast.return_value = make_forecast(MIDNIGHT, [1.0])
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [1.0], currency=None
+    )
+    await coordinator.async_read_prices()
+    assert coordinator.price_currency == "DKK"
+    data = hass_storage[STORE_KEY.format(mock_config_entry.entry_id)]["data"]
+    assert data["currency"] == "DKK"
 
 
 async def test_failed_price_read_keeps_slots(

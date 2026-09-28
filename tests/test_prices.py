@@ -11,6 +11,7 @@ import pytest
 from custom_components.nortec_go.const import MISSING_SLOT_PRICE, PAST_SLOT_PRICE
 from custom_components.nortec_go.prices import (
     PriceStore,
+    StoredPrices,
     current_price,
     merge_forecast,
     prices_today,
@@ -25,6 +26,7 @@ STEP = timedelta(minutes=15)
 # 2026-09-27 00:00 local (CEST, UTC+2) is 2026-09-26 22:00 UTC.
 MIDNIGHT = datetime(2026, 9, 26, 22, 0, tzinfo=UTC)
 NOW = datetime(2026, 9, 27, 12, 7, tzinfo=UTC)  # 14:07 local
+KEY = "nortec_go.entry1.prices"
 
 
 def _slots(start: datetime, prices: list[float]) -> dict[datetime, float]:
@@ -127,35 +129,58 @@ def test_current_price() -> None:
 async def test_store_round_trip(
     hass: HomeAssistant, hass_storage: dict[str, Any]
 ) -> None:
-    """Saved slots load back as UTC keys; remove deletes the file."""
+    """Saved slots and currency load back, with UTC keys; remove deletes the file."""
     store = PriceStore(hass, "entry1")
     known = _slots(MIDNIGHT, [1.0, 2.0])
-    await store.async_save(known)
-    assert hass_storage["nortec_go.entry1.prices"]["data"] == {
+    await store.async_save(known, "DKK")
+    assert hass_storage[KEY]["version"] == 2
+    assert hass_storage[KEY]["data"] == {
+        "currency": "DKK",
         "slots": [
             {"start": "2026-09-26T22:00:00+00:00", "price": 1.0},
             {"start": "2026-09-26T22:15:00+00:00", "price": 2.0},
-        ]
+        ],
     }
-    assert await PriceStore(hass, "entry1").async_load() == known
+    assert await PriceStore(hass, "entry1").async_load() == StoredPrices(known, "DKK")
     await store.async_remove()
-    assert "nortec_go.entry1.prices" not in hass_storage
+    assert KEY not in hass_storage
 
 
 async def test_store_missing_file(hass: HomeAssistant) -> None:
-    """No file: no known slots."""
-    assert await PriceStore(hass, "entry1").async_load() == {}
+    """No file: no known slots and no currency."""
+    assert await PriceStore(hass, "entry1").async_load() == StoredPrices({}, None)
+
+
+async def test_store_version_1_migrates_to_empty(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """Version 1 held spot prices: they are dropped, and the file is saved as version 2."""
+    hass_storage[KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": KEY,
+        "data": {"slots": [{"start": "2026-09-26T22:00:00+00:00", "price": 1.0}]},
+    }
+    assert await PriceStore(hass, "entry1").async_load() == StoredPrices({}, None)
+    await hass.async_block_till_done()
+    assert hass_storage[KEY]["version"] == 2
+    assert hass_storage[KEY]["data"] == {"currency": None, "slots": []}
 
 
 @pytest.mark.parametrize(
     "data",
     [
         {"no_slots": []},
-        {"slots": [{"start": "not a time", "price": 1.0}]},
-        {"slots": [{"start": "2026-09-26T22:00:00+00:00", "price": "cheap"}]},
-        {"slots": [{"start": "2026-09-26T22:00:00", "price": 1.0}]},  # no offset
-        {"slots": [{"price": 1.0}]},
-        {"slots": "wrong"},
+        {"slots": []},  # no currency
+        {"currency": 5, "slots": []},
+        {"currency": "DKK", "slots": [{"start": "not a time", "price": 1.0}]},
+        {
+            "currency": "DKK",
+            "slots": [{"start": "2026-09-26T22:00:00+00:00", "price": "cheap"}],
+        },
+        {"currency": "DKK", "slots": [{"start": "2026-09-26T22:00:00", "price": 1.0}]},
+        {"currency": "DKK", "slots": [{"price": 1.0}]},
+        {"currency": "DKK", "slots": "wrong"},
     ],
 )
 async def test_store_wrong_shape(
@@ -164,12 +189,7 @@ async def test_store_wrong_shape(
     data: dict[str, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Valid JSON of the wrong shape gives no known slots and a warning."""
-    hass_storage["nortec_go.entry1.prices"] = {
-        "version": 1,
-        "minor_version": 1,
-        "key": "nortec_go.entry1.prices",
-        "data": data,
-    }
-    assert await PriceStore(hass, "entry1").async_load() == {}
+    """Valid JSON of the wrong shape gives no slots, no currency and a warning."""
+    hass_storage[KEY] = {"version": 2, "minor_version": 1, "key": KEY, "data": data}
+    assert await PriceStore(hass, "entry1").async_load() == StoredPrices({}, None)
     assert "stored prices" in caplog.text

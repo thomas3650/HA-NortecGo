@@ -1,15 +1,18 @@
 """Tests for the Nortec Go charge control: start, stop, pending start and the start guard."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 import contextlib
 from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.util import dt as dt_util
+from homeassistant.util.async_ import get_scheduled_timer_handles
 from pynortecgo import (
     ApiError,
     AuthError,
@@ -48,6 +51,7 @@ from custom_components.nortec_go.charge_control import (
 from custom_components.nortec_go.const import (
     DOMAIN,
     START_CONFIRM_TIMEOUT,
+    START_LOAD_GRACE,
     STOP_CONFIRM_TIMEOUT,
 )
 
@@ -65,6 +69,27 @@ CHARGING = make_charger(
     state=ChargerState.BUSY_CHARGING,
 )
 STORE_KEY = "nortec_go.{}.charge_control"
+
+
+def _timers(hass: HomeAssistant, name: str) -> int:
+    """The scheduled, not cancelled timers whose job has this name."""
+    return sum(
+        1
+        for handle in get_scheduled_timer_handles(hass.loop)
+        if not handle.cancelled()
+        and handle._args  # noqa: SLF001
+        and isinstance(job := handle._args[-1], HassJob)  # noqa: SLF001
+        and job.name == name
+    )
+
+
+async def _fire(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, delta: timedelta
+) -> None:
+    """Move time on, fire due timers and wait for their background work."""
+    freezer.tick(delta)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
 
 
 @pytest.mark.parametrize(
@@ -190,14 +215,15 @@ async def control(
     client: AsyncMock,
     on_change: MagicMock,
     request_refresh: AsyncMock,
-) -> ChargeControl:
-    """A loaded control that has seen one connected, idle read."""
+) -> AsyncGenerator[ChargeControl]:
+    """A loaded control that has seen one connected, idle read; shut down at teardown."""
     control = ChargeControl(
         hass, entry, client, on_change=on_change, request_refresh=request_refresh
     )
     await control.async_load()
     control.on_charger_read(CONNECTED, control.start_attempts)
-    return control
+    yield control
+    await control.async_shutdown()
 
 
 def _issue(hass: HomeAssistant, entry: MockConfigEntry) -> ir.IssueEntry | None:
@@ -419,26 +445,183 @@ async def test_pending_start_times_out_into_block(
     entry: MockConfigEntry,
     control: ChargeControl,
     freezer: FrozenDateTimeFactory,
+    on_change: MagicMock,
 ) -> None:
-    """No charge seen within 10 minutes: the start counts as failed with a hold."""
+    """No charge seen within 10 minutes, with no read at all: the start counts as failed with a hold."""
     await control.async_start()
-    freezer.tick(START_CONFIRM_TIMEOUT - timedelta(seconds=1))
-    control.on_charger_read(CONNECTED, control.start_attempts)
+    await _fire(hass, freezer, START_CONFIRM_TIMEOUT - timedelta(seconds=1))
     assert control.state == PENDING
-    freezer.tick(timedelta(seconds=1))
-    control.on_charger_read(CONNECTED, control.start_attempts)
+    on_change.reset_mock()
+    await _fire(hass, freezer, timedelta(seconds=1))
     assert control.state == BLOCKED
     assert _issue(hass, entry) is not None
+    on_change.assert_called()
 
 
-async def test_timeout_on_unplugged_read_ends_without_block(
-    control: ChargeControl, freezer: FrozenDateTimeFactory
+async def test_unplugged_read_after_the_timeout_clears_the_block(
+    hass: HomeAssistant, control: ChargeControl, freezer: FrozenDateTimeFactory
 ) -> None:
-    """A read past the timeout that sees the cable unplugged ends the pending start, no block."""
+    """The timer blocks at 10 minutes; a later read that sees the cable unplugged clears it (D26)."""
     await control.async_start()
-    freezer.tick(START_CONFIRM_TIMEOUT)
+    await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
+    assert control.state == BLOCKED
     control.on_charger_read(make_charger(is_connected=False), control.start_attempts)
     assert control.state == IDLE
+
+
+async def test_read_with_a_charge_ends_the_start_timer(
+    hass: HomeAssistant, control: ChargeControl, freezer: FrozenDateTimeFactory
+) -> None:
+    """A read that sees a charge ends the pending start; its timer blocks nothing later."""
+    await control.async_start()
+    control.on_charger_read(CHARGING, control.start_attempts)
+    assert control.state == IDLE
+    await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
+    assert control.state == IDLE
+
+
+async def test_new_start_gets_a_fresh_timer(
+    hass: HomeAssistant, control: ChargeControl, freezer: FrozenDateTimeFactory
+) -> None:
+    """A second start after the first ended has its own 10 minutes; the first timer is gone."""
+    await control.async_start()
+    control.on_charger_read(make_charger(is_connected=False), control.start_attempts)
+    await _fire(hass, freezer, timedelta(minutes=5))
+    await control.async_start()
+    await _fire(hass, freezer, timedelta(minutes=6))
+    assert control.state == PENDING
+    await _fire(hass, freezer, timedelta(minutes=4))
+    assert control.state == BLOCKED
+
+
+async def test_start_timer_does_nothing_after_shutdown(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    freezer: FrozenDateTimeFactory,
+    on_change: MagicMock,
+) -> None:
+    """After unload the start timer changes nothing."""
+    await control.async_start()
+    await control.async_shutdown()
+    on_change.reset_mock()
+    await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
+    assert control.state == PENDING
+    assert _issue(hass, entry) is None
+    on_change.assert_not_called()
+
+
+async def test_start_timer_waits_for_a_stop_in_flight(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The start timer coming due during stop_charge() waits for the lock and blocks nothing (Review Focus 3)."""
+    attempts_before = control.start_attempts
+    await control.async_start()
+    freezer.tick(START_CONFIRM_TIMEOUT - timedelta(seconds=1))
+    control.on_charger_read(
+        CHARGING, attempts_before
+    )  # stale: pending stays, charge seen
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)
+    freezer.tick(timedelta(seconds=2))
+    async_fire_time_changed(hass)
+    await asyncio.sleep(0)
+    release.set()
+    await stop
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert control.state == STOP_PENDING
+
+
+@pytest.mark.parametrize(
+    ("age", "left"),
+    [
+        (timedelta(minutes=3), timedelta(minutes=7)),
+        (timedelta(minutes=9), START_LOAD_GRACE),
+        (timedelta(minutes=30), START_LOAD_GRACE),
+        (-timedelta(hours=1), START_CONFIRM_TIMEOUT),
+    ],
+)
+async def test_load_arms_the_start_timer(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+    age: timedelta,
+    left: timedelta,
+) -> None:
+    """A stored pending start gets the time left, at least the grace, at most 10 minutes."""
+    key = STORE_KEY.format(entry.entry_id)
+    hass_storage[key] = {
+        "version": 1,
+        "key": key,
+        "data": {
+            "blocked_since": None,
+            "start_pending_since": (dt_util.utcnow() - age).isoformat(),
+            "stop_asked": False,
+        },
+    }
+    control = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await control.async_load()
+    assert control.state == PENDING
+    await _fire(hass, freezer, left - timedelta(seconds=1))
+    assert control.state == PENDING
+    await _fire(hass, freezer, timedelta(seconds=1))
+    assert control.state == BLOCKED
+    await control.async_shutdown()
+
+
+@pytest.mark.parametrize(
+    "charger",
+    [
+        CHARGING,
+        make_charger(is_connected=True, state=ChargerState.BUSY_NON_RELEASED),
+        make_charger(is_connected=False),
+    ],
+)
+async def test_overdue_start_at_load_decided_by_the_first_read(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+    charger: Any,
+) -> None:
+    """An overdue stored start is ended by a first read with evidence, with no block (Review Focus 1).
+
+    The read here runs before the loop could fire any timer; the grace itself is pinned by
+    test_load_arms_the_start_timer's 9- and 30-minute rows.
+    """
+    key = STORE_KEY.format(entry.entry_id)
+    hass_storage[key] = {
+        "version": 1,
+        "key": key,
+        "data": {
+            "blocked_since": None,
+            "start_pending_since": (dt_util.utcnow() - timedelta(hours=8)).isoformat(),
+            "stop_asked": False,
+        },
+    }
+    control = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await control.async_load()
+    control.on_charger_read(charger, control.start_attempts)
+    await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
+    assert control.state == IDLE
+    assert _issue(hass, entry) is None
+    await control.async_shutdown()
 
 
 async def test_stale_read_changes_nothing(
@@ -535,13 +718,12 @@ async def test_turn_on_after_turn_off_clears_stop_asked(
 
 
 async def test_stop_asked_ends_with_the_timeout(
-    control: ChargeControl, freezer: FrozenDateTimeFactory
+    hass: HomeAssistant, control: ChargeControl, freezer: FrozenDateTimeFactory
 ) -> None:
     """The stop request ends with the pending start's timeout, which blocks."""
     await control.async_start()
     await control.async_stop()
-    freezer.tick(START_CONFIRM_TIMEOUT)
-    control.on_charger_read(CONNECTED, control.start_attempts)
+    await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
     assert control.state == BLOCKED
 
 
@@ -751,48 +933,122 @@ async def test_pending_stop_ends_on_a_stale_read_without_the_charge_on(
     assert control.state == IDLE
 
 
-async def test_pending_stop_times_out_on_a_read(
+async def test_pending_stop_times_out_without_a_read(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    freezer: FrozenDateTimeFactory,
+    on_change: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """After 2 minutes, with no read, the pending stop ends with a warning and tells the coordinator."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT - timedelta(seconds=1))
+    assert control.state == STOP_PENDING
+    on_change.reset_mock()
+    await _fire(hass, freezer, timedelta(seconds=1))
+    assert control.state == IDLE
+    assert "No stop seen within" in caplog.text
+    on_change.assert_called()
+
+
+async def test_stop_after_the_timeout_without_a_read(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Once the pending stop has timed out, turn_off stops again."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    await control.async_stop()
+    assert client.stop_charge.await_count == 2
+
+
+async def test_start_after_the_timeout_takes_the_normal_checks(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Once the pending stop has timed out, turn_on isn't refused; the open charge makes it a no-op."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    await control.async_start()
+    client.start_charge.assert_not_awaited()
+    assert control.state == IDLE
+
+
+async def test_read_without_the_charge_ends_the_stop_timer(
+    hass: HomeAssistant,
     control: ChargeControl,
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """After 2 minutes a read ends the pending stop, with a warning."""
+    """A read that sees the charge off ends the pending stop; its timer does nothing later."""
     control.on_charger_read(CHARGING, control.start_attempts)
     await control.async_stop()
-    freezer.tick(STOP_CONFIRM_TIMEOUT - timedelta(seconds=1))
-    control.on_charger_read(CHARGING, control.start_attempts)
-    assert control.state == STOP_PENDING
-    freezer.tick(timedelta(seconds=1))
-    control.on_charger_read(CHARGING, control.start_attempts)
+    control.on_charger_read(CONNECTED, control.start_attempts)
     assert control.state == IDLE
-    assert "No stop seen within" in caplog.text
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    assert "No stop seen within" not in caplog.text
 
 
-async def test_stop_after_the_timeout_without_a_read(
+async def test_stop_timer_does_nothing_after_shutdown(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    freezer: FrozenDateTimeFactory,
+    on_change: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """After unload the stop timer changes nothing."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    await control.async_shutdown()
+    on_change.reset_mock()
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    assert control.state == STOP_PENDING
+    assert "No stop seen within" not in caplog.text
+    on_change.assert_not_called()
+
+
+async def test_stop_timer_after_the_stop_ended_does_nothing(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A stop timer whose work waits for the lock while a read ends the pending stop does nothing."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    async with control._lock:  # noqa: SLF001
+        freezer.tick(STOP_CONFIRM_TIMEOUT)
+        async_fire_time_changed(hass)
+        await asyncio.sleep(0)
+        control.on_charger_read(CONNECTED, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert control.state == IDLE
+    assert "No stop seen within" not in caplog.text
+
+
+async def test_background_stop_leaves_one_stop_timer(
+    hass: HomeAssistant,
     control: ChargeControl,
     client: AsyncMock,
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """With no read for 2 minutes, turn_off counts the pending stop as ended and stops again."""
-    control.on_charger_read(CHARGING, control.start_attempts)
-    await control.async_stop()
-    freezer.tick(STOP_CONFIRM_TIMEOUT)
-    await control.async_stop()
-    assert client.stop_charge.await_count == 2
-    assert "No stop seen within" in caplog.text
-
-
-async def test_start_after_the_timeout_takes_the_normal_checks(
-    control: ChargeControl, client: AsyncMock, freezer: FrozenDateTimeFactory
-) -> None:
-    """With no read for 2 minutes, turn_on isn't refused; the open charge makes it a no-op."""
-    control.on_charger_read(CHARGING, control.start_attempts)
-    await control.async_stop()
-    freezer.tick(STOP_CONFIRM_TIMEOUT)
+    """The read and the background stop both set the pending stop; one timeout warning only (Review Focus 4)."""
     await control.async_start()
-    client.start_charge.assert_not_awaited()
-    assert control.state == IDLE
+    await control.async_stop()  # asked during the pending start
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+    assert _timers(hass, f"{DOMAIN} stop deadline") == 1
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    assert caplog.text.count("No stop seen within") == 1
 
 
 async def test_background_stop_shows_off_at_once(

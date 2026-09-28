@@ -691,7 +691,7 @@ async def test_timeout_on_unchanged_read_updates_entities(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A timeout on a read equal to the last one still reaches listeners (Review Focus 3)."""
+    """The start timer's block reaches listeners even when the reads don't change."""
     mock_client.get_charger.return_value = make_charger(is_connected=True)
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
@@ -700,7 +700,8 @@ async def test_timeout_on_unchanged_read_updates_entities(
     listener = MagicMock()
     coordinator.async_add_listener(listener)
     freezer.tick(START_CONFIRM_TIMEOUT)
-    await coordinator.async_refresh()
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert coordinator.data.control.blocked
     listener.assert_called()
 

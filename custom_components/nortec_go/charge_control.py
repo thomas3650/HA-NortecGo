@@ -1,15 +1,16 @@
-"""The Nortec Go charge control: start and stop, the pending start and stop, and the start guard (D26, D29)."""
+"""The Nortec Go charge control: start and stop, the pending start and stop, and the start guard (D26, D29, D31)."""
 
 import asyncio
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from pynortecgo import (
@@ -37,6 +38,7 @@ from .const import (
     DOMAIN,
     START_BLOCKED_ISSUE_ID,
     START_CONFIRM_TIMEOUT,
+    START_LOAD_GRACE,
     STOP_CONFIRM_TIMEOUT,
 )
 from .entry import NortecGoConfigEntry
@@ -183,6 +185,10 @@ class ChargeControl:
         self._pending_since: datetime | None = None
         self._stop_asked = False
         self._stop_pending_since: datetime | None = None
+        self._start_timer: CALLBACK_TYPE | None = None
+        self._stop_timer: CALLBACK_TYPE | None = None
+        # A setup that fails after async_load never calls async_shutdown, but runs these.
+        entry.async_on_unload(self._cancel_timers)
         self._remembered: ChargerState | None = None
         self._last_charger: Charger | None = None
         self._closed = False
@@ -215,8 +221,12 @@ class ChargeControl:
             self._save()
             return
         self._blocked_since = blocked_since
-        self._pending_since = pending_since
         self._stop_asked = stop_asked and pending_since is not None
+        if pending_since is not None:
+            left = START_CONFIRM_TIMEOUT - (dt_util.utcnow() - pending_since)
+            self._set_start_pending(
+                pending_since, min(max(left, START_LOAD_GRACE), START_CONFIRM_TIMEOUT)
+            )
         if blocked_since is not None:
             self._create_issue("start_blocked")
 
@@ -224,8 +234,6 @@ class ChargeControl:
         """Start a charge once, unless one is on, pending or blocked (§3.1)."""
         async with self._lock:
             self._raise_if_closed()
-            if self._expire_stop_pending():
-                self._on_change()
             if self._stop_pending_since is not None:
                 raise ServiceValidationError(
                     translation_domain=DOMAIN, translation_key="stop_pending"
@@ -288,7 +296,7 @@ class ChargeControl:
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="start_failed"
                 ) from None
-            self._pending_since = dt_util.utcnow()
+            self._set_start_pending(dt_util.utcnow())
             self._stop_asked = False
             self._changed()
             self._request_read()
@@ -297,8 +305,6 @@ class ChargeControl:
         """Stop the charge, or ask for the stop while a start is pending (§3.3)."""
         async with self._lock:
             self._raise_if_closed()
-            if self._expire_stop_pending():
-                self._on_change()
             if self._stop_pending_since is not None:
                 return
             charger = self._last_charger
@@ -346,10 +352,12 @@ class ChargeControl:
         else:
             stopped = True
         if self._pending_since is not None:
-            self._pending_since = None
-            self._stop_asked = False
+            self._end_start_pending()
             self._save()
-        self._stop_pending_since = dt_util.utcnow() if stopped else None
+        if stopped:
+            self._set_stop_pending()
+        else:
+            self._end_stop_pending()
         self._on_change()
         self._request_read()
 
@@ -375,37 +383,25 @@ class ChargeControl:
             return  # unloaded: the reloaded control owns the store now
         # The pending stop (D29), before the stale-read check: that check is about start
         # attempts, and a read begun before the stop saw the charge on, so it can't end it early.
+        # Only a read with evidence ends it here; the stop timer owns the time limit (D31).
         if (
             self._stop_pending_since is not None
             and charger.charge_state not in _CHARGE_ON
         ):
-            self._stop_pending_since = None
-        else:
-            self._expire_stop_pending()
+            self._end_stop_pending()
         if start_attempts != self.start_attempts:
             return  # a stale read: it began before the latest start attempt
         changed = False
         if self._pending_since is not None:
             if self._stop_asked and charge_is_open(charger):
-                self._pending_since = None
-                self._stop_asked = False
-                self._stop_pending_since = dt_util.utcnow()
+                self._end_start_pending()
+                self._set_stop_pending()
                 changed = True
                 self._entry.async_create_background_task(
                     self._hass, self._async_background_stop(), f"{DOMAIN} stop"
                 )
             elif _charge_happened(charger) or not charger.is_connected:
-                self._pending_since = None
-                self._stop_asked = False
-                changed = True
-            elif dt_util.utcnow() - self._pending_since >= START_CONFIRM_TIMEOUT:
-                _LOGGER.warning(
-                    "No charge seen within %s of the start; blocking starts",
-                    START_CONFIRM_TIMEOUT,
-                )
-                self._pending_since = None
-                self._stop_asked = False
-                self._set_block("start_blocked")
+                self._end_start_pending()
                 changed = True
         if self._blocked_since is not None:
             released = (
@@ -436,6 +432,7 @@ class ChargeControl:
         """
         async with self._lock:
             self._closed = True
+            self._cancel_timers()
             await self._store.async_save(self._data_to_save())
 
     def _raise_if_closed(self) -> None:
@@ -444,25 +441,99 @@ class ChargeControl:
                 translation_domain=DOMAIN, translation_key="unloading"
             )
 
-    def _expire_stop_pending(self) -> bool:
-        """Clear a pending stop older than STOP_CONFIRM_TIMEOUT; True when it was cleared."""
-        if (
-            self._stop_pending_since is None
-            or dt_util.utcnow() - self._stop_pending_since < STOP_CONFIRM_TIMEOUT
-        ):
-            return False
-        _LOGGER.warning(
-            "No stop seen within %s; showing the charger's state again",
-            STOP_CONFIRM_TIMEOUT,
-        )
-        self._stop_pending_since = None
-        return True
-
     def _clear_stop_pending(self) -> None:
         """End a pending stop outside a read; it isn't stored, so only tell the coordinator."""
         if self._stop_pending_since is not None:
-            self._stop_pending_since = None
+            self._end_stop_pending()
             self._on_change()
+
+    def _set_start_pending(
+        self, since: datetime, delay: timedelta = START_CONFIRM_TIMEOUT
+    ) -> None:
+        """Start pending since `since`; its timer ends it with a block after `delay` (D31)."""
+        self._pending_since = since
+        self._cancel_start_timer()
+
+        @callback
+        def _due(_now: datetime) -> None:
+            self._start_timer = None
+            self._entry.async_create_background_task(
+                self._hass, self._async_start_due(since), f"{DOMAIN} start deadline"
+            )
+
+        self._start_timer = async_call_later(
+            self._hass,
+            delay,
+            HassJob(_due, f"{DOMAIN} start deadline", cancel_on_shutdown=True),
+        )
+
+    def _end_start_pending(self) -> None:
+        self._pending_since = None
+        self._stop_asked = False
+        self._cancel_start_timer()
+
+    async def _async_start_due(self, since: datetime) -> None:
+        """The start timer's work, under the lock: no charge seen in time blocks starts (D26)."""
+        async with self._lock:
+            if self._closed or self._pending_since != since:
+                return
+            _LOGGER.warning(
+                "No charge seen within %s of the start; blocking starts",
+                START_CONFIRM_TIMEOUT,
+            )
+            self._end_start_pending()
+            self._set_block("start_blocked")
+            self._changed()
+
+    def _set_stop_pending(self) -> None:
+        """Stop pending from now; its timer ends it after STOP_CONFIRM_TIMEOUT (D29, D31)."""
+        since = dt_util.utcnow()
+        self._stop_pending_since = since
+        self._cancel_stop_timer()
+
+        @callback
+        def _due(_now: datetime) -> None:
+            self._stop_timer = None
+            self._entry.async_create_background_task(
+                self._hass, self._async_stop_due(since), f"{DOMAIN} stop deadline"
+            )
+
+        self._stop_timer = async_call_later(
+            self._hass,
+            STOP_CONFIRM_TIMEOUT,
+            HassJob(_due, f"{DOMAIN} stop deadline", cancel_on_shutdown=True),
+        )
+
+    def _end_stop_pending(self) -> None:
+        self._stop_pending_since = None
+        self._cancel_stop_timer()
+
+    async def _async_stop_due(self, since: datetime) -> None:
+        """The stop timer's work, under the lock: show the charger's state again."""
+        async with self._lock:
+            if self._closed or self._stop_pending_since != since:
+                return
+            _LOGGER.warning(
+                "No stop seen within %s; showing the charger's state again",
+                STOP_CONFIRM_TIMEOUT,
+            )
+            self._end_stop_pending()
+            self._on_change()
+
+    def _cancel_start_timer(self) -> None:
+        if self._start_timer is not None:
+            self._start_timer()
+            self._start_timer = None
+
+    def _cancel_stop_timer(self) -> None:
+        if self._stop_timer is not None:
+            self._stop_timer()
+            self._stop_timer = None
+
+    @callback
+    def _cancel_timers(self) -> None:
+        self._cancel_start_timer()
+        self._cancel_stop_timer()
 
     def _set_block(self, issue_key: str) -> None:
         self._blocked_since = dt_util.utcnow()

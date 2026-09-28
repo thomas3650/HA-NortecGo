@@ -20,6 +20,7 @@ from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 from pynortecgo import (
     AuthError,
     ChargeStartError,
@@ -375,3 +376,35 @@ async def test_block_from_a_start_during_reload_reaches_the_new_control(
     assert await reload
     await hass.async_block_till_done()
     assert mock_config_entry.runtime_data.data.control.blocked
+
+
+async def test_failed_setup_leaves_no_start_timer(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A setup whose first read fails cancels its start timer: no repair issue appears later."""
+    key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    hass_storage[key] = {
+        "version": 1,
+        "key": key,
+        "data": {
+            "blocked_since": None,
+            "start_pending_since": dt_util.utcnow().isoformat(),
+            "stop_asked": False,
+        },
+    }
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+    for _ in range(4):
+        freezer.tick(timedelta(minutes=3))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    issue = ir.async_get(hass).async_get_issue(
+        DOMAIN, f"start_blocked_{mock_config_entry.entry_id}"
+    )
+    assert issue is None
+    assert hass_storage[key]["data"]["blocked_since"] is None

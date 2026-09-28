@@ -98,12 +98,13 @@ async def _fire(
         (CONNECTED, False),
         (make_charger(is_connected=True, state=ChargerState.BUSY), True),
         (make_charger(is_connected=True, state=ChargerState.BUSY_CHARGING), True),
+        (make_charger(is_connected=True, state=ChargerState.BUSY_NON_CHARGING), True),
         (make_charger(is_connected=True, charge_state=ChargeState.PAUSED), True),
         (make_charger(is_connected=True, state=ChargerState.BUSY_NON_RELEASED), False),
     ],
 )
 def test_charge_is_open(charger: Any, expected: bool) -> None:
-    """A charge is open on a charge state, BUSY or BUSY_CHARGING."""
+    """A charge is open on a charge state, BUSY, BUSY_CHARGING or BUSY_NON_CHARGING."""
     assert charge_is_open(charger) is expected
 
 
@@ -150,6 +151,20 @@ def test_is_charge_on(
             make_charger(is_connected=True, charge_state=ChargeState.PAUSED),
             IDLE,
             "paused",
+        ),
+        (
+            make_charger(
+                is_connected=True,
+                state=ChargerState.BUSY_NON_CHARGING,
+                charge_state=ChargeState.PAUSED,
+            ),
+            IDLE,
+            "paused",
+        ),
+        (
+            make_charger(is_connected=True, state=ChargerState.BUSY_NON_CHARGING),
+            IDLE,
+            "idle",
         ),
         (
             make_charger(is_connected=True, charge_state=ChargeState.STOPPING),
@@ -258,6 +273,16 @@ async def test_start_noop_while_charge_open(
 ) -> None:
     """A charge open in the last read: no API call."""
     control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_start()
+    client.start_charge.assert_not_awaited()
+
+
+async def test_start_noop_while_busy_non_charging(
+    control: ChargeControl, client: AsyncMock
+) -> None:
+    """BUSY_NON_CHARGING without a charge state is a charge in progress: no API call."""
+    charger = make_charger(is_connected=True, state=ChargerState.BUSY_NON_CHARGING)
+    control.on_charger_read(charger, control.start_attempts)
     await control.async_start()
     client.start_charge.assert_not_awaited()
 

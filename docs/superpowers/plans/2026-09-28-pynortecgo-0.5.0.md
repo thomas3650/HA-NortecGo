@@ -452,22 +452,8 @@ So that setup keeps working with the new store API, make the minimal change in
   whole result.
 - In `async_read_prices`, change the save to `await self._price_store.async_save(self.known_prices, None)`.
 
-Run: `uv run pytest -q`
-Expected: PASS, the whole suite. If `test_store_version_1_migrates_to_empty` fails only on the saved-back check, confirm with the installed `homeassistant/helpers/storage.py` that the migration calls `async_save` and adjust the waiting, not the assertion.
-
-- [ ] **Step 3: Write the failing coordinator and sensor tests**
-
-In `tests/test_coordinator.py`:
-- In `test_price_read_merges_and_saves`, after the `stored = ...` line, add:
-
-```python
-    data = hass_storage[STORE_KEY.format(mock_config_entry.entry_id)]["data"]
-    assert data["currency"] == "DKK"
-    assert coordinator.price_currency == "DKK"
-```
-
-- In `test_stored_prices_loaded_at_setup`, replace the `hass_storage[key] = {...}` statement with the one
-  below, and at the end add `assert _coordinator(mock_config_entry).price_currency == "DKK"`:
+In `tests/test_coordinator.py`, `test_stored_prices_loaded_at_setup` stores version 1 data, which would now
+silently migrate to empty (spec §5). Replace its `hass_storage[key] = {...}` statement with:
 
 ```python
     hass_storage[key] = {
@@ -483,6 +469,23 @@ In `tests/test_coordinator.py`:
         },
     }
 ```
+
+Run: `uv run pytest -q`
+Expected: PASS, the whole suite. If `test_store_version_1_migrates_to_empty` fails only on the saved-back check, confirm with the installed `homeassistant/helpers/storage.py` that the migration calls `async_save` and adjust the waiting, not the assertion.
+
+- [ ] **Step 3: Write the failing coordinator and sensor tests**
+
+In `tests/test_coordinator.py`:
+- In `test_price_read_merges_and_saves`, after the `stored = ...` line, add:
+
+```python
+    data = hass_storage[STORE_KEY.format(mock_config_entry.entry_id)]["data"]
+    assert data["currency"] == "DKK"
+    assert coordinator.price_currency == "DKK"
+```
+
+- In `test_stored_prices_loaded_at_setup` (its stored data moved to version 2 in Step 2), at the end add
+  `assert _coordinator(mock_config_entry).price_currency == "DKK"`.
 - Add after `test_stored_prices_loaded_at_setup`:
 
 ```python

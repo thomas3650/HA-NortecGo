@@ -65,7 +65,7 @@ The integration has no options to change after setup.
 
 ## Supported functionality
 
-The integration adds two devices: the charger, and the car when the account has one.
+The integration adds two devices: the charger, and the car when the account has exactly one.
 
 ### Charger
 
@@ -137,7 +137,7 @@ After you turn *Charge* on, it shows on for up to 10 minutes while Home Assistan
 start. If no charge is seen by then, starts are blocked. After a stop, the charger needs the cable unplugged
 and replugged before the next start.
 
-This also applies while the charger can't be read. The block clears the same way.
+The 10-minute limit also applies while the charger can't be read; the block clears the same way.
 
 After you turn *Charge* off, it shows off for up to 2 minutes, even while the charger can't be read, and
 *Charge status* shows *Stopping* while Home Assistant waits for the charger to show the stop. Turning

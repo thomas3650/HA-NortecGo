@@ -73,6 +73,15 @@ Facts used, public-safe:
 
 ## 2. A charge the car paused
 
+- **Seen live in Home Assistant by the owner** (before this work): while the car paused a charge,
+  *Charge status* was unknown, the *Charge* switch on, and the *Charging* binary sensor off. After the bump:
+
+  | Entity | Before | After |
+  |---|---|---|
+  | *Charge status* | unknown | `paused` |
+  | *Charge* switch | on (the charge is open; `PAUSED` counts as on) | on |
+  | *Charging* binary sensor | off (on only for `CHARGING`) | off |
+
 - **From the bump alone, no code change:** a charge the car paused comes as `BUSY_NON_CHARGING` with
   `charge_state` `PAUSED`, where 0.2.0 gave `UNKNOWN` with `PAUSED`. `charge_status` mapped `UNKNOWN` to
   `None`, so *Charge status* goes from unknown to `paused`. Everything else was already right through
@@ -127,7 +136,8 @@ TDD, `pynortecgo` mocked, fixtures built from `pynortecgo` model objects (hard r
 - **Charge control:** the red test is a `charge_is_open` row with `state=BUSY_NON_CHARGING` and the
   default `charge_state=None` (true), like the `BUSY` row. A row or a start test with `PAUSED` passes
   without the code change, so it can't be the red test. Also: a *Charge status* row with
-  `BUSY_NON_CHARGING` and `PAUSED` gives `paused` (pins §2's bump effect); turning *Charge* on with
+  `BUSY_NON_CHARGING` and `PAUSED` gives `paused` (pins §2's bump effect), and with the same charger the
+  *Charge* switch is on and the *Charging* binary sensor off (§2's table); turning *Charge* on with
   `BUSY_NON_CHARGING` and `charge_state=None` sends no start.
 - **Prices:** the merged slot holds `price`, not `spot_price` (their values differ in the fixture).
 - **Currency:** these tests set Home Assistant's currency to something other than the forecast's (for

@@ -33,10 +33,12 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.nortec_go.charge_control import ChargeControlState
 from custom_components.nortec_go.const import (
     DOMAIN,
+    FAST_READ_MAX_AGE,
     INTERVAL_CHANGING,
     INTERVAL_CHARGING,
     INTERVAL_IDLE,
     START_CONFIRM_TIMEOUT,
+    STOP_CONFIRM_TIMEOUT,
 )
 from custom_components.nortec_go.coordinator import (
     NortecGoCoordinator,
@@ -137,7 +139,7 @@ def test_interval_for(
     charger: Any, control: ChargeControlState, interval: timedelta
 ) -> None:
     """30 s while starting or stopping, 5 min while charging, 60 min otherwise (D29)."""
-    assert interval_for(charger, control) == interval
+    assert interval_for(charger, control, timedelta(0)) == interval
 
 
 async def test_setup_reads_charger_car_and_prices(
@@ -874,3 +876,179 @@ async def test_read_at_kept_on_a_control_change(
     read_at = coordinator.data.read_at
     coordinator.charge_control._on_change()  # noqa: SLF001
     assert coordinator.data.read_at == read_at
+
+
+def _switch(hass: HomeAssistant) -> str:
+    """The Charge switch's state."""
+    state = hass.states.get("switch.garage_charger_charge")
+    assert state is not None
+    return state.state
+
+
+_STARTING = make_charger(is_connected=True, charge_state=ChargeState.STARTING)
+_STOPPING = make_charger(is_connected=True, charge_state=ChargeState.STOPPING)
+
+
+@pytest.mark.parametrize(
+    ("charger", "control", "age", "interval"),
+    [
+        (
+            _STOPPING,
+            ChargeControlState(),
+            FAST_READ_MAX_AGE - timedelta(seconds=1),
+            INTERVAL_CHANGING,
+        ),
+        (_STOPPING, ChargeControlState(), FAST_READ_MAX_AGE, INTERVAL_CHARGING),
+        (_STARTING, ChargeControlState(), FAST_READ_MAX_AGE, INTERVAL_CHARGING),
+        (
+            _STARTING,
+            ChargeControlState(start_pending=True),
+            timedelta(minutes=9),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_pending=True),
+            timedelta(minutes=1, seconds=50),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True),
+            ChargeControlState(start_pending=True),
+            timedelta(minutes=9),
+            INTERVAL_CHANGING,
+        ),
+        (_STOPPING, ChargeControlState(blocked=True), timedelta(0), INTERVAL_IDLE),
+        (
+            make_charger(is_connected=True, state=ChargerState.UNKNOWN),
+            ChargeControlState(),
+            timedelta(0),
+            INTERVAL_IDLE,
+        ),
+        (
+            make_charger(is_connected=True),
+            ChargeControlState(),
+            timedelta(hours=5),
+            INTERVAL_IDLE,
+        ),
+    ],
+)
+def test_interval_for_by_read_age(
+    charger: Any, control: ChargeControlState, age: timedelta, interval: timedelta
+) -> None:
+    """Our own pending states keep 30 s; the charger's own starting or stopping only while the read is fresh (D31)."""
+    assert interval_for(charger, control, age) == interval
+
+
+async def test_charger_stopping_during_an_outage_slows_down(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The charger's own STOPPING gives 30 s reads for about 2 minutes of an outage, then 5 min (Review Focus 5)."""
+    mock_client.get_charger.return_value = _STOPPING
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.update_interval == INTERVAL_CHANGING
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    freezer.tick(INTERVAL_CHANGING + timedelta(seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert not coordinator.last_update_success
+    assert coordinator.update_interval == INTERVAL_CHANGING
+    freezer.tick(timedelta(minutes=2))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert coordinator.update_interval == INTERVAL_CHARGING
+
+
+async def test_pending_stop_during_an_outage_ends_at_2_minutes(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """With reads failing, the pending stop ends at 2 minutes: the switch shows the last read, reads every 5 min."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        state=ChargerState.BUSY_CHARGING,
+    )
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    await coordinator.charge_control.async_stop()
+    await hass.async_block_till_done()
+    assert coordinator.data.control.stop_pending
+    assert _switch(hass) == "off"
+    freezer.tick(STOP_CONFIRM_TIMEOUT)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert not coordinator.data.control.stop_pending
+    assert _switch(hass) == "on"
+    assert coordinator.update_interval == INTERVAL_CHARGING
+
+
+async def test_pending_start_during_an_outage_blocks_at_10_minutes(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """With reads failing, the pending start ends at 10 minutes with the block, and reads every 60 min."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    await coordinator.charge_control.async_start()
+    await hass.async_block_till_done()
+    assert coordinator.update_interval == INTERVAL_CHANGING
+    freezer.tick(START_CONFIRM_TIMEOUT)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert coordinator.data.control.blocked
+    assert coordinator.update_interval == INTERVAL_IDLE
+    assert _switch(hass) == "off"
+
+
+async def test_control_change_during_an_outage_keeps_the_read_age(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A control change works the interval out from the last good read's real age."""
+    mock_client.get_charger.return_value = _STOPPING
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    freezer.tick(timedelta(minutes=3))
+    coordinator.charge_control._on_change()  # noqa: SLF001
+    assert coordinator.update_interval == INTERVAL_CHARGING
+
+
+async def test_rate_limit_retry_after_beats_the_fast_interval(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A RateLimitError's retry_after wins over the 30 s the failed read works out."""
+    mock_client.get_charger.return_value = _STOPPING
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_charger.side_effect = RateLimitError(
+        "too many requests", retry_after=120.0
+    )
+    await coordinator.async_refresh()
+    reads = mock_client.get_charger.await_count
+    # HA rounds timers to whole seconds, so check well before and well after 120 s.
+    freezer.tick(timedelta(seconds=60))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads
+    freezer.tick(timedelta(seconds=70))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads + 1

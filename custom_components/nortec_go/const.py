@@ -11,6 +11,9 @@ CONF_EXPIRES_AT: Final = "expires_at"
 INTERVAL_CHANGING: Final = timedelta(seconds=30)
 INTERVAL_CHARGING: Final = timedelta(minutes=5)
 INTERVAL_IDLE: Final = timedelta(minutes=60)
+# The charger's own starting or stopping state keeps the 30 s reads only while the last good
+# read is younger than this, so an outage doesn't read every 30 s (D31).
+FAST_READ_MAX_AGE: Final = timedelta(minutes=2)
 # A read also reads the car when its last try is at least this old; the margin keeps an
 # early 5-minute read from skipping it (D29).
 CAR_READ_MIN_AGE: Final = INTERVAL_CHARGING - INTERVAL_CHANGING

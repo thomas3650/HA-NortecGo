@@ -31,6 +31,7 @@ from .charge_control import ChargeControl, ChargeControlState, charge_status
 from .const import (
     CAR_READ_MIN_AGE,
     DOMAIN,
+    FAST_READ_MAX_AGE,
     INTERVAL_CHANGING,
     INTERVAL_CHARGING,
     INTERVAL_IDLE,
@@ -58,10 +59,14 @@ class NortecGoData:
     read_at: datetime
 
 
-def interval_for(charger: Charger, control: ChargeControlState) -> timedelta:
-    """The next polling interval, from the charge status the sensor shows (D29)."""
+def interval_for(
+    charger: Charger, control: ChargeControlState, age: timedelta
+) -> timedelta:
+    """The next polling interval, from the charge status and the last good read's age (D29, D31)."""
     if charge_status(charger, control) in ("starting", "stopping"):
-        return INTERVAL_CHANGING
+        if control.start_pending or control.stop_pending or age < FAST_READ_MAX_AGE:
+            return INTERVAL_CHANGING
+        return INTERVAL_CHARGING  # the charger's own state, not seen for a while: a charge is open
     if charger.charge_state is ChargeState.CHARGING:
         return INTERVAL_CHARGING
     return INTERVAL_IDLE
@@ -113,7 +118,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         start_attempts = self.charge_control.start_attempts
         # pynortecgo's messages hold no tokens, emails or IDs, so they may be passed on.
         try:
-            charger = await self.client.get_charger()
+            charger = await self._async_read_charger()
         except AuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except RateLimitError as err:
@@ -136,10 +141,23 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         else:
             vehicle = self._vehicle
         control = self.charge_control.state
-        self.update_interval = interval_for(charger, control)
+        self.update_interval = interval_for(charger, control, timedelta(0))
         return NortecGoData(
             charger=charger, vehicle=vehicle, control=control, read_at=read_at
         )
+
+    async def _async_read_charger(self) -> Charger:
+        """Read the charger; a failed read first sets the next interval from the last good one (D31)."""
+        try:
+            return await self.client.get_charger()
+        except NortecGoError:
+            if self.data is not None:
+                self.update_interval = interval_for(
+                    self.data.charger,
+                    self.charge_control.state,
+                    dt_util.utcnow() - self.data.read_at,
+                )
+            raise
 
     def _car_due(self, now: datetime) -> bool:
         """Read the car the first time, when asked, or when its last try is old enough (§3.2)."""
@@ -161,7 +179,9 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         control = self.charge_control.state
         self.data = replace(self.data, control=control)
         # Before the read right away: if that read fails, HA reuses this interval.
-        self.update_interval = interval_for(self.data.charger, control)
+        self.update_interval = interval_for(
+            self.data.charger, control, dt_util.utcnow() - self.data.read_at
+        )
         self.async_update_listeners()
 
     async def async_read_now(self, *, with_car: bool = False) -> None:

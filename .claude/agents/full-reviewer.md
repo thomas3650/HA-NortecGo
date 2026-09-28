@@ -33,8 +33,8 @@ Nortec Go, installed via HACS). You review one of three things.
   `opus` with a one-line reason). Every task that edits `.claude/` or `.pre-commit-config.yaml` has a
   `Guarded files:` line with the exact paths; listing `.claude/settings.json` or
   `.claude/hooks/subagent_guard.py` needs a one-line reason. Every task has a `Wave:` number; tasks in one
-  wave touch disjoint files and don't consume each other's output; a task with `Guarded files:` sits alone in
-  its wave (`docs/way-of-working.md` → Parallel waves).
+  wave touch disjoint files and don't consume each other's output; a task with `Guarded files:` follows
+  `docs/way-of-working.md` §1 step 7 (the allowlist of the worktree it runs in).
 - **Branch:** requirements vs design vs implementation; cross-file effects; security (secrets, permissions,
   anything private anywhere in this public repo (`CLAUDE.md` hard rule 3)); CI and release workflows actually
   run; docs consistency and links; `CLAUDE.md` hard rules; a lasting decision has a `docs/decisions.md` entry;

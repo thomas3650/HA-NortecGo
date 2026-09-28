@@ -20,8 +20,8 @@ All notable changes to this project are documented in this file. The format is b
   repair issue to allow starts again after a failed start.
 - A *Refresh* button that reads the charger, the car and the prices right away.
 - A *Last read* sensor that shows when the charger was last read.
-- The charger is read every 30 seconds while a charge is starting or stopping, and right away after turning
-  *Charge* on or off.
+- The charger is read every 30 seconds while a charge is starting or stopping, for about 2 minutes (10 after
+  a start) while it can't be read, and right away after turning *Charge* on or off.
 - The charger's device name follows a rename in the Nortec Go app.
 
 ## [0.0.1] - 2026-09-26

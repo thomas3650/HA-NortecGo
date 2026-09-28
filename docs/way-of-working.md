@@ -132,8 +132,8 @@ review.
 | `full-reviewer` | Opus / high |
 
 - **`Model: opus`** (with a one-line reason) is for tasks that touch auth, tokens or reauth, anything near
-  charge start/stop, or the mapping of `pynortecgo` models to entities; and for debugging with an unknown
-  cause.
+  charge start/stop, or the mapping of `pynortecgo` models to entities; for debugging with an unknown
+  cause; and for every docs task (D33).
 
   Everything else is `Model: sonnet`. Effort can't be overridden per dispatch.
 - **Guarded files:** a task that edits `.claude/` or `.pre-commit-config.yaml` lists the exact paths in a

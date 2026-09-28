@@ -31,3 +31,9 @@ Run `git push` as its own command.
 
 The ruff-format pre-commit hook also formats Python code blocks inside `.md` files, such as specs and plans.
 A commit of a plan can fail once with "files were modified by this hook"; re-stage and commit again.
+
+## 2026-09-28: EV Smart Charging doesn't re-send *off*
+
+EV Smart Charging compares its schedule with its own remembered state (`auto_charging_state`), not with the
+charger switch's state. If the switch goes back on after an *off*, it doesn't send *off* again until its
+schedule changes, so a turn-off that fails silently isn't retried. Found while looking at #32.

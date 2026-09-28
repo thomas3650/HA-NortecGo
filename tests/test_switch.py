@@ -18,6 +18,7 @@ from pynortecgo import (
     ChargerState,
     ChargeState,
     NortecGoConnectionError,
+    VehicleNotFoundError,
 )
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -149,3 +150,13 @@ async def test_switch_off_right_after_a_stop(
     assert exc_info.value.translation_key == "stop_pending"
     assert "A stop is under way" in str(exc_info.value)
     mock_client.start_charge.assert_not_awaited()
+
+
+async def test_switch_added_without_a_car(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """The Charge switch is added even when the account has no car (D32)."""
+    mock_client.get_vehicle.side_effect = VehicleNotFoundError("no car")
+    await setup_integration(hass, mock_config_entry)
+    assert not mock_config_entry.runtime_data.has_car
+    assert _state(hass) == STATE_OFF

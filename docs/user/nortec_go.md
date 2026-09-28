@@ -21,12 +21,15 @@ API as the app (through the `pynortecgo` library), which can change without noti
 
 ## Unsupported devices
 
-An account with more than one charger. With more than one car, the integration works without car entities.
+An account with more than one charger. With no car or more than one there are no car entities, and starting
+a charge needs exactly one car and one saved card (see *Prerequisites*).
 
 ## Prerequisites
 
-You need a Nortec Go account with exactly one charger. A car is optional: without one there is no car
-device. A car added later appears after you reload the integration.
+You need a Nortec Go account with exactly one charger. To start charges from Home Assistant, the account
+also needs exactly one car and exactly one saved card; without them everything else works (the sensors, the
+prices and *Refresh*), and a start is refused with the reason. A car added later appears after you reload
+the integration.
 
 ## Installation
 
@@ -120,6 +123,8 @@ start again, so planning one continuous session suits it best.
 Turning on *Charge* starts a charge; turning it off stops one. Each start can place a card hold on your
 payment method, so a start is never retried.
 
+A start is refused, with no card hold, without exactly one car and one saved card (see *Prerequisites*).
+
 If a start may have left a card hold without a charge starting, further starts are blocked until you unplug
 the cable, Home Assistant sees a charge start (for example one started in the Nortec Go app), or you
 confirm in the repair issue that Home Assistant creates. Find it under **Settings** > **System** >
@@ -132,8 +137,11 @@ After you turn *Charge* on, it shows on for up to 10 minutes while Home Assistan
 start. If no charge is seen by then, starts are blocked. After a stop, the charger needs the cable unplugged
 and replugged before the next start.
 
-After you turn *Charge* off, it shows off and *Charge status* shows *Stopping* for up to 2 minutes while
-Home Assistant waits for the charger to show the stop. Turning *Charge* on in that time is refused.
+This also applies while the charger can't be read. The block clears the same way.
+
+After you turn *Charge* off, it shows off for up to 2 minutes, even while the charger can't be read, and
+*Charge status* shows *Stopping* while Home Assistant waits for the charger to show the stop. Turning
+*Charge* on in that time is refused.
 
 ## Actions, conditions and triggers
 
@@ -172,6 +180,9 @@ The integration reads the charger:
 - every 5 minutes while a charge is running,
 - every 60 minutes otherwise.
 
+While the charger can't be read, the 30-second reads stop after about 2 minutes, or about 10 minutes after
+you turn *Charge* on.
+
 It reads the car with the charger, but at most about every 5 minutes, and on every *Refresh*. It reads the price forecast when it
 starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. The current price moves to the next 15 minutes by
 itself, without a read.
@@ -184,6 +195,7 @@ entity reads the charger, and the car if it wasn't read in the last few minutes,
 ## Known limitations
 
 - One charger per account. An account with no charger or with more than one can't be added.
+- Starting a charge needs exactly one car and one saved card (see *Prerequisites*).
 - Unofficial: the integration uses the same private API as the app, which can change without notice.
 - The price is the spot price including VAT, without fees or grid tariff, so it isn't what you pay in
   total.

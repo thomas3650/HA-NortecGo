@@ -3,7 +3,7 @@ rules:
   action-setup: todo
   appropriate-polling:
     status: done
-    comment: "30 s only while a charge is starting or stopping, 5 min while charging, 60 min otherwise (D29)."
+    comment: "30 s only while a charge is starting or stopping, bounded while reads fail (10 min after a start, 2 min after a stop or the last good read); 5 min while charging, 60 min otherwise (D29, D31)."
   brands:
     status: done
     comment: "Local brand/ folder (HA >= 2026.3), accepted by HACS; moves to home-assistant/brands for a core submission."

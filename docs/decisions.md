@@ -240,7 +240,7 @@ superseded. How to add one:
 - **Source:** owner request on 2026-09-27
 
 ### D29: Pending stop and fast reads
-- **Date:** 2026-09-27 · **Status:** active
+- **Date:** 2026-09-27 · **Status:** active; the 30 s reads while the charger can't be read superseded by D31
 - **Decision:** After a successful stop the switch shows off and *Charge status* *Stopping* until a read sees
   the charge no longer on, or for 2 minutes, and a start is refused meanwhile. The charger is read every
   30 s while *Charge status* is *starting* or *stopping*, 5 min while charging and 60 min otherwise
@@ -259,3 +259,27 @@ superseded. How to add one:
 - **Why:** The owner wants every issue ranked by urgency, bugs marked as such (replacing D24), and to see
   what is being worked on; GitHub has no filterable in-progress state without a Projects board.
 - **Source:** owner rulings on 2026-09-28 (#46)
+
+### D31: The start and stop deadlines hold without reads
+- **Date:** 2026-09-28 · **Status:** active
+- **Decision:** The 10-minute pending start (D26) and the 2-minute pending stop (D29) end by timers that
+  fire whether or not the charger is read; a read ends them early only on evidence. The charger's own
+  starting or stopping state gives 30 s reads only while the last good read is under 2 minutes old
+  (5 min after that), and a failed read works the interval out again.
+- **Why:** Checked only on successful reads, they lasted a whole outage, with reads every 30 s, and never
+  ended with polling disabled; D29's "no cap" on the charger's own states assumed working reads.
+- **Source:** [outage deadlines and start needs spec](superpowers/specs/2026-09-28-outage-deadlines-start-needs-design.md), §2–3
+
+### D32: The Charge switch is always added
+- **Date:** 2026-09-28 · **Status:** active
+- **Decision:** The *Charge* switch is added whatever cars the account has. A start without exactly one car
+  and one saved card is refused with the reason, before any card hold.
+- **Why:** The saved card can't be checked beforehand, so hiding the switch for the car alone would only
+  half solve it, and the refusal explains itself.
+- **Source:** [outage deadlines and start needs spec](superpowers/specs/2026-09-28-outage-deadlines-start-needs-design.md), Decisions
+
+### D33: Docs tasks run on Opus
+- **Date:** 2026-09-28 · **Status:** active
+- **Decision:** Every docs task (a plan task whose output is docs) is tagged `Model: opus`.
+- **Why:** Owner ruling.
+- **Source:** owner ruling on 2026-09-28 (PR for #34, #35)

@@ -37,7 +37,8 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   elsewhere than `config/`.
 - On macOS, `hass` started in the background of a non-interactive shell (`hass … &`) crashed during startup
   in the Bluetooth integration (CoreBluetooth via PyObjC). Run it in the foreground with a timer instead
-  (`scripts/smoke`).
+  (`scripts/smoke`). Started with Claude Code's Bash `run_in_background` (`scripts/develop`), it keeps
+  running, Bluetooth included; stop it with `pkill -f "hass -c config"`.
 
 ## Testing
 

@@ -73,9 +73,9 @@ Expected: FAIL with `TypeError` about missing arguments `charge_kwh` / `charge_k
 
 In `tests/conftest.py`, in `make_charger`'s `Charger(...)` call, after `can_stop=...`, add:
 
-```python
-charge_kwh = (None,)
-charge_kw = (None,)
+```text
+        charge_kwh=None,
+        charge_kw=None,
 ```
 
 Replace `make_forecast` with:
@@ -294,12 +294,10 @@ git commit -F <message file>   # "fix: BUSY_NON_CHARGING is a charge in progress
 In `tests/test_prices.py`:
 
 - Add `StoredPrices` to the import from `custom_components.nortec_go.prices`.
+- Add `KEY = "nortec_go.entry1.prices"` to the module constants at the top, after `NOW`.
 - Replace `test_store_round_trip`, `test_store_missing_file` and `test_store_wrong_shape` with:
 
 ```python
-KEY = "nortec_go.entry1.prices"
-
-
 async def test_store_round_trip(
     hass: HomeAssistant, hass_storage: dict[str, Any]
 ) -> None:
@@ -412,7 +410,7 @@ class _PriceData(Store[dict[str, Any]]):
         return {"currency": None, "slots": []}
 ```
 
-- In `PriceStore`, make `__init__` build `_PriceData(...)` instead of `Store(...)` (same arguments; annotate `self._store: _PriceData`), and replace `async_load` and `async_save` with:
+- In `PriceStore`, make `__init__` build `_PriceData(...)` instead of `Store(...)` (same arguments; annotate `self._store: _PriceData`), and replace its methods `async_load` and `async_save` with these (methods of `PriceStore`, indented as shown):
 
 ```python
 async def async_load(self) -> StoredPrices:
@@ -446,10 +444,16 @@ async def async_save(
     )
 ```
 
-Remove `Store` from the imports only if nothing else uses it (the subclass does).
+Keep the `Store` import: `_PriceData` subclasses it.
 
-Run: `uv run pytest tests/test_prices.py -q`
-Expected: PASS. If `test_store_version_1_migrates_to_empty` fails only on the saved-back check, confirm with the installed `homeassistant/helpers/storage.py` that the migration calls `async_save` and adjust the waiting, not the assertion.
+So that setup keeps working with the new store API, make the minimal change in
+`custom_components/nortec_go/coordinator.py` now (Step 4 completes it):
+- In `async_load_prices`, pass `(await self._price_store.async_load()).slots` to `prune` instead of the
+  whole result.
+- In `async_read_prices`, change the save to `await self._price_store.async_save(self.known_prices, None)`.
+
+Run: `uv run pytest -q`
+Expected: PASS, the whole suite. If `test_store_version_1_migrates_to_empty` fails only on the saved-back check, confirm with the installed `homeassistant/helpers/storage.py` that the migration calls `async_save` and adjust the waiting, not the assertion.
 
 - [ ] **Step 3: Write the failing coordinator and sensor tests**
 
@@ -462,7 +466,23 @@ In `tests/test_coordinator.py`:
     assert coordinator.price_currency == "DKK"
 ```
 
-- In `test_stored_prices_loaded_at_setup`, change the stored `"version": 1` to `"version": 2`, add `"currency": "DKK",` as the first key of `"data"`, and at the end add `assert _coordinator(mock_config_entry).price_currency == "DKK"`.
+- In `test_stored_prices_loaded_at_setup`, replace the `hass_storage[key] = {...}` statement with the one
+  below, and at the end add `assert _coordinator(mock_config_entry).price_currency == "DKK"`:
+
+```python
+    hass_storage[key] = {
+        "version": 2,
+        "minor_version": 1,
+        "key": key,
+        "data": {
+            "currency": "DKK",
+            "slots": [
+                {"start": "2026-09-26T21:45:00+00:00", "price": 9.0},
+                {"start": "2026-09-26T22:00:00+00:00", "price": 1.0},
+            ],
+        },
+    }
+```
 - Add after `test_stored_prices_loaded_at_setup`:
 
 ```python
@@ -574,14 +594,45 @@ async def test_price_unit_survives_a_reload_with_a_failing_read(
     assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == "DKK/kWh"
 ```
 
+and, after it, the red test for the unit being a property rather than set once at creation (setup reads
+the prices before the platforms, so the three tests above can't tell the two apart):
+
+```python
+async def test_price_unit_follows_a_currency_learned_after_setup(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A currency first seen in a later read changes the unit at the next state write."""
+    hass.config.currency = "EUR"
+    freezer.move_to(MIDNIGHT + timedelta(minutes=5))
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [1.0], currency=None
+    )
+    await setup_integration(hass, mock_config_entry)
+    assert hass.states.get(PRICE).attributes[ATTR_UNIT_OF_MEASUREMENT] == "EUR/kWh"  # type: ignore[union-attr]
+
+    mock_client.get_price_forecast.return_value = make_forecast(MIDNIGHT, [1.0])
+    await mock_config_entry.runtime_data.async_read_prices()
+    await hass.async_block_till_done()
+    assert hass.states.get(PRICE).attributes[ATTR_UNIT_OF_MEASUREMENT] == "DKK/kWh"  # type: ignore[union-attr]
+```
+
 Run: `uv run pytest tests/test_coordinator.py tests/test_sensor.py -q`
-Expected: FAIL (`price_currency` doesn't exist; the store save call lacks the currency; the unit is `EUR/kWh` where `DKK/kWh` is expected).
+Expected:
+- FAIL: the coordinator tests on `price_currency` (`AttributeError`) or on the stored currency (`None`
+  where `"DKK"` is expected).
+- FAIL: `test_price_unit_follows_forecast_currency`, `test_price_unit_survives_a_reload_with_a_failing_read`
+  and `test_price_unit_follows_a_currency_learned_after_setup`, with `'EUR/kWh' == 'DKK/kWh'`.
+- PASS at once: `test_price_unit_falls_back_to_home_assistant_currency` (the old unit is already Home
+  Assistant's currency); it pins the fallback.
 
 - [ ] **Step 4: Implement the coordinator and the sensor**
 
 In `custom_components/nortec_go/coordinator.py`:
 - In `__init__`, after `self.known_prices: KnownSlots = {}`, add `self.price_currency: str | None = None`.
-- Replace `async_load_prices` with:
+- Replace `async_load_prices` (Step 2's minimal version) with:
 
 ```python
     async def async_load_prices(self) -> None:
@@ -600,7 +651,7 @@ In `custom_components/nortec_go/coordinator.py`:
             self.price_currency = forecast.currency
 ```
 
-  and change the save to `await self._price_store.async_save(self.known_prices, self.price_currency)`. Update its docstring to `"""Read the forecast, merge, prune and save it with its currency; keep the known slots on failure (§4.3)."""`.
+  and change Step 2's save to `await self._price_store.async_save(self.known_prices, self.price_currency)`. Update its docstring to `"""Read the forecast, merge, prune and save it with its currency; keep the known slots on failure (§4.3)."""`.
 
 In `custom_components/nortec_go/sensor.py`, in `NortecGoPriceSensor`:
 - Change `__init__` to only call `super().__init__(coordinator, "current_price")`, with the docstring `"""Name the sensor Current price."""`.
@@ -620,7 +671,8 @@ Expected: PASS.
 - [ ] **Step 5: Run all gates and commit**
 
 Run: `uv run pytest -q && uv run ruff check && uv run ruff format --check && uv run mypy && uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95 -q`
-Expected: all pass; `prices.py`, `coordinator.py` and `sensor.py` have no new uncovered lines.
+Expected: all pass; `prices.py`, `coordinator.py` and `sensor.py` have no new uncovered lines. If
+`ruff format --check` fails, run `uv run ruff format` and run the gates again.
 
 ```bash
 git add custom_components/nortec_go/const.py custom_components/nortec_go/prices.py custom_components/nortec_go/coordinator.py custom_components/nortec_go/sensor.py tests/test_prices.py tests/test_coordinator.py tests/test_sensor.py
@@ -670,9 +722,9 @@ Append to `docs/decisions.md`, after D33, wrapped at the file's width:
 - **Decision:** The price sensor and EV Smart Charging's lists use the total price per kWh incl. VAT
   (spot, fees and grid tariff); the unit is the forecast's currency per kWh, falling back to Home
   Assistant's currency.
-- **Why:** the total is what the owner pays, and the hourly grid tariff changes which slots are cheapest;
+- **Why:** The total is what the owner pays, and the hourly grid tariff changes which slots are cheapest;
   the forecast knows its own currency, so the unit is right without a Home Assistant setting (#20).
-- **Source:** [spec](superpowers/specs/2026-09-28-pynortecgo-0.5.0-design.md) (Decisions)
+- **Source:** [pynortecgo 0.5.0 spec](superpowers/specs/2026-09-28-pynortecgo-0.5.0-design.md), Decisions
 ```
 
 - [ ] **Step 4: Check and commit**
@@ -684,3 +736,14 @@ Expected: all pass.
 git add CHANGELOG.md docs/user/nortec_go.md docs/decisions.md
 git commit -F <message file>   # "docs: total price in the forecast's currency, D34 (#33, #20)"
 ```
+
+---
+
+## After the tasks
+
+Not tasks, but part of the flow (`docs/way-of-working.md` §1) and spec §7:
+- Before the PR is marked ready, `scripts/smoke` runs on the branch; the owner's dev config has a version 1
+  price store, so the smoke run also shows the migration works without an error.
+- The PR description records that the `docs/releasing.md` bump checklist was worked through (spec, Facts).
+- After merge, #24 gets a comment: 0.5.0 unblocks it, with a measured power (`Charger.charge_kw`) instead of
+  an average between reads.

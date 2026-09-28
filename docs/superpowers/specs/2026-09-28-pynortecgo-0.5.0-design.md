@@ -111,9 +111,8 @@ Facts used, public-safe:
     Assistant saves the result straight back, so the file is version 2 before the setup's forecast read;
     if that read fails, the entry starts with no slots and Home Assistant's currency. The stored spot
     prices are dropped. Setup reads the forecast right after loading, so every slot from now on is
-    refilled with
-    total prices. Only today's past slots are lost; EV Smart Charging's list pads them with
-    `PAST_SLOT_PRICE`, as for any past gap.
+    refilled with total prices. Only today's past slots are lost; EV Smart Charging's list pads them
+    with `PAST_SLOT_PRICE`, as for any past gap.
   - A wrong shape (a missing key, a wrong type, a start without a time zone, a currency that isn't a
     string or `None`) is ignored with the existing warning, giving no slots and no currency. The currency
     is checked first, then the slots.

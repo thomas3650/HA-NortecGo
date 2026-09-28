@@ -50,8 +50,9 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
   Shared files (exports in `__init__.py`, `CHANGELOG.md`, `pyproject.toml` and `uv.lock` when a task adds a
   dependency) go in one task, usually the last.
 - A task with a `Guarded files:` line may run in any worktree: the guard hook reads the allowlist of the
-  worktree the edited file is in (§1 step 7). One known limit stays: the hook's whole-tree revert check
-  compares against the main checkout only, so a revert of a task worktree isn't caught.
+  worktree (of this repository) the edited file is in (§1 step 7). One known limit stays: the hook's
+  whole-tree revert check compares against the main checkout only, so a revert of a task worktree isn't
+  caught.
 - A docs task may join an early wave, written against the public names the plan fixes (see *Starting ahead
   of inputs*).
 
@@ -240,7 +241,8 @@ here.
   checkout (session name `team-lead`, no PO named), and is the PO. **PO mode and team lead mode never run at
   the same time:** `scripts/po` and `scripts/team-lead` refuse to start while a session named `po` or
   `team-lead` runs, or in a linked worktree, and the PO also checks at start that no session named
-  `team-lead` runs.
+  `team-lead` runs. Team leads (`tl-*`) still running while the PO is down count as PO mode: the owner
+  doesn't start `scripts/team-lead` then.
 - Owner only: merging, anything that starts or stops a real charge, the permission setup for team leads, and
   `.claude/settings.json`.
 
@@ -317,8 +319,9 @@ One branch at a time, in the main checkout (only the PO works there, and only on
 ### After ready, the loop, and failures
 
 - A ready PR takes no slot. On changes requested or a merge conflict, the PO re-creates the issue worktree at
-  the same path and resumes the team lead (`claude --bg --resume <session-id>`, run in the re-created issue
-  worktree) when a slot is free. Conflicts are fixed by merging `origin/main` in, never by a force-push. A
+  the same path, runs `uv sync` in it, and resumes the team lead
+  (`claude --bg --permission-mode auto --resume <session-id>`, run in the re-created issue worktree) when a
+  slot is free. Conflicts are fixed by merging `origin/main` in, never by a force-push. A
   resumed team lead starts without its old SDD ledger.
 - The PO's `/loop` (every 10 to 20 minutes) checks GitHub for merged PRs (remove `active` if still there, pick
   the next issue), answers to open `PO question`s, and review comments or conflicts on ready PRs.

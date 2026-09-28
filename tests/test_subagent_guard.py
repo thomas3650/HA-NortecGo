@@ -82,6 +82,64 @@ def run_write(
     )
 
 
+def run_bash(hook: Path, command: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """Run the hook on a subagent Bash call of command."""
+    payload: dict[str, object] = {
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "cwd": str(cwd),
+        "agent_id": "agent-1",
+    }
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+    return subprocess.run(
+        [sys.executable, str(hook)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**env, **GIT_ENV},
+    )
+
+
+def test_nested_repo_allowlist_is_ignored(
+    repos: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """An allowlist in a nested repo that isn't this repository opens nothing."""
+    main, _, hook = repos
+    git_dir = tmp_path / "gd"
+    subprocess.run(
+        [
+            "git",
+            "init",
+            "-q",
+            "--separate-git-dir",
+            str(git_dir),
+            str(main / ".claude"),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, **GIT_ENV},
+    )
+    target = main / ".claude" / "settings.json"
+    (git_dir / "subagent-guard-allow").write_text(f"{target}\n", encoding="utf-8")
+    result = run_write(hook, target, main)
+    assert result.returncode == 2
+    assert "not in this task's Guarded files" in result.stderr
+
+
+def test_pre_commit_config_redirect_in_a_worktree(
+    repos: tuple[Path, Path, Path],
+) -> None:
+    """A redirect onto a worktree's .pre-commit-config.yaml is refused."""
+    _, worktree, hook = repos
+    result = run_bash(
+        hook, f"echo x > {worktree / '.pre-commit-config.yaml'}", worktree
+    )
+    assert result.returncode == 2
+    assert "redirect writes to guarded path" in result.stderr
+
+
 def test_worktree_edit_allowed_by_its_own_allowlist(
     repos: tuple[Path, Path, Path],
 ) -> None:

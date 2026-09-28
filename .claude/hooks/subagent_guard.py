@@ -36,10 +36,12 @@ as one; search with ``grep "[>]" file`` instead. Some harmless commands are refu
 ``git config --get alias.x``, ``git restore --staged .``, commands that mention .env without reading it
 (``ls .env``, ``grep -n .env .gitignore``), ``[.]env`` quoted or not (the hook can't see quotes; write
 ``"\.env"``), and words with more than 4096 brace alternatives. Grep's ``glob`` is
-checked only when the search covers the repo root (no ``path``, or the root or an ancestor).
+checked only when the search covers the repo root (no ``path``, or the root or an ancestor). The
+whole-tree revert check covers the hook's own checkout (``ROOT``) only.
 
-The allowlist is per worktree: ``<git dir>/subagent-guard-allow`` of the worktree the target file is in
-(``git rev-parse --absolute-git-dir``); relative lines resolve against that worktree's top level.
+The allowlist is per worktree: ``<git dir>/subagent-guard-allow`` of the worktree (of this repository)
+the edited file is in (``git rev-parse --absolute-git-dir``); relative lines resolve against that
+worktree's top level. A worktree whose common git dir differs from ``ROOT``'s (a nested repo) has none.
 """
 
 from __future__ import annotations
@@ -177,12 +179,31 @@ def glob_reaches_env(pattern: str) -> bool:
     return any(fnmatch.fnmatchcase(".env", b) for b in env_basenames(pattern))
 
 
+def common_git_dir(directory: str) -> str | None:
+    """The normalized common git dir of the repository holding directory, or None."""
+    result = subprocess.run(
+        ["git", "-C", directory, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 1:
+        return None
+    return norm(lines[0])
+
+
 def allowlist(target: str) -> set[str]:
-    """The Guarded files of the task running in the worktree that holds the target."""
+    """The Guarded files of the task running in the worktree (of this repository) that holds the
+    target."""
     worktree = worktree_of(target)
     if worktree is None:
         return set()
     top, git_dir = worktree
+    ours = common_git_dir(str(ROOT))
+    if ours is None or common_git_dir(top) != ours:
+        return set()
     try:
         lines = (git_dir / ALLOW_NAME).read_text(encoding="utf-8").splitlines()
     except FileNotFoundError:

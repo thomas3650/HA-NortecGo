@@ -152,8 +152,9 @@ review.
 - **Issues:** every non-trivial change starts from an issue. The spec links it, and the PR says `Closes #n`.
 - **Backlog:** GitHub issues are the backlog (D19). Anything found that won't be fixed in the current work
   becomes an issue, or is added to an existing one.
-- **Labels:** each issue gets `v1`, `v2` or `enhancement`; chores may have none. When in doubt, ask the owner
-  (D24).
+- **Labels:** each issue gets one urgency label: `v1` (needed for version 1), `v2` (can wait for version 2)
+  or `v3` (nice to have, after version 2); chores may have none. Type labels come on top: `bug` for a bug,
+  and `enhancement` or `documentation` where they fit. When in doubt, ask the owner (D30).
 - **Merging and pushing:** the owner merges. Only the controller pushes or marks a PR ready.
 - **Git guards:** run `uv run pre-commit install` once per clone. The hooks refuse commits on `main` and pushes
   to `main`, and `.claude/settings.json` denies pushes to `main` and `--no-verify`. `main` is also protected
@@ -196,11 +197,13 @@ The one-time GitHub settings applied for this repo's ground structure are an exp
   doc goes in [`notes.md`](notes.md). When a topic there passes about three entries, propose moving it to its
   own doc (and a row in the [documentation map](README.md)).
 - **Decision log:** a PR that makes a lasting decision adds an entry to `decisions.md`, numbered next. Entries
-  aren't edited, except to change their status to `superseded by D<n>`. The format:
+  aren't edited, except to change their status to `superseded by D<n>`, or, when a later decision replaces
+  only part of one, to `active; <part> superseded by D<n>` (for example `active; the polling intervals
+  superseded by D29`). The format:
 
   ```markdown
   ### D<n>: <title>
-  - **Date:** YYYY-MM-DD · **Status:** active | superseded by D<m>
+  - **Date:** YYYY-MM-DD · **Status:** active | superseded by D<m> | active; <part> superseded by D<m>
   - **Decision:** one or two sentences.
   - **Why:** one or two sentences.
   - **Source:** link to the spec (and section).

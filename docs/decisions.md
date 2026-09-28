@@ -1,7 +1,8 @@
 # Decisions
 
 Lasting decisions, newest last. Each entry is short and links to the spec with the reasoning. Entries
-aren't edited, except to set their status to `superseded by D<n>`. How to add one:
+aren't edited, except to set their status to `superseded by D<n>`, or to name a part a later decision
+superseded. How to add one:
 [`way-of-working.md`](way-of-working.md) §7.
 
 ### D1: Domain `nortec_go`
@@ -192,7 +193,7 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Source:** [read-only entities spec](superpowers/specs/2026-09-26-read-only-entities-design.md), §3.3–3.4
 
 ### D24: Version labels on issues
-- **Date:** 2026-09-26 · **Status:** active
+- **Date:** 2026-09-26 · **Status:** superseded by D30
 - **Decision:** Each issue gets one of `v1` (needed for version 1), `v2` (can wait for version 2) or
   `enhancement` (an improvement with no version decided). Chores may have none. When in doubt, ask the owner.
 - **Why:** Not every issue is an enhancement; the labels show what v1 needs.
@@ -208,7 +209,7 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Source:** owner rulings on 2026-09-26 (#17, and PR #21)
 
 ### D26: Start guard
-- **Date:** 2026-09-26 · **Status:** active
+- **Date:** 2026-09-26 · **Status:** active; the reads while a start is pending (last sentence) superseded by D29
 - **Decision:** A start that may have left a card hold (a `ChargeStartError` with `hold_may_be_placed`, a
   cancelled start, or a start whose charge isn't seen within 10 minutes) blocks further starts until a read
   begun after the latest start attempt sees the cable unplugged, a charge open, or the charger going from
@@ -221,7 +222,7 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Source:** [charge switch spec](superpowers/specs/2026-09-26-charge-switch-design.md), Decisions and §3
 
 ### D27: State-based polling and a Refresh button
-- **Date:** 2026-09-27 · **Status:** active
+- **Date:** 2026-09-27 · **Status:** active; the polling intervals superseded by D29
 - **Decision:** D22's schedule stands: the charger and car are read every 60 / 15 / 5 min by the charger's
   state (5 min also while a start is pending, D26), and prices at setup and five fixed times; there are no
   polling settings. A *Refresh* button on the charger reads the charger, the car and the prices now.
@@ -248,3 +249,11 @@ aren't edited, except to set their status to `superseded by D<n>`. How to add on
 - **Why:** The charger reports the old state for about 25 s after a stop, so the switch flipped back on and
   a stop was pressed twice; 30 s reads were observed without a rate limit.
 - **Source:** [pending stop and fast reads spec](superpowers/specs/2026-09-27-pending-stop-fast-reads-design.md), Decisions and §2–3
+
+### D30: Urgency labels v1 to v3, with type labels on top
+- **Date:** 2026-09-28 · **Status:** active
+- **Decision:** Each issue gets one urgency label: `v1` (needed for version 1), `v2` (can wait for version 2)
+  or `v3` (nice to have, after version 2); chores may have none. `bug`, `enhancement` and `documentation`
+  are type labels added on top, and `enhancement` no longer means "no version decided".
+- **Why:** The owner wants every issue ranked by urgency and bugs marked as such (replacing D24).
+- **Source:** owner rulings on 2026-09-28 (#46)

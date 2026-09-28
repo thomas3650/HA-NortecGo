@@ -62,9 +62,10 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
   which breaks every commit once the worktree is removed. If it happened, run `uv run pre-commit install`
   in the main checkout.
   `wt/*` branches are never pushed.
+  (For a team lead in the PO flow: `<HA-NortecGo-wt>/<topic>-task-<n>`, by absolute path; §8.)
 - The implementer and reviewer dispatches give the worktree's absolute path, and every command runs there
-  (`cd <worktree> && …` or `git -C <worktree> …`). A subagent's shell starts in the main checkout. (For a team
-  lead in the PO flow, its issue worktree.)
+  (`cd <worktree> && …` or `git -C <worktree> …`). A subagent's shell starts in the main checkout.
+  (For a team lead in the PO flow, its issue worktree.)
 - The controller runs the SDD scripts (brief, review package, ledger) from the main checkout, so everything
   lands in its `.superpowers/sdd/` and survives the worktree. Branch refs are shared, so
   `review-package PLAN BASE wt/<topic>-task-<n>` works there. For a team lead in the PO flow (§8), "the main
@@ -221,8 +222,9 @@ The one-time GitHub settings applied for this repo's ground structure are an exp
 
 ## 8. PO flow
 
-An alternative to running the flow yourself: a PO session runs the backlog through team leads, and the owner
-answers escalations and merges (D35). The agent files `.claude/agents/po.md` and `team-lead.md` point here.
+An alternative to running the §1 flow directly: a PO session runs the backlog through team leads, and the
+owner answers escalations and merges (D35). The agent files `.claude/agents/po.md` and `team-lead.md` point
+here.
 
 ### Roles and start modes
 
@@ -231,7 +233,8 @@ answers escalations and merges (D35). The agent files `.claude/agents/po.md` and
   specs and plans, hands out D-numbers, runs step 10's checks and marks PRs ready. Never merges.
 - **Team lead:** a background session per issue, in its own issue worktree, started by the PO and named
   `tl-<topic>`; at most 2. Runs §1 steps 3 to 9 as the controller, with the PO (addressed as `po`) in the
-  owner's place.
+  owner's place. It never runs `gh pr ready`, `scripts/smoke` or `scripts/develop`, and splits a wave wider
+  than 3 workers.
 - **Workers:** the team lead's subagents, as in §2; at most 3 active per team lead.
 - **Team lead mode**, for hard problems: the owner runs `scripts/team-lead` in the foreground in the main
   checkout (session name `team-lead`, no PO named), and is the PO. **PO mode and team lead mode never run at
@@ -254,7 +257,8 @@ same area as one in progress, and issues that depend on an unfinished one. Then 
 3. records the session id, issue, branch and worktree in `.git/po-sessions.json`, and comments on the issue
    that a team lead has picked it up.
 
-A team lead's task worktrees go next to its issue worktree: `<HA-NortecGo-wt>/<topic>-task-<n>`.
+A team lead's task worktrees go next to its issue worktree, by absolute path:
+`<HA-NortecGo-wt>/<topic>-task-<n>`.
 
 ### Messages
 
@@ -320,7 +324,8 @@ One branch at a time, in the main checkout (only the PO works there, and only on
   the next issue), answers to open `PO question`s, and review comments or conflicts on ready PRs.
 - **State:** GitHub is the source of truth; `.git/po-sessions.json` maps each team lead's session id and
   `ListAgents` name to its issue, branch and worktree, and holds the D-numbers handed out.
-  `claude agents --json` shows the background sessions; `ListAgents` the names to message.
+  `claude agents --json` shows the running sessions, interactive and background; `ListAgents` the names to
+  message.
 - A team lead that is gone is resumed once; if that fails, the PO escalates and leaves the issue `active`.
   One with nothing new in `claude logs <id>` for 2 loops is asked for its status, then escalated.
 - If the PO session ends, team leads keep running. A `SendMessage` to a PO that is down fails at once; it

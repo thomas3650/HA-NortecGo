@@ -287,9 +287,9 @@ superseded. How to add one:
 
 ### D35: The PO flow
 - **Date:** 2026-09-28 · **Status:** active
-- **Decision:** Besides the direct flow (§1), the owner can start a PO session that runs up to 2 team
-  leads (each with up to 3 workers). In that flow the PO answers brainstorm questions and approves specs and
-  plans in the owner's place, escalating below 90% certainty and always for a fixed list; the owner still
-  merges.
+- **Decision:** Besides the direct flow (way-of-working §1), the owner can start a PO session that runs up
+  to 2 team leads (each with up to 3 workers). In that flow the PO answers brainstorm questions and approves
+  specs and plans in the owner's place, escalating below 90% certainty and always for a fixed list; the owner
+  still merges.
 - **Why:** Several issues move forward in parallel while the owner only answers escalations and merges.
-- **Source:** spec comment on #50 (https://github.com/thomas3650/HA-NortecGo/issues/50#issuecomment-5877369877)
+- **Source:** [spec comment on #50](https://github.com/thomas3650/HA-NortecGo/issues/50#issuecomment-5877369877), §§2–8

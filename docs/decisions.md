@@ -281,5 +281,6 @@ superseded. How to add one:
 ### D33: Docs tasks run on Opus
 - **Date:** 2026-09-28 · **Status:** active
 - **Decision:** Every docs task (a plan task whose output is docs) is tagged `Model: opus`.
-- **Why:** Owner ruling.
+- **Why:** Docs written so far were often not precise enough; the owner expects Opus to write more precise
+  docs.
 - **Source:** owner ruling on 2026-09-28 (PR for #34, #35)

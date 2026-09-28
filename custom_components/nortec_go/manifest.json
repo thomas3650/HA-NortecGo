@@ -8,6 +8,6 @@
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/thomas3650/HA-NortecGo/issues",
-  "requirements": ["pynortecgo==0.2.0"],
+  "requirements": ["pynortecgo==0.5.0"],
   "version": "0.0.1"
 }

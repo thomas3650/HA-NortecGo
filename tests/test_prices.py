@@ -48,6 +48,13 @@ def test_merge_normalises_to_utc() -> None:
     assert key == MIDNIGHT
 
 
+def test_merge_stores_the_total_price() -> None:
+    """A slot's total price is stored, not its spot price (D34)."""
+    forecast = make_forecast(MIDNIGHT, [2.0])
+    assert forecast.slots[0].spot_price != 2.0
+    assert merge_forecast({}, forecast) == {MIDNIGHT: 2.0}
+
+
 def test_prune_drops_before_local_midnight() -> None:
     """Slots before today's local midnight are dropped."""
     known = _slots(MIDNIGHT - STEP, [9.0, 1.0])

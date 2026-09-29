@@ -58,8 +58,8 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   up to its first real wait before the caller's next line. With an `AsyncMock` that never waits, a
   "background" task has finished by then. To test the state while it is in flight, make the mock wait on an
   `asyncio.Event`. To check that the task started, use `await hass.async_block_till_done()` and then
-  `assert started.is_set()`, not `await started.wait()`: without the code under test, that wait hangs (there
-  is no pytest timeout).
+  `assert started.is_set()`, not `await started.wait()`: without the code under test, that wait hangs (no
+  pytest timeout is configured).
 - The test plugin fails a test that leaves an `async_call_later` timer scheduled, unless its `HassJob` has
   `cancel_on_shutdown=True`. Work that a timer starts as a background task needs
   `hass.async_block_till_done(wait_background_tasks=True)`; the default doesn't wait for background tasks.

@@ -236,6 +236,34 @@ The Nortec Go service limits sign-ins. Wait a while before you try again.
 
 See *Starting a charge*.
 
+### Debug logging
+
+To see what the integration does, turn on debug logging from its page in Home Assistant, as described in
+[Enabling debug logging](https://www.home-assistant.io/docs/configuration/troubleshooting/#enabling-debug-logging).
+For Nortec Go this also covers `pynortecgo`, the library it uses to talk to the service.
+
+Or add this to `configuration.yaml` (or merge it into your `logger:` block if you have one) and restart
+Home Assistant:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.nortec_go: debug
+    pynortecgo: debug
+```
+
+Remove it again when you're done: debug logging writes a lot.
+
+The logs hold no passwords or session tokens, but check them before you share them (see *Reporting a
+problem*).
+
+### Reporting a problem
+
+Open an issue with the bug report template. Include your Home Assistant and integration versions and the
+lines of the debug log around the problem, not the whole log. Before you post, remove your email address,
+your charger's and car's names, and anything else that identifies you or where you live.
+
 ## Removing the integration
 
 1. Go to **Settings** > **Devices & services** and select **Nortec Go**.

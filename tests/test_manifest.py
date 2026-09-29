@@ -30,3 +30,9 @@ def test_config_flow_enabled() -> None:
     """The integration is set up from the UI."""
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert manifest["config_flow"] is True
+
+
+def test_loggers_include_the_client() -> None:
+    """Debug logging from the integration page also covers pynortecgo."""
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    assert manifest["loggers"] == ["pynortecgo"]

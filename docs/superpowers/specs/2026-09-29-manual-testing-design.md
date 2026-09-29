@@ -14,8 +14,9 @@ Date: 2026-09-29 · Branch: `docs/manual-testing` · Issues: #10, #38
   charge by accident (#10). A user who hits a problem can collect debug logs and report it without sharing
   secrets (#38).
 - **Not in this work:** diagnostics (#11; `diagnostics` is `todo` in `quality_scale.yaml`, so no doc
-  describes a download that doesn't exist yet, and the pointer to diagnostics waits for #11); any change to
-  the integration's Python code, `scripts/` or the automated tests. Automated tests stay TDD with
+  describes a download that doesn't exist yet). #38's "point to diagnostics once #11 lands" moves to #11's
+  scope (the PO adds it there), since this PR closes #38. No change to the integration's Python code or
+  `scripts/`; the only test change is one manifest assertion (§4.2). Automated tests stay TDD with
   `pynortecgo` mocked, inside each feature.
 - **Done when:** the files in §1 are changed as described; every link resolves; every entity, state and
   section name matches the code and the user docs; the gates pass; the branch review is Ready.
@@ -32,6 +33,7 @@ Answered by the PO in the brainstorm (2026-09-29), unless marked otherwise.
 | Owner-only steps | Marked in the guide (§2.5) |
 | What agents may do in the UI | Look only; press nothing (§2.5). *Controller*, from the review: the narrowest reading of §8 step 3 |
 | EV Smart Charging and automations | *Owner, 2026-09-29 (via the PO):* EV Smart Charging's smart-charging switch stays off unless the owner gives an explicit OK for that session, and any automation that turns *Charge* on or off counts as a start or stop under hard rule 2. *Controller, from the review:* the session ends with the owner turning them off again, since `config/` keeps them for every later start of Home Assistant (§3.3) |
+| EV Smart Charging's charger control | *Pending, with the owner (via the PO), from the review:* whether the charger-control entity also stays empty unless the owner has given an OK, beyond the switch being off. The plan follows the answer |
 | Reauth | *Owner, 2026-09-29 (via the PO):* not tested manually, no second account; one line says the automated tests cover it. Normal testing reuses the stored session |
 | Public results | Results posted on issues or PRs follow `way-of-working.md` §8 *Public text*; the guide links to it |
 | §8 pointer | One line in §8 step 3 points to the guide for what to look at; the guide points back to §8 for the check's rules. §1 step 10 is unchanged |
@@ -47,8 +49,9 @@ Facts used, public-safe:
   call. So a turn-on expected to be refused can still be a real start request.
 - Deleting the entry removes the stored start guard and the start-block repair
   (`__init__.py`, `async_remove_entry`), and adding it again costs a sign-in.
-- The config flow and the reauth form each sign in on every submit (`config_flow.py`), before *already
-  configured* is checked. The reauth form asks only for the password and uses the stored email.
+- The config flow and the reauth form each sign in on every submit (`config_flow.py`): the config flow
+  before it checks *already configured*, the reauth form before it checks for another charger
+  (*wrong account*). The reauth form asks only for the password and uses the stored email.
 - Restarting or reloading the entry reuses the stored session; it needs no new sign-in.
 - `scripts/develop` runs `hass -c config --debug`; F5 in VS Code runs `python -m homeassistant -c config
   --debug` (`.vscode/launch.json`). `--debug` turns on asyncio debug mode, not debug logging
@@ -76,6 +79,7 @@ Facts used, public-safe:
 | `docs/manual-testing.md` | New: the guide (§2, §3) | 1 |
 | `docs/README.md` | One row in the documentation map, after `ha-notes.md` | 1 |
 | `docs/way-of-working.md` | One line in §8 step 3 pointing to the guide | 1 |
+| `tests/test_manifest.py` | One test for `loggers` (§4.2) | 2 |
 | `docs/user/nortec_go.md` | *Debug logging* and *Reporting a problem* under *Troubleshooting* (§4.1) | 2 |
 | `custom_components/nortec_go/manifest.json` | `"loggers": ["pynortecgo"]` (§4.2) | 2 |
 | `.github/ISSUE_TEMPLATE/bug.yml` | The logs field asks for debug logs (§4.3) | 2 |
@@ -112,7 +116,8 @@ OK first, each time**, including a turn-on expected to be refused.
 - `config/`: the HA config, the stored session, HA's database and log. Gitignored, never committed (hard
   rule 4), never read by agents (hard rule 9).
 - `local/`: everything taken from a real instance and kept: logs copied out, anything downloaded from HA,
-  screenshots (`local/screenshots/<topic>/`, §8 step 3), notes with real values. Gitignored, never
+  a debug-log download (it lands in the browser's downloads folder first; move it), screenshots
+  (`local/screenshots/<topic>/`, §8 step 3), notes with real values. Gitignored, never
   committed, never read by agents.
 - Nothing from either goes into a commit, an issue, a PR or a review comment; posted results follow §8
   *Public text* (linked).
@@ -140,7 +145,7 @@ OK first, each time**, including a turn-on expected to be refused.
   - acting on any repair (the start-block repair and any other);
   - the entry's ⋮ menu (reload, delete, disable);
   - anything that calls an action on the charger, and every item in §3.4.
-- **Agents** (the PO's visual check) look only: they read the pages and press nothing. Not the *Charge*
+- **Agents** (the PO's visual check) look only: they navigate and read, and operate no control. Not the *Charge*
   row or toggle anywhere (its state is read without opening it), not *Refresh*, not any EV Smart Charging
   control, not **Submit** in a repair, not the entry's ⋮ menu. The rules of the check itself are in
   `way-of-working.md` §8 step 3 (linked).
@@ -187,8 +192,9 @@ entities by name (from `strings.json`), each against its table row:
   drive *Charge*.
 - **The session ends** with the owner turning them off again: `config/` keeps them, and every later start
   of HA (`scripts/develop`, `scripts/smoke`, the PO's visual check) relies on them being off.
-- **Checks without charger actions** (with them off): EV Smart Charging accepts each entity, reads the
-  price list, and its plan follows the prices.
+- **owner** While setting it up (with them off): EV Smart Charging accepts each entity.
+- **Checks without charger actions** (with them off): EV Smart Charging reads the price list, and its plan
+  follows the prices.
 - **owner, with explicit OK:** a planned charge starts and stops as planned; the user docs' *Use cases*
   notes (continuous charging, the replug) hold.
 
@@ -213,9 +219,9 @@ an agent to.
 Under *Troubleshooting* in `docs/user/nortec_go.md`, two new parts, after the existing ones:
 
 - **`### Debug logging`:**
-  - From the integration's page: **Settings** > **Devices & services** > **Nortec Go**, **Enable debug
-    logging**; reproduce the problem; **Disable debug logging**, which downloads the log. This covers the
-    integration and `pynortecgo` (§4.2).
+  - From the integration's page: the steps are Home Assistant's, linked, not restated
+    (https://www.home-assistant.io/docs/configuration/troubleshooting/#enabling-debug-logging). What this
+    integration adds: it covers the integration and the `pynortecgo` client (§4.2).
   - Or in `configuration.yaml`, a `logger:` block with `default: warning` and `debug` for
     `custom_components.nortec_go` and `pynortecgo`; restart.
   - The logs hold no tokens or passwords, but check them before posting (§ *Reporting a problem*).
@@ -224,11 +230,12 @@ Under *Troubleshooting* in `docs/user/nortec_go.md`, two new parts, after the ex
   posting, remove the email, the charger's and car's names and anything else that identifies you or your
   location. No log lines are quoted and no endpoints named.
 
-No pointer to diagnostics until #11 lands.
+No pointer to diagnostics here; it is #11's (Goal).
 
 ### 4.2 Manifest and changelog
 
-- `manifest.json` gains `"loggers": ["pynortecgo"]` between `issue_tracker` and `requirements` (hassfest's
+- TDD: first `tests/test_manifest.py` gains a test that the manifest's `loggers` is `["pynortecgo"]` (red),
+  then `manifest.json` gains `"loggers": ["pynortecgo"]` between `issue_tracker` and `requirements` (hassfest's
   order: `domain`, `name`, then alphabetical).
 - `CHANGELOG.md`, *Unreleased*: debug logging from the integration's page now includes the `pynortecgo`
   client, and the docs describe debug logging and bug reports.
@@ -238,13 +245,14 @@ No pointer to diagnostics until #11 lands.
 ### 4.3 Bug template
 
 The *Diagnostics / logs* field's description gains one sentence: turn on debug logging as in the docs'
-*Debug logging*, reproduce, and paste the lines around the problem. The existing redaction sentence stays.
+*Debug logging*, reproduce, and paste the lines around the problem. The existing redaction sentence is
+replaced by a pointer to the docs' *Reporting a problem*, so the list of what to remove lives in one place.
 The field stays optional.
 
 ### 4.4 Quality scale
 
-`docs-troubleshooting: done`: the user docs then cover the common problems (sign-in, the charger, the
-rate limit, blocked starts) and how to collect debug logs, which is what the rule asks.
+`docs-troubleshooting: done`: the rule asks for a symptom and a fix for common issues, which the existing
+entries under *Troubleshooting* already give (sign-in, the charger, the rate limit, blocked starts).
 
 ## 5. The pointer in `way-of-working.md`
 
@@ -259,8 +267,9 @@ and the branch review re-checks:
 - Every relative link and anchor resolves (from `docs/`: the section names in `docs/user/nortec_go.md`,
   `CLAUDE.md`, `ha-notes.md` and `way-of-working.md`).
 - Every entity, state and error name matches `strings.json`.
-- A leak grep over the changed files finds no email address, IDs, tokens or API URLs, for example
-  `grep -nE '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[a-z]{2,}|https?://[^ )]*api' <files>`.
+- A leak grep over the changed files finds no email address, IDs, tokens or API URLs: the task runs
+  `grep -nE '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[a-z]{2,}|https?://[^ )]*api'` over the files §1 gives it,
+  by name; a pass is no output (grep exits 1).
 - No statement contradicts `scripts/develop`, `scripts/smoke`, `.vscode/`, `.gitignore` or the user docs;
   no link to D34 or to anything only on #51's branch.
 - The gates (CLAUDE.md *Commands*) and `uv run pre-commit run --all-files` pass.

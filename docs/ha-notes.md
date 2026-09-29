@@ -103,6 +103,9 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   also removes its entities.
 - On the day the clocks go back, two local datetimes with the same time zone compare by wall-clock time and
   ignore `fold`, so the repeated hour sorts wrongly. Compare and sort in UTC.
+- When the unit of a sensor with `state_class` `measurement` changes while it has long-term statistics, HA
+  stops compiling its statistics and raises its own repair, where the user picks what to do with the old
+  statistics. Nothing in the integration has to handle it.
 
 ## HACS
 

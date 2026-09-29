@@ -71,7 +71,7 @@ The integration adds two devices: the charger, and the car when the account has 
 
 | Entity | Type | Description |
 |---|---|---|
-| Current price | Sensor | The total price (spot, fees and grid tariff) for the current 15 minutes, per kWh, incl. VAT, in the currency of the price data. Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
+| Current price | Sensor | The total price (spot, fees and grid tariff) for the current 15 minutes, per kWh, incl. VAT, in the currency of the price data (Home Assistant's currency until price data has named one). Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
 | Cable connected | Binary sensor | On when a cable is connected to the charger |
 | Charging | Binary sensor | On while the car draws power |
 | Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it; off right after a stop until the charger shows it |

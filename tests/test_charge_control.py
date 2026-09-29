@@ -68,6 +68,7 @@ CHARGING = make_charger(
     charge_state=ChargeState.CHARGING,
     state=ChargerState.BUSY_CHARGING,
 )
+PAUSED_BY_CAR = make_charger(is_connected=True, state=ChargerState.BUSY_NON_CHARGING)
 STORE_KEY = "nortec_go.{}.charge_control"
 
 
@@ -281,8 +282,7 @@ async def test_start_noop_while_busy_non_charging(
     control: ChargeControl, client: AsyncMock
 ) -> None:
     """BUSY_NON_CHARGING without a charge state is a charge in progress: no API call."""
-    charger = make_charger(is_connected=True, state=ChargerState.BUSY_NON_CHARGING)
-    control.on_charger_read(charger, control.start_attempts)
+    control.on_charger_read(PAUSED_BY_CAR, control.start_attempts)
     await control.async_start()
     client.start_charge.assert_not_awaited()
 
@@ -452,6 +452,7 @@ async def test_unknown_charger_refuses(
     "charger",
     [
         CHARGING,
+        PAUSED_BY_CAR,
         make_charger(is_connected=True, state=ChargerState.BUSY_NON_RELEASED),
         make_charger(is_connected=False),
     ],
@@ -459,7 +460,7 @@ async def test_unknown_charger_refuses(
 async def test_pending_start_ends_without_block(
     control: ChargeControl, charger: Any
 ) -> None:
-    """A charge seen, BUSY_NON_RELEASED or the cable unplugged ends the pending start."""
+    """A charge seen (also one the car paused), BUSY_NON_RELEASED or the cable unplugged ends the pending start."""
     await control.async_start()
     control.on_charger_read(charger, control.start_attempts)
     assert control.state == IDLE
@@ -707,7 +708,7 @@ async def test_stale_read_changes_nothing(
 
 @pytest.mark.parametrize(
     "charger",
-    [make_charger(is_connected=False), CHARGING],
+    [make_charger(is_connected=False), CHARGING, PAUSED_BY_CAR],
 )
 async def test_block_cleared_by_a_fresh_read(
     hass: HomeAssistant,
@@ -716,7 +717,7 @@ async def test_block_cleared_by_a_fresh_read(
     client: AsyncMock,
     charger: Any,
 ) -> None:
-    """The cable unplugged or a charge open clears the block and the issue."""
+    """The cable unplugged or a charge open (also one the car paused) clears the block and the issue."""
     client.start_charge.side_effect = ChargeStartError(ChargeStartStep.CONFIRM, True)
     with pytest.raises(HomeAssistantError):
         await control.async_start()
@@ -748,15 +749,16 @@ async def test_block_cleared_by_release_after_the_block(
     assert not control.state.blocked
 
 
+@pytest.mark.parametrize("charger", [CHARGING, PAUSED_BY_CAR])
 async def test_stop_during_pending_start(
-    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock, charger: Any
 ) -> None:
-    """Stop asked, no API call; the charge is stopped once when a read sees it."""
+    """Stop asked, no API call; the charge (also one the car paused) is stopped once when a read sees it."""
     await control.async_start()
     await control.async_stop()
     client.stop_charge.assert_not_awaited()
     assert control.state == STOP_ASKED
-    control.on_charger_read(CHARGING, control.start_attempts)
+    control.on_charger_read(charger, control.start_attempts)
     await hass.async_block_till_done(wait_background_tasks=True)
     client.stop_charge.assert_awaited_once()
     assert control.state == STOP_PENDING

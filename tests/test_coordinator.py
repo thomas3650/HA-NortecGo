@@ -543,11 +543,10 @@ async def test_price_read_merges_and_saves(
         MIDNIGHT: 1.0,
         MIDNIGHT + timedelta(minutes=15): 2.0,
     }
-    stored = hass_storage[STORE_KEY.format(mock_config_entry.entry_id)]["data"]["slots"]
     data = hass_storage[STORE_KEY.format(mock_config_entry.entry_id)]["data"]
     assert data["currency"] == "DKK"
     assert coordinator.price_currency == "DKK"
-    assert [slot["price"] for slot in stored] == [1.0, 2.0]
+    assert [slot["price"] for slot in data["slots"]] == [1.0, 2.0]
 
 
 async def test_stored_prices_loaded_at_setup(

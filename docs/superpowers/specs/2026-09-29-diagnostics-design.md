@@ -48,7 +48,14 @@ Facts used, public-safe:
   (setup failed or retrying). `runtime_data` is set only after the first refresh succeeded and is removed at
   unload, so a loaded entry always has coordinator data; a later failed read keeps the previous data.
 - `DataUpdateCoordinator` never clears `last_exception` after a successful read.
-- `pynortecgo`'s error messages hold no email, password or tokens; some name the endpoint's path template
+- A failed first read becomes a `ConfigEntryNotReady` with no message, so `entry.reason` is `None` in
+  `setup_retry`. A `ChargerNotFoundError` or `UnexpectedResponseError` becomes `ConfigEntryError(str(err))`:
+  state `setup_error`, with the error's message as the reason.
+- `hass_client` signs its requests with an access token made at fixture setup. Home Assistant checks the
+  token's issue time and 30-minute expiry with 10 s leeway, so a request after the clock is moved back before
+  the token's issue time, or more than 30 minutes forward, gets a 401.
+- `pynortecgo`'s error messages hold no email, password, tokens or device ID (the device ID goes only in a
+  request header, and transport errors carry exception type names, not requests); some name the endpoint's path template
   (for example the method and path of a rejected request). The logs already carry them.
 
 ## 1. Files
@@ -56,12 +63,14 @@ Facts used, public-safe:
 | File | Change |
 |---|---|
 | `custom_components/nortec_go/diagnostics.py` | New: `async_get_config_entry_diagnostics` (§2, §3) |
-| `custom_components/nortec_go/coordinator.py` | Read-only properties `car_read_failing`, `price_read_failing` and `price_retry_pending` (§2) |
+| `custom_components/nortec_go/coordinator.py` | Read-only properties `car_read_failing`, `price_read_failing` and `price_retry_pending` (§2); the comment on `pynortecgo`'s messages (§6) |
 | `custom_components/nortec_go/quality_scale.yaml` | `diagnostics: done` |
 | `tests/test_diagnostics.py` | New (§8) |
 | `docs/user/nortec_go.md` | A *Diagnostics* subsection in *Troubleshooting*, and one sentence in *Reporting a problem* (§5) |
 | `CLAUDE.md` | Hard rule 5 (§6) |
-| `docs/releasing.md` | The client-bump checklist's list of what messages must not hold (§6) |
+| `docs/releasing.md` | The client-bump checklist (§6) |
+| `docs/manual-testing.md` | A *Diagnostics (#11)* checklist (§5) |
+| `.github/ISSUE_TEMPLATE/bug.yml` | The *Diagnostics / logs* field mentions the diagnostics file (§5) |
 | `docs/decisions.md` | D38 (§7) |
 | `CHANGELOG.md` | One line under *Unreleased* → *Added* |
 
@@ -107,15 +116,17 @@ The three properties expose the coordinator's `_car_failing`, `_prices_failing` 
 
 - **Not loaded:** when `entry.state is not ConfigEntryState.LOADED` (as `repairs.py` checks), the output is
   `entry`, `"loaded": false`, `"state"` (the state's value, for example `setup_retry`) and `"reason"`
-  (`entry.reason`, the setup error's message, or `None`). A failed setup is when diagnostics help most, and
-  the entry's data still shows whether the stored session is there. On the loaded path `runtime_data` and
+  (`entry.reason`: `None` for a failed first read, the error's message for a setup error; Facts used). It keeps
+  a request for an entry that isn't loaded (through the API) from failing with an error; the frontend may
+  offer the download only for a loaded entry, so neither the user docs nor the design rely on it. On the
+  loaded path `runtime_data` and
   `coordinator.data` are always set (Facts used), so there is no `None` case for `data`.
 - **Last exception:** `None` while `last_update_success` is true, because the coordinator keeps an old error
   after a recovery, which would read as a current one.
 - **Serializable:** datetimes and `StrEnum`s serialize with Home Assistant's encoder; the interval is given
   in seconds, not as a `timedelta`; the known price slots (keyed by datetime) aren't dumped.
 - **Messages:** `last_exception` and `reason` are messages of `pynortecgo` errors or the integration's own:
-  no email, password or tokens (Facts used).
+  no email, password, tokens or device ID (Facts used).
 
 ## 3. Redaction
 
@@ -157,6 +168,14 @@ small). It says:
 what it holds. Its existing advice (remove your email, your charger's and car's names, and anything else that
 identifies you) is about pasted log lines, and stays.
 
+The bug report template's *Diagnostics / logs* field gains: you can also attach the diagnostics file (see the
+docs' *Diagnostics*).
+
+`docs/manual-testing.md` gains a short `### Diagnostics (#11)` checklist, marked **Owner** (the entry's ⋮
+menu is owner-only there): download the diagnostics from the entry's menu, save the file in `local/`, and
+check that the email, both tokens and the device ID show as `**REDACTED**` and the charger's and car's data
+are there. Agents never open the file (hard rule 9).
+
 ## 6. Hard rule 5 and the release checklist
 
 `CLAUDE.md` hard rule 5 today:
@@ -167,9 +186,10 @@ identifies you) is about pasted log lines, and stays.
 
 New wording (for the owner's approval with the spec):
 
-> 5. Diagnostics and logs redact the email, the password, the session tokens and the client's device ID
->    (`async_redact_data`; D38), and credentials and usernames are never logged, even wrong ones. Anything
->    taken from a real instance (diagnostics downloads, logs, dumps) goes in `local/` and is never committed.
+> 5. Diagnostics and logs redact the email, the password, the access and refresh tokens and the client's
+>    device ID (`async_redact_data`; D38), and credentials and usernames are never logged, even wrong ones.
+>    Anything taken from a real instance (diagnostics downloads, logs, dumps) goes in `local/` and is never
+>    committed.
 
 Hard rule 3 (nothing private in this public repo, IDs included) doesn't change: it is about what is committed
 here, not about what a user's download holds.
@@ -177,26 +197,32 @@ here, not about what a user's download holds.
 `docs/releasing.md`, the client-bump checklist, today asks to confirm that exception messages "hold no email,
 password, token, IDs or request bodies" and cites hard rule 5. It becomes "hold no email, password, tokens,
 device ID or request bodies", in line with the rule. It also gains one item: when the diagnostics field-pin
-test fails, judge each new field as §4 says.
+test fails, decide for each new field whether it is a secret (D38).
 
 Other docs checked for the old list: `docs/way-of-working.md`, `docs/ha-notes.md`, `docs/manual-testing.md`,
 `docs/notes.md`, the agents in `.claude/agents/` and the bug report template don't repeat it. The PR
 template's "No private data: IDs, …" line is hard rule 3's, and stays. The coordinator's comment that
-`pynortecgo`'s messages hold no tokens, emails or IDs is a fact about the messages, and stays.
+`pynortecgo`'s messages "hold no tokens, emails or IDs, so they may be passed on" becomes "hold no email,
+password, tokens or device ID, so they may be passed on": the release checklist no longer checks IDs, and the
+device ID now matters.
 
 ## 7. Decision log
 
 D38, *Diagnostics redact only the sign-in secrets*:
 
-- **Decision:** diagnostics and logs redact only the email, the password, the session tokens and the client's
-  device ID, with `async_redact_data` over the whole diagnostics output; the charger's and car's IDs and
-  names and the entry's title and unique ID stay. A test pins the `pynortecgo` model fields the output dumps,
-  so a client bump that adds a field fails the tests until someone decides whether it is a secret.
-- **Why:** the owner's ruling (issue #11): the IDs and names help match a download to an issue and to the
-  devices, and aren't secrets; `asdict` shows every field, and Dependabot bumps the client.
-- **Known limit:** a new secret key in `entry.data` under another name is shown unless it is added to
-  `TO_REDACT`.
-- **Source:** this spec, §3, §4 and §6.
+```markdown
+### D38: Diagnostics redact only the sign-in secrets
+- **Date:** 2026-09-29 · **Status:** active
+- **Decision:** Diagnostics and logs redact only the email, the password, the access and refresh tokens and
+  the client's device ID, with `async_redact_data` over the whole diagnostics output; the charger's and car's
+  IDs and names and the entry's title and unique ID stay. A test pins the `pynortecgo` model fields the
+  output dumps, so a client bump that adds a field fails the tests until someone decides whether it is a
+  secret.
+- **Why:** The owner's ruling (issue #11): the IDs and names help match a download to an issue and to the
+  devices, and aren't secrets. `asdict` shows every field, and Dependabot bumps the client; a new secret key
+  in `entry.data` under another name still needs adding to the list by hand.
+- **Source:** [diagnostics spec](superpowers/specs/2026-09-29-diagnostics-design.md), §3, §4 and §6
+```
 
 ## 8. Tests
 
@@ -207,22 +233,29 @@ and `make_vehicle`, hard rule 7), through Home Assistant's real endpoint
 `/api/diagnostics/config_entry/<entry_id>` with `hass_client` directly (the helper returns only `data`).
 Tests 1, 2 and 4 run with time frozen (`freezer`, as `test_coordinator.py` does): `read_at` comes from
 `utcnow()`, the price store prunes past slots, and a price retry is only scheduled when it falls before the
-next price read. Expected error messages come from fake exception strings in the test, never from copied
+next price read. Because `hass_client`'s token is made at fixture setup (Facts used), every download in the
+test file goes through one helper that fetches with a fresh access token made after the last clock move
+(a refresh token for `hass_admin_user`, then `hass.auth.async_create_access_token`, passed to
+`hass_client`). Expected error messages come from fake exception strings in the test, never from copied
 client messages (hard rule 3).
 
 1. **The whole output, exactly:** a set-up entry with a charge open (so `charge_id` is set) and a car, with
-   known prices: the returned `data` equals the expected dict, the five keys as `**REDACTED**`, and the kept
+   known prices: the returned `data` equals the expected dict, the four stored secrets (`email`, both tokens,
+   `device_id`) as `**REDACTED**`, and the kept
    fields with their fake values (the charger's and car's IDs and names, the charge ID, the title and unique
    ID).
 2. **Secrets never appear:** an entry whose `data` also holds a `password` key (`FAKE_PASSWORD`; the
    safeguard), with a charge open, a car, and starts blocked (so the repair issue is in the download): the
-   whole response body holds none of `FAKE_EMAIL`, `FAKE_PASSWORD`, both fake tokens, `FAKE_DEVICE_ID`; and
-   the kept fields do appear (`FAKE_CHARGER_NAME`, `FAKE_VEHICLE_NAME`, the charger's ID, the charge ID).
+   whole response body holds none of `FAKE_EMAIL`, `FAKE_PASSWORD`, the `FAKE_TOKENS` and `NEW_TOKENS`
+   strings, `FAKE_DEVICE_ID`; and the kept fields do appear (`FAKE_CHARGER_NAME`, `FAKE_VEHICLE_NAME`, the
+   charger's ID, the charge ID). The charger's ID also appears as the entry's unique ID; test 1 covers the
+   model fields themselves.
 3. **No car:** `vehicle` is `None`.
 4. **Failing reads:** after a failed charger read, `last_update_success` is false and `last_exception` holds
    the error's message; after a later good read, `last_exception` is `None` again. A failed car read shows
    `car_read_failing`; a failed scheduled price read with a retry pending shows `price_read_failing` and
    `price_retry_pending`.
-5. **Not loaded:** for an entry whose setup failed with a retry, the output is `entry` (secrets redacted),
-   `"loaded": false`, `"state": "setup_retry"` and the reason.
+5. **Not loaded:** for an entry whose first read failed, the output is `entry` (secrets redacted),
+   `"loaded": false`, `"state": "setup_retry"` and `"reason": None`; for one whose setup raised a
+   `ChargerNotFoundError` with a fake message, `"state": "setup_error"` and that message as the reason.
 6. **Field pin (§4):** `{f.name for f in fields(Charger)}` and the same for `Vehicle` equal the pinned sets.

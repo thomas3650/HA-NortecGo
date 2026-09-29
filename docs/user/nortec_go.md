@@ -76,6 +76,8 @@ The integration adds two devices: the charger, and the car when the account has 
 | Charging | Binary sensor | On while the car draws power |
 | Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it; off right after a stop until the charger shows it |
 | Charge status | Sensor | Start blocked, Starting, Charging, Paused, Stopping, Waiting for replug, Unplugged or Idle |
+| Energy this charge | Sensor | The energy the open charge has delivered so far, in kWh. Unknown when no charge is open. It can be added to the Energy dashboard as an individual device; each charge counts as a new cycle |
+| Charging power | Sensor | The charge's latest measured power, in kW. 0 when no charge is open, and unknown if the power couldn't be read |
 | Refresh | Button | Reads the charger, the car and the prices now |
 | Last read | Sensor (diagnostic) | When the charger was last read. Shows how old the other values are, also after a failed read |
 
@@ -187,6 +189,9 @@ It reads the car with the charger, but at most about every 5 minutes, and on eve
 starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. The current price moves to the next 15 minutes by
 itself, without a read.
 
+*Energy this charge* and *Charging power* come from the last charger read, so while charging they can be up
+to 5 minutes old.
+
 Turning *Charge* on or off reads the charger right away. To read the charger, the car and the prices now,
 press the *Refresh* button. From an automation, the `homeassistant.update_entity` action on any Nortec Go
 entity reads the charger, and the car if it wasn't read in the last few minutes, but not the prices (see
@@ -210,12 +215,17 @@ entity reads the charger, and the car if it wasn't read in the last few minutes,
   use the repair issue to allow starts again in that case.
 - A charge started or resumed outside Home Assistant, for example in the Nortec Go app, can take up to 60
   minutes to show. Press *Refresh* to see it sooner.
+- The Energy dashboard sees a new charge only when *Energy this charge* starts well below the previous
+  charge's final energy. A charge that follows a very short one, or that is first read late (such as one
+  started outside Home Assistant), can be missed, and then only the difference is counted. Energy delivered
+  after the last read of a charge isn't counted either.
 - A hold that led to no charge is expected to expire by itself within about 7 days and can't be cancelled
   from Home Assistant.
 - After a stop, the charger needs the cable unplugged and replugged before the next start, so an EV Smart
   Charging plan with more than one session needs a replug between them too.
 - EV Smart Charging logs the integration's start errors as its own failed action.
-- No live power reading.
+- *Charging power* has read 0 kW for about the first 30 seconds after a start, for up to about 2 minutes
+  after a resume, and while stopping.
 
 ## Troubleshooting
 

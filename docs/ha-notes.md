@@ -11,6 +11,9 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - `pytest-homeassistant-custom-component` ships its own `custom_components` package. HA only finds ours if a
   test imports `custom_components.nortec_go` first.
 - hassfest requires the `manifest.json` keys in the order `domain`, `name`, then alphabetical.
+- **Enable debug logging** on an integration's page covers the integration's package logger and the
+  manifest's `loggers` list, not the packages in `requirements`. A library the integration logs through
+  goes in `loggers`.
 
 ## Config flows
 

@@ -24,6 +24,8 @@ All notable changes to this project are documented in this file. The format is b
 - The charger is read every 30 seconds while a charge is starting or stopping, for about 2 minutes (10 after
   a start) while it can't be read, and right away after turning *Charge* on or off.
 - The charger's device name follows a rename in the Nortec Go app.
+- Debug logging turned on from the integration's page also covers the `pynortecgo` client, and the docs
+  explain debug logging and what to leave out of a bug report.
 - *Energy this charge* (kWh) and *Charging power* (kW) sensors for the open charge.
 
 ## [0.0.1] - 2026-09-26

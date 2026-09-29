@@ -73,7 +73,7 @@ superseded. How to add one:
 - **Source:** [ground-structure spec](superpowers/specs/2026-09-26-ground-structure-design.md), Decisions, §3.4
 
 ### D10: Manual releases
-- **Date:** 2026-09-26 · **Status:** active; the manual tag superseded by D39
+- **Date:** 2026-09-26 · **Status:** superseded by D40
 - **Decision:** Releases are manual: a bump PR updates `manifest.json`'s version and moves the CHANGELOG
   section from *Unreleased*, then the owner pushes tag `vX.Y.Z`, and `release.yml` publishes the GitHub
   release.
@@ -334,10 +334,23 @@ superseded. How to add one:
 - **Source:** [diagnostics spec](superpowers/specs/2026-09-29-diagnostics-design.md), §3, §4 and §6
 
 ### D39: A merged bump PR is the release
-- **Date:** 2026-09-29 · **Status:** active
+- **Date:** 2026-09-29 · **Status:** active; the bump PR and the fallbacks superseded by D40
 - **Decision:** When CI passes on `main` for a commit that raises the version and adds its changelog
   section, `auto-release.yml` tags that commit and publishes the release through `release.yml`. A dispatch
   of `auto-release.yml` is the fallback, also for a bump merged before it; tagging by hand is the last one.
 - **Why:** The bump PR already holds everything a release needs; the owner still decides when a release goes
   out by merging it.
 - **Source:** [auto-release spec](superpowers/specs/2026-09-29-auto-release-design.md), Decisions and §2
+
+### D40: A merged PR releases itself, by its title
+- **Date:** 2026-09-29 · **Status:** active
+- **Decision:** The PR title's type decides the release (`fix`/`perf` patch, `feat` minor, `!` minor on 0.x
+  and major from 1.0, other types none). A releasing PR carries its own bump from `release_check.py
+  release-pr`, run before it is marked ready; `auto-release.yml` publishes it on merge, as D39 set up. A
+  merged PR is the only way to release: no dispatch, and a pushed tag publishes nothing on its own. A failed
+  release is re-run by the owner; when the workflow-scope limit blocks the tag, the owner pushes it by hand
+  first.
+- **Why:** a separate bump PR was a manual step that left changes waiting under *Unreleased*, and every
+  release should come from a reviewed, merged PR; a stale bump between two ready PRs is accepted as the
+  price.
+- **Source:** [release model spec](superpowers/specs/2026-09-29-release-model-design.md), Decisions

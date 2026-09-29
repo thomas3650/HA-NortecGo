@@ -12,7 +12,7 @@ Assistant. It talks only to the public API of `pynortecgo`, an async client that
 - `tests/` — tests against the integration, with `pynortecgo` mocked
 - `docs/` — the docs; the map is `docs/README.md`
 - `scripts/` — dev scripts, including `scripts/develop` and `scripts/smoke`, and `release_check.py`, the
-  release rules the workflows run
+  release rules and the bump step
 - `.devcontainer/` — optional, for manual testing only; never the gate environment
 - `.claude/` — project settings, the subagent guard hook, agents (`implementer`, `task-reviewer`,
   `full-reviewer`, and the session agents `po` and `team-lead`)
@@ -42,7 +42,8 @@ imported below. Lasting decisions are in `docs/decisions.md`.
 ## Code and docs rules
 
 - TDD, and the gates (Commands above, including the coverage gate) pass before committing.
-- Add a `CHANGELOG.md` entry under *Unreleased* for user-visible changes.
+- Add a `CHANGELOG.md` entry under *Unreleased* for user-visible changes, and title the PR `feat`, `fix` or
+  `perf` (`docs/releasing.md`).
 - `quality_scale.yaml` and `docs/user/nortec_go.md` are updated in the same PR as the code they describe.
 
 ## Hard rules

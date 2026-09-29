@@ -8,6 +8,7 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
 
 1. **Issue:** a user story.
 2. **Branch:** `<type>/<topic>`, where the type is `feat`, `fix`, `docs`, `chore` or `process`.
+   The PR title's type is separate, and follows [`releasing.md`](releasing.md#pr-titles).
    Label the issue `active` (see §6 *Labels*).
 3. **Brainstorm:** `superpowers:brainstorming`.
 4. **Spec** in `docs/superpowers/specs/`, then `full-reviewer` until Ready.
@@ -17,7 +18,8 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
    hook reformats Python blocks in Markdown, so a fragment that isn't a whole statement (parametrize rows,
    say) goes in a `text` block, and so do class methods (indented `def`s), which it dedents to module level.
 6. **Draft PR:** once the spec and plan are both Ready, commit them, push, and open a **draft** PR with
-   `Closes #n` and links to the spec and plan. The owner reviews the spec and plan there.
+   `Closes #n` and links to the spec and plan. Its title follows [`releasing.md`](releasing.md#pr-titles).
+   The owner reviews the spec and plan there.
 7. **Execute:** `superpowers:subagent-driven-development`. For each task:
    - write the task's `Guarded files:` paths, if any, to the allowlist of the worktree the task runs in:
      `$(git -C <worktree> rev-parse --absolute-git-dir)/subagent-guard-allow` (in the main checkout, that is
@@ -36,9 +38,10 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
 9. **Branch review:** `full-reviewer` on the branch until Ready. A learning found during the review goes
    through step 8 too, and the next review round checks it.
 10. **Ready:** run `scripts/smoke` on the branch (Home Assistant must start and set up the integration with
-    no errors from it; stop any running dev instance first), update the PR description (Rulings, learnings,
-    the smoke result), then `gh pr ready` only when the owner's
-    review is needed, and tell the owner.
+    no errors from it; stop any running dev instance first), for a releasing title run the bump step
+    ([`releasing.md`](releasing.md#a-releasing-pr)) and push, update the PR description (Rulings,
+    learnings, the smoke result), then `gh pr ready` only when the owner's review is needed, and tell the
+    owner.
 11. **Merge:** the owner merges.
 
 ### Parallel waves
@@ -133,6 +136,9 @@ It still starts from an issue and its PR says `Closes #n`. The controller gives 
 implements it with TDD, runs the gates and `scripts/smoke`, and opens a ready PR, with no `full-reviewer`
 review.
 
+A PR opened ready with a releasing title runs the bump step ([`releasing.md`](releasing.md#a-releasing-pr))
+before it is opened; give the title in single quotes.
+
 ## 5. Model policy and guarded files
 
 | Role | Model / effort |
@@ -196,11 +202,12 @@ review.
 |---|---|
 | Edit anything in the repo, including `.claude/` and `.pre-commit-config.yaml`; `.claude/settings.json` only after asking the owner each time | Merge PRs |
 | Create branches, commit, push feature branches | Force-push |
-| Open draft PRs, update PR descriptions, `gh pr ready` | Tag releases |
+| Open draft PRs, update PR descriptions, `gh pr ready` | Push a tag, or re-run a workflow run on `main` (either can publish), unless the owner says so for that release |
 | Create, comment on and label issues (for example, file deferred items) | Change GitHub repo settings, secrets or environments |
 | Dispatch agents, choosing the model by the plan tag | Bypass hooks (`--no-verify`, `-n`, `SKIP=`) |
 | Rule after 5 review rounds; record lasting rulings in `decisions.md` | Anything the `CLAUDE.md` hard rules forbid |
 | `uv sync`, `uv lock` | Read `.env`, `local/` or `config/` |
+| Run the bump step in a releasing PR ([`releasing.md`](releasing.md#a-releasing-pr)) | |
 
 The one-time GitHub settings applied for this repo's ground structure are an explicit exception to the
 "change GitHub repo settings" rule, each step approved by the owner.
@@ -243,8 +250,9 @@ here.
   specs and plans, hands out D-numbers, runs step 10's checks and marks PRs ready. Never merges.
 - **Team lead:** a background session per issue, in its own issue worktree, started by the PO and named
   `tl-<topic>`; at most 2. Runs §1 steps 3 to 9 as the controller, with the PO (addressed as `po`) in the
-  owner's place. It never runs `gh pr ready`, `scripts/smoke` or `scripts/develop`, and splits a wave wider
-  than 3 workers.
+  owner's place. For a releasing title it then runs the bump step
+  ([`releasing.md`](releasing.md#a-releasing-pr)), as its last step before `branch ready`. It never runs
+  `gh pr ready`, `scripts/smoke` or `scripts/develop`, and splits a wave wider than 3 workers.
 - **Workers:** the team lead's subagents, as in §2; at most 3 active per team lead.
 - **Team lead mode**, for hard problems: the owner runs `scripts/team-lead` in the foreground in the main
   checkout (session name `team-lead`, no PO named), and is the PO. **PO mode and team lead mode never run at
@@ -252,8 +260,8 @@ here.
   `team-lead` runs, or in a linked worktree, and the PO also checks at start that no session named
   `team-lead` runs. Team leads (`tl-*`) still running while the PO is down count as PO mode: the owner
   doesn't start `scripts/team-lead` then.
-- Owner only: merging, anything that starts or stops a real charge, the permission setup for team leads, and
-  `.claude/settings.json`.
+- Owner only: merging, anything that starts or stops a real charge, pushing a tag, re-running a workflow run
+  on `main`, the permission setup for team leads, and `.claude/settings.json`.
 
 ### Picking and starting an issue
 
@@ -317,8 +325,9 @@ One branch at a time, in the main checkout (only the PO works there, and only on
    screenshot tool's `save_to_disk`, then `mv` into the folder without opening them), then stop HA with
    `pkill -f "hass -c config"`. Never the config flow or reauth, never credentials, never anything that calls
    an action on the charger. The screenshots are for the owner, who also cleans them up.
-4. **Acceptance check:** the PR against the issue's user story and the approved spec, and the PR description
-   (rulings, learnings, smoke result, which parts the visual check covered, and that the screenshots are in
+4. **Acceptance check:** the PR against the issue's user story and the approved spec, the title's type and
+   release level ([`releasing.md`](releasing.md#pr-titles)), and the PR description (rulings, learnings,
+   smoke result, which parts the visual check covered, and that the screenshots are in
    `local/screenshots/<topic>/`). Not a second code review.
 5. Switch back to the branch the main checkout was on, and `uv sync`.
 6. On a failure: back to the team lead with the finding. Otherwise: update the PR description, `gh pr ready`,
@@ -328,8 +337,9 @@ One branch at a time, in the main checkout (only the PO works there, and only on
 
 ### After ready, the loop, and failures
 
-- A ready PR takes no slot. On changes requested or a merge conflict, the PO re-creates the issue worktree at
-  the same path, runs `uv sync` in it, and resumes the team lead
+- A ready PR takes no slot. On changes requested, a merge conflict, or a stale bump (a releasing PR behind
+  `main` after another release; [`releasing.md`](releasing.md#two-releasing-prs-at-once)), the PO re-creates
+  the issue worktree at the same path, runs `uv sync` in it, and resumes the team lead
   (`claude --bg --permission-mode auto --resume <session-id>`, run in the re-created issue worktree) when a
   slot is free. Conflicts are fixed by merging `origin/main` in, never by a force-push. A
   resumed team lead starts without its old SDD ledger.

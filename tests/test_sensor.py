@@ -16,6 +16,8 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
     EntityCategory,
+    UnitOfEnergy,
+    UnitOfPower,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -315,6 +317,176 @@ async def test_last_read_available_after_a_failed_read(
     state = hass.states.get(LAST_READ)
     assert state is not None
     assert state.state == "2026-09-27T10:00:00+00:00"
+
+
+ENERGY = "sensor.garage_charger_energy_this_charge"
+POWER = "sensor.garage_charger_charging_power"
+
+
+def _state(hass: HomeAssistant, entity_id: str) -> str:
+    state = hass.states.get(entity_id)
+    assert state is not None, entity_id
+    return state.state
+
+
+async def test_charge_energy_and_power_sensors(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    entity_registry: er.EntityRegistry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Energy this charge and Charging power: classes, units, precision, charger device."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        charge_kwh=3.25,
+        charge_kw=7.4,
+    )
+    await setup_integration(hass, mock_config_entry)
+    charger = _device(device_registry, mock_config_entry, str(FAKE_CHARGER_ID))
+    assert charger is not None
+
+    for entity_id, key, value, device_class, unit, state_class, precision in (
+        (
+            ENERGY,
+            "charge_energy",
+            "3.25",
+            SensorDeviceClass.ENERGY,
+            UnitOfEnergy.KILO_WATT_HOUR,
+            SensorStateClass.TOTAL_INCREASING,
+            2,
+        ),
+        (
+            POWER,
+            "charging_power",
+            "7.4",
+            SensorDeviceClass.POWER,
+            UnitOfPower.KILO_WATT,
+            SensorStateClass.MEASUREMENT,
+            1,
+        ),
+    ):
+        state = hass.states.get(entity_id)
+        assert state is not None, entity_id
+        assert state.state == value
+        assert state.attributes[ATTR_DEVICE_CLASS] == device_class
+        assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == unit
+        assert state.attributes[ATTR_STATE_CLASS] == state_class
+        entry = entity_registry.async_get(entity_id)
+        assert entry is not None
+        assert entry.unique_id == f"{FAKE_CHARGER_ID}_{key}"
+        assert entry.device_id == charger.id
+        assert entry.options["sensor"]["suggested_display_precision"] == precision
+
+
+@pytest.mark.parametrize(
+    ("charger", "energy", "power"),
+    [
+        (make_charger(is_connected=True), STATE_UNKNOWN, "0.0"),
+        (
+            make_charger(is_connected=True, charge_kwh=5.0, charge_kw=6.0),
+            STATE_UNKNOWN,
+            "0.0",
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            STATE_UNKNOWN,
+            STATE_UNKNOWN,
+        ),
+        (
+            make_charger(
+                is_connected=True,
+                charge_state=ChargeState.CHARGING,
+                charge_kwh=1.5,
+                charge_kw=0.0,
+            ),
+            "1.5",
+            "0.0",
+        ),
+    ],
+    ids=[
+        "no_charge",
+        "no_charge_ignores_fields",
+        "open_charge_no_readings",
+        "open_charge_with_readings",
+    ],
+)
+async def test_charge_energy_and_power_values(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    charger: Charger,
+    energy: str,
+    power: str,
+) -> None:
+    """No open charge: energy unknown and power 0; an open charge shows its readings or unknown."""
+    mock_client.get_charger.return_value = charger
+    await setup_integration(hass, mock_config_entry)
+    assert _state(hass, ENERGY) == energy
+    assert _state(hass, POWER) == power
+
+
+async def test_charge_energy_and_power_unavailable_after_a_failed_read(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A failed charger read makes both sensors unavailable."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        charge_kwh=2.0,
+        charge_kw=7.0,
+    )
+    await setup_integration(hass, mock_config_entry)
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    await mock_config_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert _state(hass, ENERGY) == STATE_UNAVAILABLE
+    assert _state(hass, POWER) == STATE_UNAVAILABLE
+
+
+async def test_charge_energy_starts_a_new_cycle_per_charge(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A charge at 10.5 kWh, then no charge (unknown, 0 kW), then a new charge at 0.2 kWh."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        charge_kwh=10.5,
+        charge_kw=7.2,
+    )
+    await setup_integration(hass, mock_config_entry)
+    coordinator = mock_config_entry.runtime_data
+    seen: list[tuple[str, str, str]] = []
+
+    def record() -> None:
+        energy = hass.states.get(ENERGY)
+        assert energy is not None
+        seen.append(
+            (energy.state, _state(hass, POWER), energy.attributes[ATTR_STATE_CLASS])
+        )
+
+    record()
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    record()
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        charge_kwh=0.2,
+        charge_kw=3.6,
+    )
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    record()
+
+    increasing = SensorStateClass.TOTAL_INCREASING
+    assert seen == [
+        ("10.5", "7.2", increasing),
+        (STATE_UNKNOWN, "0.0", increasing),
+        ("0.2", "3.6", increasing),
+    ]
 
 
 async def test_car_sensors(

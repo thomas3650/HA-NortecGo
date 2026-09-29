@@ -92,6 +92,12 @@
       },
       "last_read": {
         "name": "Last read"
+      },
+      "charge_energy": {
+        "name": "Energy this charge"
+      },
+      "charging_power": {
+        "name": "Charging power"
       }
     },
     "switch": {

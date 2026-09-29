@@ -21,6 +21,8 @@ CAR_READ_MIN_AGE: Final = INTERVAL_CHARGING - INTERVAL_CHANGING
 # Price reads (local time) and the quarter-hour tick that moves the current slot.
 PRICE_READ_HOURS: Final = (0, 5, 10, 15, 20)
 PRICE_READ_MINUTE: Final = 5
+# A failed setup or scheduled price read is read once more after this (D37).
+PRICE_RETRY_DELAY: Final = timedelta(minutes=15)
 TICK_MINUTES: Final = (0, 15, 30, 45)
 SLOT_LENGTH: Final = timedelta(minutes=15)
 

@@ -145,8 +145,9 @@ OK first, each time**, including a turn-on expected to be refused.
   - acting on any repair (the start-block repair and any other);
   - the entry's ⋮ menu (reload, delete, disable);
   - anything that calls an action on the charger, and every item in §3.4.
-- **Agents** (the PO's visual check) look only: they navigate and read, and operate no control. Not the *Charge*
-  row or toggle anywhere (its state is read without opening it), not *Refresh*, not **Submit** in a repair, not the entry's ⋮ menu. The rules of the check itself are in
+- **Agents** (the PO's visual check) look only: they navigate and read, and operate no control. Not the
+  *Charge* row or toggle anywhere (its state is read without opening it), not *Refresh*, not **Submit** in
+  a repair, not the entry's ⋮ menu. The rules of the check itself are in
   `way-of-working.md` §8 step 3 (linked).
 - Checking for errors: agents use `scripts/smoke`'s output or HA's logs page in the UI (**Settings** >
   **System** > **Logs**), never `config/`'s log file.

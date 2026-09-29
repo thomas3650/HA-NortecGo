@@ -33,7 +33,7 @@
 ## Review Focus
 
 1. An agent following the guide during the PO's visual check must find no instruction that leads it to operate a control (the *Charge* toggle, *Refresh*, a repair's **Submit**, the entry's ⋮ menu) — Task 1, Step 4 check (a).
-2. An EV Smart Charging or an automation on *Charge* added to `config/` would start or stop real charges on the next `scripts/smoke` or visual check; the guide must say `config/` has none, adding one is owner only, and the owner's session rule if one is ever added — Task 1, Step 4 check (b).
+2. An EV Smart Charging setup or an automation on *Charge* added to `config/` would start or stop real charges on the next `scripts/smoke` or visual check; the guide must say `config/` has none, adding one is owner only, and the owner's session rule if one is ever added — Task 1, Step 4 check (b).
 3. The price item must still be right after #51 (total price, the forecast's currency): no unit, currency or price kind in the guide — Task 1, Step 4 check (c).
 4. A section link from the guide to *Debug logging* or *Reporting a problem* must resolve once Task 2 lands — Task 1 re-check when held (see *Waves*).
 5. The user docs' logging text must hold for `pynortecgo` 0.2.0 and 0.5.0 alike: it claims only "no tokens or passwords", and names no endpoints and quotes no lines — Task 2, Step 6 check.
@@ -97,7 +97,7 @@ Title `# Manual testing`, then one intro line: how to test the integration by ha
 - To check for errors from the integration, agents use `scripts/smoke`'s output or Home Assistant's log page (**Settings** > **System** > **Logs**), never the log file in `config/`.
 
 `## Checklists`
-One intro line: each item says what to look at; the linked section of the user docs says what is right. Items marked **Owner** are done only by the owner. Then four subsections, each a `- [ ]` list:
+One intro line: each item says what to look at; the linked section of the user docs says what is right. Items marked **Owner** are done only by the owner. Then four subsections; each but *EV Smart Charging* is a `- [ ]` list:
 
 `### Setup and restart (#7)`
 - [ ] **Owner** Add the integration (only when `config/` has no Nortec Go entry yet): the entry's name and its devices — [Configuration](user/nortec_go.md#configuration), [Supported functionality](user/nortec_go.md#supported-functionality).

@@ -6,7 +6,7 @@ The root [`README.md`](../README.md) is the public intro; everything else lives 
 |---|---|---|
 | [`../README.md`](../README.md) | What the integration is, install via HACS, status | First look at the repo |
 | [`../CLAUDE.md`](../CLAUDE.md) | What this repo is, layout, commands, hard rules | Starting any work here |
-| [`way-of-working.md`](way-of-working.md) | Flow, agents, model policy, conventions | Doing non-trivial work |
+| [`way-of-working.md`](way-of-working.md) | Flow, agents, model policy, conventions, the PO flow | Doing non-trivial work |
 | [`decisions.md`](decisions.md) | Lasting decisions, newest last | Why something is the way it is |
 | [`releasing.md`](releasing.md) | The bump PR, tagging, what `release.yml` checks | Cutting a release |
 | [`notes.md`](notes.md) | Small learned facts that fit no other doc | Looking for a fact that isn't elsewhere |

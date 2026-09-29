@@ -18,7 +18,8 @@ log=local/smoke.log
 
 # Run in the foreground and stop after a fixed time: started in the background, HA's Bluetooth
 # (CoreBluetooth via PyObjC) crashes the process on macOS before setup finishes.
-seconds="${SMOKE_SECONDS:-75}"
+# 150 s leaves room for the first start after a `uv sync`, when HA reinstalls its runtime packages.
+seconds="${SMOKE_SECONDS:-150}"
 # --verbose logs the INFO lines checked below; the log goes to local/, not config/.
 rm -f "$log"
 uv run perl -e 'alarm shift; exec @ARGV' "$seconds" hass -c config --verbose --log-file "$log" >/dev/null 2>&1 || true

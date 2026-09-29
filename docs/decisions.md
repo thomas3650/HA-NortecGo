@@ -118,7 +118,7 @@ superseded. How to add one:
 - **Source:** [ground-structure spec](superpowers/specs/2026-09-26-ground-structure-design.md), §1.1
 
 ### D16: PR lifecycle and delegated plan approval
-- **Date:** 2026-09-26 · **Status:** active
+- **Date:** 2026-09-26 · **Status:** active; the spec approval superseded by D35 for the PO flow
 - **Decision:** A draft PR is opened once the spec and plan are both Ready, so the owner can review them
   there. Every approved task is committed and pushed. The PR is marked ready only when the owner's review is
   needed. The owner may delegate plan approval to the controller once `full-reviewer` rates the plan Ready,
@@ -293,3 +293,12 @@ superseded. How to add one:
 - **Why:** The total is what the owner pays, and the hourly grid tariff changes which slots are cheapest;
   the forecast knows its own currency, so the unit is right without a Home Assistant setting (#20).
 - **Source:** [pynortecgo 0.5.0 spec](superpowers/specs/2026-09-28-pynortecgo-0.5.0-design.md), Decisions
+
+### D35: The PO flow
+- **Date:** 2026-09-28 · **Status:** active
+- **Decision:** Besides the direct flow (way-of-working §1), the owner can start a PO session that runs up
+  to 2 team leads (each with up to 3 workers). In that flow the PO answers brainstorm questions and approves
+  specs and plans in the owner's place, escalating below 90% certainty and always for a fixed list; the owner
+  still merges.
+- **Why:** Several issues move forward in parallel while the owner only answers escalations and merges.
+- **Source:** [spec comment on #50](https://github.com/thomas3650/HA-NortecGo/issues/50#issuecomment-5877369877), §§2–8

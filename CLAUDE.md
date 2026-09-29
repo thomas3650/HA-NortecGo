@@ -14,7 +14,7 @@ Assistant. It talks only to the public API of `pynortecgo`, an async client that
 - `scripts/` — dev scripts, including `scripts/develop` and `scripts/smoke`
 - `.devcontainer/` — optional, for manual testing only; never the gate environment
 - `.claude/` — project settings, the subagent guard hook, agents (`implementer`, `task-reviewer`,
-  `full-reviewer`)
+  `full-reviewer`, and the session agents `po` and `team-lead`)
 - `.github/` — CI, release workflow, Dependabot, issue and PR templates
 
 ## Commands
@@ -27,6 +27,8 @@ uv run ruff check && uv run ruff format --check && uv run mypy
 uv run pre-commit install        # once per clone: local hooks incl. no-commit and no-push to main
 scripts/develop                  # run Home Assistant locally with the integration (config/ is gitignored); or F5 in VS Code
 scripts/smoke                    # start HA with the dev config and fail on integration errors; before a PR is ready
+scripts/po                       # PO mode: the PO runs the backlog through team leads (docs/way-of-working.md §8)
+scripts/team-lead                # team lead mode, for hard problems; never while a PO runs
 ```
 
 ## Way of working

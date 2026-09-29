@@ -53,8 +53,9 @@ syntax error before 3.14). A repo Python script run by a workflow goes through `
 
 ## 2026-09-29: GitHub Actions behaviour for release workflows
 
-- A tag or release made with `GITHUB_TOKEN` starts no other workflow (`workflow_dispatch` and
-  `workflow_call` are the exceptions).
+- A tag or release made with `GITHUB_TOKEN` starts no other workflow, except `workflow_dispatch` and
+  `repository_dispatch`; a reusable workflow called with `workflow_call` runs inside the caller's run, so
+  it isn't affected.
 - In a `workflow_run` run, `GITHUB_SHA` and `github.ref` are the default branch's head; the tested commit
   is `github.event.workflow_run.head_sha`.
 - A called (reusable) workflow sees the caller's `github` context, so `github.ref_name` there is the
@@ -62,6 +63,8 @@ syntax error before 3.14). A repo Python script run by a workflow goes through `
 - A concurrency group keeps one running and one pending run; a new run cancels the pending one.
 - zizmor's `self-repository` fix (`uses: $/...`) is rejected by actionlint; keep `./` and ignore the finding
   inline.
+- A `run:` step without `shell:` runs `bash -e` without `pipefail`; `shell: bash` (or
+  `defaults.run.shell: bash`) adds `-o pipefail`.
 
 The detail is in the [auto-release spec](superpowers/specs/2026-09-29-auto-release-design.md), *Facts used*.
 Found in #64.

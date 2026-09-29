@@ -5,6 +5,10 @@ on:
 
 permissions: {}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   version-check:
     if: github.event.pull_request.draft == false

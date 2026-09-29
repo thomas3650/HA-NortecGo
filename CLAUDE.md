@@ -11,11 +11,12 @@ Assistant. It talks only to the public API of `pynortecgo`, an async client that
 - `custom_components/nortec_go/` — the integration
 - `tests/` — tests against the integration, with `pynortecgo` mocked
 - `docs/` — the docs; the map is `docs/README.md`
-- `scripts/` — dev scripts, including `scripts/develop` and `scripts/smoke`
+- `scripts/` — dev scripts, including `scripts/develop` and `scripts/smoke`, and `release_check.py`, the
+  release rules the workflows run
 - `.devcontainer/` — optional, for manual testing only; never the gate environment
 - `.claude/` — project settings, the subagent guard hook, agents (`implementer`, `task-reviewer`,
   `full-reviewer`, and the session agents `po` and `team-lead`)
-- `.github/` — CI, release workflow, Dependabot, issue and PR templates
+- `.github/` — CI, release workflows, Dependabot, issue and PR templates
 
 ## Commands
 

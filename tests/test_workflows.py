@@ -130,3 +130,9 @@ def test_no_expressions_inside_run_blocks() -> None:
                 assert not re.search(r"\$\{\{", step.get("run", "")), (
                     f"{name}: {step.get('name', step['run'])}"
                 )
+
+
+def test_release_workflows_run_bash_with_pipefail() -> None:
+    """`shell: bash` makes run steps use -eo pipefail, so a failed git ls-remote in a pipe fails the step."""
+    for name in ("auto-release.yml", "release.yml", "version-check.yml"):
+        assert _load(name)["defaults"] == {"run": {"shell": "bash"}}, name

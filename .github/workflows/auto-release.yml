@@ -19,6 +19,10 @@ on:
 
 permissions: {}
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: auto-release-${{ github.event.workflow_run.event || 'dispatch' }}-${{ github.event.workflow_run.head_sha || inputs.sha }}
   cancel-in-progress: false

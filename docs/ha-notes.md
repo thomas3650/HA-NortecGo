@@ -37,7 +37,8 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   elsewhere than `config/`.
 - On macOS, `hass` started in the background of a non-interactive shell (`hass … &`) crashed during startup
   in the Bluetooth integration (CoreBluetooth via PyObjC). Run it in the foreground with a timer instead
-  (`scripts/smoke`).
+  (`scripts/smoke`). Started with Claude Code's Bash `run_in_background` (`scripts/develop`), it keeps
+  running, Bluetooth included; stop it with `pkill -f "hass -c config"`.
 
 ## Testing
 
@@ -57,6 +58,12 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - The test plugin fails a test that leaves an `async_call_later` timer scheduled, unless its `HassJob` has
   `cancel_on_shutdown=True`. Work that a timer starts as a background task needs
   `hass.async_block_till_done(wait_background_tasks=True)`; the default doesn't wait for background tasks.
+- A `Store` version bump needs a `Store` subclass that overrides `_async_migrate_func`; without it, loading
+  an older version raises `NotImplementedError`. The migrated data is saved straight back. `hass_storage`
+  loads through HA's real `Store` load, so the migration runs in tests too.
+- Setup reads the coordinator's data before it forwards the platforms, so a test that only looks after
+  setup can't tell a value set once in the entity's `__init__` from a property. To show a value is live,
+  change it in a read after setup.
 
 ## Coordinators and actions
 

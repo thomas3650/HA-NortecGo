@@ -37,3 +37,9 @@ A commit of a plan can fail once with "files were modified by this hook"; re-sta
 EV Smart Charging compares its schedule with its own remembered state (`auto_charging_state`), not with the
 charger switch's state. If the switch goes back on after an *off*, it doesn't send *off* again until its
 schedule changes, so a turn-off that fails silently isn't retried. Found while looking at #32.
+
+## 2026-09-28: Background Claude sessions
+
+`claude --bg` ignores agents defined inline with `--agents '<json>'` ("no agent named …"); an interactive
+session accepts them. Agent files in the checkout's `.claude/agents/` work for both. A `--bg` session starts
+in auto mode unless `--permission-mode` says otherwise. Found in the checks for #50.

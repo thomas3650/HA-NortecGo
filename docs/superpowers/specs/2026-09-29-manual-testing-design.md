@@ -30,7 +30,7 @@ Answered by the PO in the brainstorm (2026-09-29), unless marked otherwise.
 | Public results | Results posted on issues or PRs follow `way-of-working.md` §8 *Public text*; the guide links to it |
 | §8 pointer | One line in §8 step 3 points to the guide for what to look at; the guide points back to §8 for the check's rules. §1 step 10 is unchanged |
 | Changelog | None: nothing user-visible changes |
-| EV Smart Charging and automations | *Proposal, with the owner (PO question on #10).* See §3.3 |
+| EV Smart Charging and automations | *Owner, 2026-09-29 (via the PO).* EV Smart Charging's smart-charging switch stays off unless the owner gives an explicit OK for that session, and any automation that turns *Charge* on or off counts as a start or stop under hard rule 2 (§3.3) |
 | Reauth | *Proposal, with the owner (PO question on #10).* See §3.1 |
 
 Facts used, public-safe:
@@ -129,14 +129,12 @@ row:
 
 ### 3.3 EV Smart Charging (#8)
 
-*Proposal, with the owner (PO question on #10).*
-
 - Setting up EV Smart Charging with the entities in the user docs' *Use cases* table is not an action on
   the charger by itself, but once its charger control is set, EV Smart Charging turns *Charge* on and off by
   its schedule: each is a real start or stop (§2 item 1).
-- So, for a test run: set the charger control only with the owner's OK for that run, or keep EV Smart
-  Charging's smart-charging switch off. The same holds for any automation in `config/` that turns *Charge*
-  on or off: off unless the owner has OK'd the run.
+- So EV Smart Charging's smart-charging switch stays off unless the owner has given an explicit OK for
+  that session. Any automation that turns *Charge* on or off counts as a start or stop under hard rule 2:
+  it stays off unless the owner has given the same OK.
 - **Checks without charger actions:** EV Smart Charging accepts each entity, reads the price list
   (its own chart or attributes show today's and, after the day-ahead prices, tomorrow's slots), and its
   plan follows the prices.

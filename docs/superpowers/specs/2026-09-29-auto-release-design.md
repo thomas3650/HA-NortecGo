@@ -17,7 +17,7 @@ Date: 2026-09-29 · Branch: `process/auto-release` · Issue: #64
 
 ## Decisions
 
-Proposed by the team lead, backed by the PO, and escalated to the owner on issue #64 (2026-09-29).
+Proposed by the team lead and approved by the owner through the PO (issue #64, 2026-09-29).
 
 | Topic | Decision |
 |---|---|
@@ -27,7 +27,7 @@ Proposed by the team lead, backed by the PO, and escalated to the owner on issue
 | Older versions | The automation never back-fills on its own. A bump commit merged before this work is released by the owner's dispatch of the fallback (§2.3); `0.1.0` (`9441abd`) is released that way, as the first real use |
 | Repeats | A run for a commit whose tag already points at it and whose release exists does nothing. A tag of that name on another commit fails the run. No second release is ever created |
 | Fallback | `workflow_dispatch` on `auto-release.yml`, with a `sha` and a `dry_run` input (default `true`); the manual tag push stays as the last fallback |
-| PR check | A new `version-check.yml` on `pull_request` (never `pull_request_target`), skipped for drafts. It isn't a required check; making it one is the owner's GitHub setting (§6) |
+| PR check | A new `version-check.yml` on `pull_request` (never `pull_request_target`), skipped for drafts. The owner makes it a required check after the merge, as a GitHub setting (§6) |
 | Lint | `actionlint` and `zizmor` join the gates, as `uv` dev dependencies, a pre-commit hook and a step in `lint.yml` |
 | Decision log | D39, which supersedes the manual tag in D10: D10's status becomes `active; the manual tag superseded by D39` |
 | Process | Full path (spec, plan, `full-reviewer`); no D25 ruling |
@@ -183,7 +183,7 @@ and every branch unit tested (§9).
   that HACS offers it.
 - **Fallbacks:** the `workflow_dispatch` run (dry run first), also for a bump commit merged before this
   work; then the manual tag, for a commit the rule doesn't count as a bump.
-- **After this work merges (once):** dispatch `auto-release.yml` with `sha=9441abd`, a dry run and then a
+- **After this work merges (once):** add `version-check` to `main`'s required status checks (§6); then dispatch `auto-release.yml` with `sha=9441abd`, a dry run and then a
   real one, to release `0.1.0` (§2.3); then check the tag, the release and HACS.
 - **What `release.yml` checks:** add the "no second release" rule and the two ways it starts.
 - **Required checks:** the list in `auto-release.yml`'s trigger and in `REQUIRED_CHECKS` must follow the
@@ -200,8 +200,11 @@ and every branch unit tested (§9).
   - version unchanged: passes, nothing required;
   - version changed: it must be higher than the base's, and the changelog must have a non-empty section for
     it; otherwise it fails and says which.
-- **Required check:** not made one here. The owner may add `version-check` to `main`'s required checks
-  after the merge; it is a GitHub setting (way of working §6). A check skipped for a draft counts as passed.
+- **Check name:** the job's id is `version-check` and it has no `name:`, so its check is `version-check`.
+- **Required check:** after the merge, the owner adds `version-check` to `main`'s required status checks;
+  it is a GitHub setting, so it isn't done here (way of working §6). A check skipped for a draft counts as
+  passed. It runs only on `pull_request`, so it doesn't join `REQUIRED_CHECKS` or `auto-release.yml`'s
+  trigger (those are the checks that run on a push to `main`).
 
 ## 7. Workflow linting
 

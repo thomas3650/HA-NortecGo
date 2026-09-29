@@ -106,6 +106,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self.charger_id = entry.unique_id
         self.has_car = True
         self.known_prices: KnownSlots = {}
+        self.price_currency: str | None = None
         self._car_checked = False
         self._car_failing = False
         self._vehicle: Vehicle | None = None
@@ -261,15 +262,15 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             registry.async_update_device(device.id, name=name)
 
     async def async_load_prices(self) -> None:
-        """Load the stored slots, without yesterday's."""
+        """Load the stored slots, without yesterday's, and the prices' currency."""
+        stored = await self._price_store.async_load()
         self.known_prices = prune(
-            await self._price_store.async_load(),
-            dt_util.utcnow(),
-            dt_util.get_default_time_zone(),
+            stored.slots, dt_util.utcnow(), dt_util.get_default_time_zone()
         )
+        self.price_currency = stored.currency
 
     async def async_read_prices(self, *, during_setup: bool = False) -> None:
-        """Read the forecast, merge, prune and save it; keep the known slots on failure (§4.3)."""
+        """Read the forecast, merge, prune and save it with its currency; keep the known slots on failure (§4.3)."""
         try:
             forecast = await self.client.get_price_forecast()
         except AuthError as err:
@@ -287,7 +288,9 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             dt_util.utcnow(),
             dt_util.get_default_time_zone(),
         )
-        await self._price_store.async_save(self.known_prices)
+        if forecast.currency is not None:
+            self.price_currency = forecast.currency
+        await self._price_store.async_save(self.known_prices, self.price_currency)
         self.async_update_listeners()
 
     @callback

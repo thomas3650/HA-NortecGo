@@ -64,6 +64,8 @@ def make_charger(
         charge_state_raw=None if charge_state is None else charge_state.value,
         charge_id=None if charge_state is None else "fake-charge-id",
         can_stop=None if charge_state is None else True,
+        charge_kwh=None,
+        charge_kw=None,
     )
 
 
@@ -94,14 +96,23 @@ def make_vehicle(
     )
 
 
-def make_forecast(start: datetime, prices: Sequence[float]) -> PriceForecast:
-    """Return 15-minute slots from start, one per price."""
+def make_forecast(
+    start: datetime, prices: Sequence[float], currency: str | None = "DKK"
+) -> PriceForecast:
+    """Return 15-minute slots from start, one per total price; the spot price is 0.5 less."""
     step = timedelta(minutes=15)
     return PriceForecast(
         area_id=99,
         area_name="Test area",
+        currency=currency,
         slots=[
-            PriceSlot(start=start + i * step, end=start + (i + 1) * step, price=price)
+            PriceSlot(
+                start=start + i * step,
+                end=start + (i + 1) * step,
+                price=price,
+                spot_price=price - 0.5,
+                tariff_estimated=False,
+            )
             for i, price in enumerate(prices)
         ],
     )

@@ -71,7 +71,7 @@ The integration adds two devices: the charger, and the car when the account has 
 
 | Entity | Type | Description |
 |---|---|---|
-| Current price | Sensor | The spot price for the current 15 minutes, per kWh, incl. VAT. Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
+| Current price | Sensor | The total price (spot, fees and grid tariff) for the current 15 minutes, per kWh, incl. VAT, in the currency of the price data (Home Assistant's currency until price data has named one). Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
 | Cable connected | Binary sensor | On when a cable is connected to the charger |
 | Charging | Binary sensor | On while the car draws power |
 | Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it; off right after a stop until the charger shows it |
@@ -197,9 +197,10 @@ entity reads the charger, and the car if it wasn't read in the last few minutes,
 - One charger per account. An account with no charger or with more than one can't be added.
 - Starting a charge needs exactly one car and one saved card (see *Prerequisites*).
 - Unofficial: the integration uses the same private API as the app, which can change without notice.
-- The price is the spot price including VAT, without fees or grid tariff, so it isn't what you pay in
-  total.
-- The price is assumed to be in the currency set in Home Assistant. This has been checked only for DKK.
+- The grid tariff is estimated for the hours beyond those the charger prices itself. The estimates improve
+  as the integration keeps running, and start over after a Home Assistant restart or a reload of the
+  integration.
+- The prices have been checked only for the DK2 price area (DKK).
 - Tomorrow's prices are a forecast until the day-ahead prices come out, around 13:00; the 15:05 read
   replaces them.
 - Car data can be hours old (see *Last seen*), so *Connected to charger* can turn on late.

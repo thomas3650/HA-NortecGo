@@ -89,6 +89,7 @@ def charge_is_open(charger: Charger) -> bool:
     return charger.charge_state is not None or charger.state in (
         ChargerState.BUSY,
         ChargerState.BUSY_CHARGING,
+        ChargerState.BUSY_NON_CHARGING,
     )
 
 

@@ -83,16 +83,19 @@ class NortecGoPriceSensor(NortecGoChargerEntity, SensorEntity):
     _unrecorded_attributes = frozenset({"prices_today", "prices_tomorrow"})
 
     def __init__(self, coordinator: NortecGoCoordinator) -> None:
-        """Set the unit from Home Assistant's currency."""
+        """Name the sensor Current price."""
         super().__init__(coordinator, "current_price")
-        self._attr_native_unit_of_measurement = (
-            f"{coordinator.hass.config.currency}/kWh"
-        )
 
     @property
     def available(self) -> bool:
         """Always available, so the lists are always there (§4.4)."""
         return True
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        """The forecast's currency per kWh, or Home Assistant's while none is known (D34)."""
+        currency = self.coordinator.price_currency or self.hass.config.currency
+        return f"{currency}/kWh"
 
     @property
     def native_value(self) -> float | None:

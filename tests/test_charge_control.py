@@ -68,6 +68,9 @@ CHARGING = make_charger(
     charge_state=ChargeState.CHARGING,
     state=ChargerState.BUSY_CHARGING,
 )
+BUSY_NO_CHARGE_STATE = make_charger(
+    is_connected=True, state=ChargerState.BUSY_NON_CHARGING
+)
 STORE_KEY = "nortec_go.{}.charge_control"
 
 
@@ -98,12 +101,13 @@ async def _fire(
         (CONNECTED, False),
         (make_charger(is_connected=True, state=ChargerState.BUSY), True),
         (make_charger(is_connected=True, state=ChargerState.BUSY_CHARGING), True),
+        (make_charger(is_connected=True, state=ChargerState.BUSY_NON_CHARGING), True),
         (make_charger(is_connected=True, charge_state=ChargeState.PAUSED), True),
         (make_charger(is_connected=True, state=ChargerState.BUSY_NON_RELEASED), False),
     ],
 )
 def test_charge_is_open(charger: Any, expected: bool) -> None:
-    """A charge is open on a charge state, BUSY or BUSY_CHARGING."""
+    """A charge is open on a charge state, BUSY, BUSY_CHARGING or BUSY_NON_CHARGING."""
     assert charge_is_open(charger) is expected
 
 
@@ -150,6 +154,20 @@ def test_is_charge_on(
             make_charger(is_connected=True, charge_state=ChargeState.PAUSED),
             IDLE,
             "paused",
+        ),
+        (
+            make_charger(
+                is_connected=True,
+                state=ChargerState.BUSY_NON_CHARGING,
+                charge_state=ChargeState.PAUSED,
+            ),
+            IDLE,
+            "paused",
+        ),
+        (
+            make_charger(is_connected=True, state=ChargerState.BUSY_NON_CHARGING),
+            IDLE,
+            "idle",
         ),
         (
             make_charger(is_connected=True, charge_state=ChargeState.STOPPING),
@@ -258,6 +276,15 @@ async def test_start_noop_while_charge_open(
 ) -> None:
     """A charge open in the last read: no API call."""
     control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_start()
+    client.start_charge.assert_not_awaited()
+
+
+async def test_start_noop_while_busy_non_charging(
+    control: ChargeControl, client: AsyncMock
+) -> None:
+    """BUSY_NON_CHARGING without a charge state is a charge in progress: no API call."""
+    control.on_charger_read(BUSY_NO_CHARGE_STATE, control.start_attempts)
     await control.async_start()
     client.start_charge.assert_not_awaited()
 
@@ -427,6 +454,7 @@ async def test_unknown_charger_refuses(
     "charger",
     [
         CHARGING,
+        BUSY_NO_CHARGE_STATE,
         make_charger(is_connected=True, state=ChargerState.BUSY_NON_RELEASED),
         make_charger(is_connected=False),
     ],
@@ -434,7 +462,7 @@ async def test_unknown_charger_refuses(
 async def test_pending_start_ends_without_block(
     control: ChargeControl, charger: Any
 ) -> None:
-    """A charge seen, BUSY_NON_RELEASED or the cable unplugged ends the pending start."""
+    """A charge seen (also BUSY_NON_CHARGING without a charge state), BUSY_NON_RELEASED or the cable unplugged ends the pending start."""
     await control.async_start()
     control.on_charger_read(charger, control.start_attempts)
     assert control.state == IDLE
@@ -682,7 +710,7 @@ async def test_stale_read_changes_nothing(
 
 @pytest.mark.parametrize(
     "charger",
-    [make_charger(is_connected=False), CHARGING],
+    [make_charger(is_connected=False), CHARGING, BUSY_NO_CHARGE_STATE],
 )
 async def test_block_cleared_by_a_fresh_read(
     hass: HomeAssistant,
@@ -691,7 +719,7 @@ async def test_block_cleared_by_a_fresh_read(
     client: AsyncMock,
     charger: Any,
 ) -> None:
-    """The cable unplugged or a charge open clears the block and the issue."""
+    """The cable unplugged or a charge open (also BUSY_NON_CHARGING without a charge state) clears the block and the issue."""
     client.start_charge.side_effect = ChargeStartError(ChargeStartStep.CONFIRM, True)
     with pytest.raises(HomeAssistantError):
         await control.async_start()
@@ -723,15 +751,16 @@ async def test_block_cleared_by_release_after_the_block(
     assert not control.state.blocked
 
 
+@pytest.mark.parametrize("charger", [CHARGING, BUSY_NO_CHARGE_STATE])
 async def test_stop_during_pending_start(
-    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock, charger: Any
 ) -> None:
-    """Stop asked, no API call; the charge is stopped once when a read sees it."""
+    """Stop asked, no API call; the charge (also BUSY_NON_CHARGING without a charge state) is stopped once when a read sees it."""
     await control.async_start()
     await control.async_stop()
     client.stop_charge.assert_not_awaited()
     assert control.state == STOP_ASKED
-    control.on_charger_read(CHARGING, control.start_attempts)
+    control.on_charger_read(charger, control.start_attempts)
     await hass.async_block_till_done(wait_background_tasks=True)
     client.stop_charge.assert_awaited_once()
     assert control.state == STOP_PENDING

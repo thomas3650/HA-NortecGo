@@ -28,7 +28,7 @@ SLOT_LENGTH: Final = timedelta(minutes=15)
 PAST_SLOT_PRICE: Final = 0.0
 MISSING_SLOT_PRICE: Final = 10.0
 
-PRICE_STORE_VERSION: Final = 1
+PRICE_STORE_VERSION: Final = 2
 PRICE_STORE_KEY: Final = "nortec_go.{entry_id}.prices"
 
 # The charge switch's start guard (D26).

@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-29
+
 ### Fixed
 
 - The release tooling's bump step reports a missing file as an error; no change to the integration.

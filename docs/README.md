@@ -10,7 +10,7 @@ The root [`README.md`](../README.md) is the public intro; everything else lives 
 | [`decisions.md`](decisions.md) | Lasting decisions, newest last | Why something is the way it is |
 | [`releasing.md`](releasing.md) | The bump PR, tagging, what `release.yml` checks | Cutting a release |
 | [`notes.md`](notes.md) | Small learned facts that fit no other doc | Looking for a fact that isn't elsewhere |
-| [`ha-notes.md`](ha-notes.md) | Learned Home Assistant and HACS facts: loading, config flows, tooling, testing, coordinators and actions, devices and entities | Building or testing the integration |
+| [`ha-notes.md`](ha-notes.md) | Learned Home Assistant and HACS facts: loading, config flows, tooling, testing, coordinators and actions, devices and entities, diagnostics | Building or testing the integration |
 | [`manual-testing.md`](manual-testing.md) | Testing by hand against the owner's real account: running it, where real data lives, who may do what, checklists per feature | Testing the integration live |
 | [`user/nortec_go.md`](user/nortec_go.md) | The user-facing integration docs | Setting up or using the integration |
 | [`superpowers/specs/`](superpowers/specs/) | Design specs, one per change | Why a change is shaped this way |

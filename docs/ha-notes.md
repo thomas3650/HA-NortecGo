@@ -77,6 +77,11 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   from the translations without its final period: HA strips it. A test that compares it with
   `strings.json` drops the period. The texts come from the translations HA has loaded, so set up the
   integration before building such an exception in a test.
+- `hass_client` signs its requests with an access token made at fixture setup, valid for 30 minutes with
+  10 s leeway. A test that moves the clock back before that, or more than 30 minutes forward, gets a 401. Make
+  a fresh token after the last clock move: create a refresh token for `hass_admin_user` with `CLIENT_ID`
+  (from `pytest_homeassistant_custom_component.common`), make an access token from it with
+  `hass.auth.async_create_access_token`, and pass that to `hass_client`.
 
 ## Coordinators and actions
 
@@ -103,6 +108,8 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   setup that fails or retries with any of the three stores the translation as the entry's
   `error_reason_translation_*`, which the frontend shows translated. So a translated `UpdateFailed` or
   `ConfigEntryError` also translates the setup error.
+- `DataUpdateCoordinator.last_exception` isn't cleared by a successful read. Show it as the current error
+  only while `last_update_success` is false.
 
 ## Devices and entities
 
@@ -128,6 +135,16 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   (unknown, unavailable) and start a new cycle only when the value drops below 90% of the previous one; a
   drop to 90% or more is logged as a dip, not a reset. So a per-charge counter may go unknown between
   charges, but a new cycle whose first value is at least 90% of the last one is missed.
+
+## Diagnostics
+
+- HA's download wraps the integration's data with its own system info (the time zone among it), the
+  manifest, setup times and the integration's repair issues. A non-persistent repair issue shows only its ID,
+  domain, creation time and flags; a persistent one also shows its placeholders and data.
+- The download is served for an entry in any state, so a diagnostics platform handles an entry that isn't
+  loaded, which has no `runtime_data`.
+- `async_redact_data` leaves `None` and empty strings as they are, and redacts every other value of a listed
+  key, in nested dicts too.
 
 ## HACS
 

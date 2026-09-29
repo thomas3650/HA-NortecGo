@@ -10,8 +10,11 @@ action is real. The rules that apply are [hard rules 2, 3, 4, 5, 6 and 9](../CLA
 `CLAUDE.md`; they aren't repeated here.
 
 **Turning *Charge* on or off, by hand, from EV Smart Charging or from an automation, is a real start or
-stop, and needs the owner's explicit OK first, each time.** That includes a turn-on you expect to be
-refused: once the integration's own checks pass, it sends a real start request.
+stop, and needs the owner's explicit OK first. One OK covers one charging session, that is one charge:
+starting it and stopping it. A new charge needs a new OK. A refused start uses its OK; trying again needs
+a new one.** That includes a turn-on you expect to be refused: it counts as a start, because once the
+integration's own checks pass, it sends a real start request. The rule is
+[D36](decisions.md#d36-one-ok-per-charge).
 
 ## Running Home Assistant
 
@@ -128,13 +131,15 @@ Reads and the device page:
 - Setting it up in `config/`, or creating or turning on an automation there that turns *Charge* on or off,
   is owner only and counts as a start or stop (see *Rules*), so nobody adds one to the dev config by
   accident. If one is ever set up there, its smart-charging switch and any such automation stay off unless
-  the owner has given an explicit OK for that session, and the owner turns them off again when the session
-  ends: `config/` keeps them for every later start of Home Assistant.
+  the owner has given the OK for a charge (see *Rules*), and the owner turns them off again when that
+  charge ends: `config/` keeps them for every later start of Home Assistant.
 - The *Current price* attributes that EV Smart Charging reads are checked under *Entities*, without it.
 
 ### Start and stop (#9)
 
-Every item here is **owner only, with explicit OK for that session**. Agents never do them.
+Every item here is **owner only, and needs the owner's explicit OK first. One OK covers one charging
+session, that is one charge: starting it and stopping it. A new charge needs a new OK. A refused start uses
+its OK; trying again needs a new one.** Agents never do them.
 
 - [ ] Before: the cable is connected, and *Charge status* is not *Waiting for replug* or *Start blocked*.
 - [ ] Start: turn *Charge* on; the switch and *Charge status* follow
@@ -142,6 +147,6 @@ Every item here is **owner only, with explicit OK for that session**. Agents nev
 - [ ] Stop: turn *Charge* off; the same section describes a stop.
 - [ ] After a stop: the replug rule in the same section.
 - [ ] A start that should be refused (for example with the cable unplugged) may still be a real start
-  request, so it needs the same OK.
+  request: it counts as a start and uses its OK; trying again needs a new one.
 - [ ] The start block and its repair are checked only if one happens; there is no way here to cause a
   failed start.

@@ -302,3 +302,12 @@ superseded. How to add one:
   still merges.
 - **Why:** Several issues move forward in parallel while the owner only answers escalations and merges.
 - **Source:** [spec comment on #50](https://github.com/thomas3650/HA-NortecGo/issues/50#issuecomment-5877369877), §§2–8
+
+### D36: One OK per charge
+- **Date:** 2026-09-29 · **Status:** active
+- **Decision:** For hard rule 2, one explicit OK from the owner covers one charge, its start and its stop; a
+  new charge, or a new try after a refused start, needs a new OK. A turn-on expected to be refused counts as
+  a start.
+- **Why:** The owner's ruling, so that what one OK covers is clear in manual testing.
+- **Source:** [manual testing spec](superpowers/specs/2026-09-29-manual-testing-design.md), §2.1 and
+  §3.4; the owner's ruling on PR #57

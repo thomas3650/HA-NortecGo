@@ -32,7 +32,8 @@ Answered by the PO in the brainstorm (2026-09-29), unless marked otherwise.
 | Expected behaviour | Each checklist item says what to check and links to the section of `docs/user/nortec_go.md` that describes it. The guide restates no values, units, sequences or timings, so it stays right when a feature changes (for example the price sensor after #51). States are named only as preconditions, spelled as in `strings.json` |
 | Owner-only steps | Marked in the guide (§2.5) |
 | What agents may do in the UI | Navigate and read, and operate no control (§2.5). *Controller*, from the review: the narrowest reading of §8 step 3 |
-| EV Smart Charging | *Owner, 2026-09-29 (via the PO):* it isn't set up or tested in `config/`; the owner tests it in production, outside this guide (§3.3). Setting it up in `config/`, or an automation there that drives *Charge*, is owner only and counts under hard rule 2. If one is ever set up there, the owner's earlier ruling stands: its smart-charging switch stays off unless the owner gives an explicit OK for that session (and is turned off again at the session's end), and any automation that turns *Charge* on or off counts as a start or stop. The charger-control question is moot |
+| EV Smart Charging | *Owner, 2026-09-29 (via the PO):* it isn't set up or tested in `config/`; the owner tests it in production, outside this guide (§3.3). Setting it up in `config/`, or an automation there that drives *Charge*, is owner only and counts under hard rule 2. If one is ever set up there, the owner's earlier ruling stands: its smart-charging switch stays off unless the owner gives the OK for a charge (and is turned off again when that charge ends; D36), and any automation that turns *Charge* on or off counts as a start or stop. The charger-control question is moot |
+| One OK per charge | *Owner, 2026-09-29 (via the PO), during the branch review:* one explicit OK covers one charge, its start and its stop; a new charge needs a new OK; a turn-on expected to be refused counts as a start; a refused start uses its OK, and trying again needs a new one (D36, §2.1, §3.4) |
 | Reauth | *Owner, 2026-09-29 (via the PO):* not tested manually, no second account; one line says the automated tests cover it. Normal testing reuses the stored session |
 | Public results | Results posted on issues or PRs follow `way-of-working.md` §8 *Public text*; the guide links to it |
 | §8 pointer | One line in §8 step 3 points to the guide for what to look at; the guide points back to §8 for the check's rules. §1 step 10 is unchanged |
@@ -99,7 +100,9 @@ linked, not restated: CLAUDE.md hard rules 2 (start and stop), 3 and 4 (nothing 
 real instance committed), 5 (logs and diagnostics), 6 (no retried start; reauth instead of login) and 9
 (subagents). Stated in the guide itself, since it is the point of #10: **turning *Charge* on or off, by
 hand, from EV Smart Charging or from an automation, is a real start or stop and needs the owner's explicit
-OK first, each time**, including a turn-on expected to be refused.
+OK first. One OK covers one charging session, that is one charge: starting it and stopping it. A new charge
+needs a new OK. A refused start uses its OK; trying again needs a new one**, and a turn-on expected to be
+refused counts as a start (D36).
 
 ### 2.2 Running Home Assistant
 
@@ -189,22 +192,22 @@ entities by name (from `strings.json`), each against its table row:
 - Setting it up in `config/`, or creating or turning on an automation there that turns *Charge* on or off,
   is **owner** only (§2.5) and counts under hard rule 2 (§2.1), so nobody adds one to the dev config by
   accident. If one is ever set up there, the owner's earlier rule applies: its smart-charging switch (and
-  any such automation) stays off unless the owner has given an explicit OK for that session, and the owner
-  turns it off again at the end of the session, since `config/` keeps it for every later start of HA.
+  any such automation) stays off unless the owner has given the OK for a charge (D36), and the owner turns it
+  off again when that charge ends, since `config/` keeps it for every later start of HA.
 - The *Current price* attributes that EV Smart Charging reads are checked in §3.2, without EV Smart
   Charging.
 
 ### 3.4 Start and stop (#9, and the later start and stop deadlines)
 
-Every item is **owner, with explicit OK for that session**. Agents never do them, and the guide never tells
-an agent to.
+Every item is **owner only, and needs the owner's explicit OK first, one OK per charge as in §2.1 (D36)**.
+Agents never do them, and the guide never tells an agent to.
 
 - Before: the cable is connected; *Charge status* is not *Waiting for replug* or *Start blocked*.
 - Start: turn *Charge* on; the switch and *Charge status* follow the user docs' *Starting a charge*.
 - Stop: turn *Charge* off; the same section's description of a stop.
 - The replug rule after a stop (the same section).
-- A start refused by design (for example with the cable unplugged) may still be a start request (§2.1), so
-  it needs the same OK.
+- A start refused by design (for example with the cable unplugged) may still be a start request (§2.1): it
+  counts as a start and uses its OK; trying again needs a new one (D36).
 - The start block and its repair are checked only if one happens; the guide gives no way to cause a failed
   start.
 
@@ -253,7 +256,7 @@ entries under *Troubleshooting* already give (sign-in, the charger, the rate lim
 ## 5. The pointer in `way-of-working.md`
 
 §8 *From branch ready to PR ready*, step 3, gains one sentence: what to look at, and what an agent may
-press, is in [`manual-testing.md`](manual-testing.md). Nothing else in `way-of-working.md` changes.
+press, is in `manual-testing.md`. Nothing else in `way-of-working.md` changes.
 
 ## 6. Checks
 
@@ -274,4 +277,6 @@ and the branch review re-checks:
 
 ## 7. Decision log
 
-None: the guide applies existing rules, and the manifest's `loggers` is the standard HA way.
+D36, *One OK per charge* (the owner's ruling during the branch review, 2026-09-29): what hard rule 2's
+explicit OK covers. Otherwise none: the guide applies existing rules, and the manifest's `loggers` is the
+standard HA way.

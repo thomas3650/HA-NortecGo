@@ -608,7 +608,7 @@ def test_cli_tag_commit(
 def test_tag_commit_skips_other_lines() -> None:
     """Lines that aren't a SHA and a ref are skipped."""
     assert (
-        tag_commit("warning: something\n" + LIGHT, "v0.1.0")
+        tag_commit("warning: something odd\n" + LIGHT, "v0.1.0")
         == "1111111111111111111111111111111111111111"
     )
 

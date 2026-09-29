@@ -32,8 +32,8 @@
 
 ## Review Focus
 
-1. An agent following the guide during the PO's visual check must find no instruction that leads it to operate a control (the *Charge* toggle, *Refresh*, an EV Smart Charging control, a repair's **Submit**, the entry's ⋮ menu) — Task 1, Step 4 check (a).
-2. EV Smart Charging or an automation left on in `config/` would start or stop real charges on the next `scripts/smoke` or visual check; the guide must say the owner's session ends with them off — Task 1, Step 4 check (b).
+1. An agent following the guide during the PO's visual check must find no instruction that leads it to operate a control (the *Charge* toggle, *Refresh*, a repair's **Submit**, the entry's ⋮ menu) — Task 1, Step 4 check (a).
+2. An EV Smart Charging or an automation on *Charge* added to `config/` would start or stop real charges on the next `scripts/smoke` or visual check; the guide must say `config/` has none, adding one is owner only, and the owner's session rule if one is ever added — Task 1, Step 4 check (b).
 3. The price item must still be right after #51 (total price, the forecast's currency): no unit, currency or price kind in the guide — Task 1, Step 4 check (c).
 4. A section link from the guide to *Debug logging* or *Reporting a problem* must resolve once Task 2 lands — Task 1 re-check when held (see *Waves*).
 5. The user docs' logging text must hold for `pynortecgo` 0.2.0 and 0.5.0 alike: it claims only "no tokens or passwords", and names no endpoints and quotes no lines — Task 2, Step 6 check.
@@ -89,11 +89,11 @@ Title `# Manual testing`, then one intro line: how to test the integration by ha
 - `config/` is shared by every branch: data a newer branch stored can break an older one. If a branch fails to load after a switch, suspect this first and tell the owner (fixing it means touching `config/`).
 - After each `uv sync`, the first start is slower: Home Assistant reinstalls its runtime packages.
 - `--debug` in `scripts/develop` turns on asyncio debug mode, not debug logging (link `ha-notes.md#tooling`). For debug logs, see [Debug logging](user/nortec_go.md#debug-logging).
-- EV Smart Charging and automations in `config/` run on every start of Home Assistant, `scripts/smoke` and the PO's visual check included (see *EV Smart Charging* below).
+- `config/` has no EV Smart Charging and no automation that turns *Charge* on or off, and stays that way unless the owner adds one: anything there runs on every start of Home Assistant, `scripts/smoke` and the PO's visual check included (see *EV Smart Charging* below).
 
 `## Who does what`
 - **Owner only** (a list): the config flow and anything with credentials; setting up EV Smart Charging, and creating or turning on an automation that turns *Charge* on or off; acting on any repair; the entry's ⋮ menu (reload, delete, disable); anything that calls an action on the charger; everything under *Start and stop*.
-- **Agents** (the PO's visual check): navigate and read, and operate no control. Not the *Charge* row or its toggle anywhere (read its state without opening it), not *Refresh*, not any EV Smart Charging control, not **Submit** in a repair, not the entry's ⋮ menu. The rules of the check itself: `way-of-working.md` §8, *From branch ready to PR ready*, step 3 (link `way-of-working.md#from-branch-ready-to-pr-ready`).
+- **Agents** (the PO's visual check): navigate and read, and operate no control. Not the *Charge* row or its toggle anywhere (read its state without opening it), not *Refresh*, not **Submit** in a repair, not the entry's ⋮ menu. The rules of the check itself: `way-of-working.md` §8, *From branch ready to PR ready*, step 3 (link `way-of-working.md#from-branch-ready-to-pr-ready`).
 - To check for errors from the integration, agents use `scripts/smoke`'s output or Home Assistant's log page (**Settings** > **System** > **Logs**), never the log file in `config/`.
 
 `## Checklists`
@@ -114,14 +114,10 @@ One intro line: each item says what to look at; the linked section of the user d
 - [ ] The device page: both devices, their entities, the diagnostic entities in the diagnostic group.
 
 `### EV Smart Charging (#8)`
-- Setting it up with the entities in [Use cases](user/nortec_go.md#use-cases) is owner only. Once its charger control is set, it turns *Charge* on and off by its schedule, and each of those is a real start or stop (see *Rules*).
-- Its smart-charging switch stays off unless the owner has given an explicit OK for that session. An automation that turns *Charge* on or off counts as a start or stop too, and stays off unless the owner has given the same OK. Don't assume the switch is EV Smart Charging's only way to drive *Charge*.
-- **The session ends** with the owner turning them off again: `config/` keeps them, and every later start of Home Assistant (`scripts/develop`, `scripts/smoke`, the PO's visual check) relies on them being off.
-- [ ] **Owner** While setting it up, with them off: EV Smart Charging accepts each entity.
-- [ ] With them off: EV Smart Charging reads the price list, and its plan follows the prices.
-- [ ] **Owner, with explicit OK for that session:** a planned charge starts and stops as planned, and the notes in [Use cases](user/nortec_go.md#use-cases) hold.
-
-(Controller note, not for the guide: if the owner's pending answer on the charger control, spec *Decisions*, changes this subsection, the controller gives the new text in the dispatch; it replaces this one.)
+No checklist; three short points:
+- EV Smart Charging isn't set up in `config/` and isn't tested there: the owner tests it in the owner's own production Home Assistant, outside this guide.
+- Setting it up in `config/`, or creating or turning on an automation there that turns *Charge* on or off, is owner only and counts as a start or stop (see *Rules*), so nobody adds one to the dev config by accident. If one is ever set up there, its smart-charging switch and any such automation stay off unless the owner has given an explicit OK for that session, and the owner turns them off again when the session ends: `config/` keeps them for every later start of Home Assistant.
+- The *Current price* attributes that EV Smart Charging reads are checked under *Entities*, without it.
 
 `### Start and stop (#9)`
 - One line: every item here is **owner only, with explicit OK for that session**. Agents never do them.
@@ -144,7 +140,7 @@ In `docs/way-of-working.md` §8 *From branch ready to PR ready*, step 3, after "
 
 - [ ] **Step 4: Check**
 
-(a) Read the guide as the PO doing a visual check: no instruction leads an agent to operate any control. (b) *EV Smart Charging* says the session ends with them off, and *Pitfalls* says they run on every start. (c) No unit, currency, price kind, timing or state sequence is restated; the only *Charge status* states named are *Waiting for replug* and *Start blocked*, spelled as in `strings.json` (`not_released`, `start_blocked`). (d) Every entity name matches `strings.json`. (e) Every relative link resolves to an existing file and heading (list them with `grep -on '](\([^)]*\))' docs/manual-testing.md` and check each heading's anchor against the target file's headings), except `#debug-logging` and `#reporting-a-problem`, which Task 2 adds. (f) The leak check from *Global Constraints*, over `docs/README.md docs/way-of-working.md` and `docs/manual-testing.md`: no output. (g) `uv run pre-commit run --files docs/manual-testing.md docs/README.md docs/way-of-working.md`: all pass.
+(a) Read the guide as the PO doing a visual check: no instruction leads an agent to operate any control. (b) *EV Smart Charging* says it isn't set up or tested in `config/`, that adding it or an automation on *Charge* there is owner only, and the session rule if one is ever set up; *Pitfalls* says anything in `config/` runs on every start. (c) No unit, currency, price kind, timing or state sequence is restated; the only *Charge status* states named are *Waiting for replug* and *Start blocked*, spelled as in `strings.json` (`not_released`, `start_blocked`). (d) Every entity name matches `strings.json`. (e) Every relative link resolves to an existing file and heading (list them with `grep -on '](\([^)]*\))' docs/manual-testing.md` and check each heading's anchor against the target file's headings), except `#debug-logging` and `#reporting-a-problem`, which Task 2 adds. (f) The leak check from *Global Constraints*, over `docs/README.md docs/way-of-working.md` and `docs/manual-testing.md`: no output. (g) `uv run pre-commit run --files docs/manual-testing.md docs/README.md docs/way-of-working.md`: all pass.
 
 - [ ] **Step 5: Commit**
 

@@ -101,6 +101,8 @@ Charger:
 - [ ] *Charging*.
 - [ ] *Charge*: its state only.
 - [ ] *Charge status*.
+- [ ] *Energy this charge*.
+- [ ] *Charging power*.
 - [ ] *Refresh*: present.
 - [ ] *Last read*.
 

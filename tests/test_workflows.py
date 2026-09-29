@@ -48,12 +48,11 @@ def test_required_workflows_have_one_job_named_like_them() -> None:
 
 
 def test_auto_release_triggers_and_permissions() -> None:
-    """auto-release never runs for a PR, and only the release job can write."""
+    """auto-release runs only after CI on main, never by hand or for a PR, and only the release job can write."""
     workflow = _load("auto-release.yml")
     on = _on(workflow)
-    assert set(on) == {"workflow_run", "workflow_dispatch"}
+    assert set(on) == {"workflow_run"}
     assert on["workflow_run"]["branches"] == ["main"]
-    assert set(on["workflow_dispatch"]["inputs"]) == {"sha", "dry_run"}
     assert workflow["permissions"] == {}
     writers = [
         name
@@ -62,6 +61,35 @@ def test_auto_release_triggers_and_permissions() -> None:
     ]
     assert writers == ["release"]
     assert workflow["jobs"]["release"]["uses"] == "./.github/workflows/release.yml"
+
+
+def test_auto_release_guard() -> None:
+    """The decide job goes on only for a successful push run on main from this repository."""
+    guard = _load("auto-release.yml")["jobs"]["decide"]["if"]
+    for condition in (
+        "github.event.workflow_run.conclusion == 'success'",
+        "github.event.workflow_run.event == 'push'",
+        "github.event.workflow_run.head_branch == 'main'",
+        "github.event.workflow_run.head_repository.full_name == github.repository",
+    ):
+        assert condition in guard
+    assert "workflow_dispatch" not in guard
+
+
+def test_no_dry_run_or_dispatch_left() -> None:
+    """No release workflow has a dry run or a sha input any more."""
+    for name in ("auto-release.yml", "release.yml"):
+        text = (WORKFLOWS / name).read_text(encoding="utf-8")
+        assert "dry_run" not in text
+        assert "workflow_dispatch" not in text
+        assert "inputs.sha ||" not in text
+
+
+def test_auto_release_tag_step_fails_only_on_a_tag_elsewhere() -> None:
+    """A tag already on the commit goes on (the 403 recovery); only a tag on another commit fails."""
+    steps = _load("auto-release.yml")["jobs"]["decide"]["steps"]
+    [step] = [s for s in steps if s.get("name") == "The tag"]
+    assert '[ -n "$tagged" ] && [ "$tagged" != "$SHA" ]' in step["run"]
 
 
 def test_concurrency_group_per_event_and_commit() -> None:
@@ -73,20 +101,22 @@ def test_concurrency_group_per_event_and_commit() -> None:
 
 
 def test_release_triggers_and_permissions() -> None:
-    """Release runs on a tag push or a call with a tag and a commit."""
+    """Release runs only when auto-release calls it, with a tag and a commit."""
     workflow = _load("release.yml")
     on = _on(workflow)
-    assert on["push"] == {"tags": ["v*"]}
+    assert set(on) == {"workflow_call"}
     assert set(on["workflow_call"]["inputs"]) == {"tag", "sha"}
     assert workflow["permissions"] == {}
     assert workflow["jobs"]["release"]["permissions"] == {"contents": "write"}
 
 
 def test_release_takes_the_tag_from_inputs() -> None:
-    """A called release takes its tag and commit from the inputs, not from the caller's github context."""
+    """The tag and the commit come from the inputs only; every release is a full one."""
     text = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
-    assert "inputs.sha || github.ref" in text
+    assert "ref: ${{ inputs.sha }}" in text
     assert "inputs.tag" in text
+    assert "github.ref" not in text
+    assert "--prerelease" not in text
 
 
 def test_release_is_shell_only() -> None:
@@ -109,11 +139,30 @@ def test_version_check() -> None:
     workflow = _load("version-check.yml")
     on = _on(workflow)
     assert set(on) == {"pull_request"}
+    assert "edited" in on["pull_request"]["types"]
     assert workflow["permissions"] == {}
     assert list(workflow["jobs"]) == ["version-check"]
     assert "git merge-base" in (WORKFLOWS / "version-check.yml").read_text(
         encoding="utf-8"
     )
+
+
+def test_version_check_passes_the_title_through_env() -> None:
+    """The PR title reaches the script through env and --title=, never inside run."""
+    steps = _load("version-check.yml")["jobs"]["version-check"]["steps"]
+    [step] = [s for s in steps if "release_check.py" in s.get("run", "")]
+    assert step["env"]["PR_TITLE"] == "${{ github.event.pull_request.title }}"
+    assert '--title="$PR_TITLE"' in step["run"]
+    assert "pull_request.title" not in step["run"]
+
+
+def test_dependabot_titles_are_chore() -> None:
+    """Dependabot's PR titles are chore(deps): … or chore(deps-dev): …, a non-releasing type."""
+    config = yaml.safe_load(
+        (WORKFLOWS.parent / "dependabot.yml").read_text(encoding="utf-8")
+    )
+    for update in config["updates"]:
+        assert update["commit-message"] == {"prefix": "chore", "include": "scope"}
 
 
 def test_no_pull_request_target() -> None:

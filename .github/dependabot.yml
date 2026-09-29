@@ -2,6 +2,9 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    commit-message:
+      prefix: chore
+      include: scope
     schedule:
       interval: monthly
     groups:
@@ -9,6 +12,9 @@ updates:
         patterns: ["*"]
   - package-ecosystem: uv
     directory: /
+    commit-message:
+      prefix: chore
+      include: scope
     schedule:
       interval: monthly
     groups:

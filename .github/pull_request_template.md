@@ -7,7 +7,8 @@ Closes #
 ## Checklist
 
 - [ ] Gates pass (ruff, ruff format, mypy, pytest with coverage ≥ 95%)
-- [ ] `CHANGELOG.md` updated under *Unreleased* (user-visible changes)
+- [ ] Title type per `docs/releasing.md` (user-visible → `feat`, `fix` or `perf`, with a `CHANGELOG.md` entry)
+- [ ] Releasing title → the bump step run last (`docs/releasing.md`)
 - [ ] `custom_components/nortec_go/quality_scale.yaml` updated (rules completed or changed)
 - [ ] `docs/user/nortec_go.md` updated (user-visible changes)
 - [ ] No private data: IDs, tokens, emails, captures, raw API details, links into the private repo

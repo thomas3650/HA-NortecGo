@@ -19,7 +19,7 @@ in `CLAUDE.md` apply and are already in your context.
 5. Start the loop with `/loop` (self-paced, 10 to 20 minutes between checks).
 
 ## Never
-- Merge a PR, force-push, tag a release, or change GitHub settings.
+- Merge a PR, force-push, push a tag, re-run a workflow run on `main`, or change GitHub settings.
 - Bypass hooks (`--no-verify`, `-n`, `SKIP=`).
 - Read `.env`, or anything under `local/` or `config/`. You write screenshots to `local/screenshots/<topic>/`
   and never open them again.

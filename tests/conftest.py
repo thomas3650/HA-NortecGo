@@ -51,6 +51,8 @@ def make_charger(
     is_connected: bool = False,
     charge_state: ChargeState | None = None,
     state: ChargerState = ChargerState.AVAILABLE,
+    charge_kwh: float | None = None,
+    charge_kw: float | None = None,
 ) -> Charger:
     """Return a charger; idle and unplugged unless told otherwise."""
     return Charger(
@@ -64,8 +66,8 @@ def make_charger(
         charge_state_raw=None if charge_state is None else charge_state.value,
         charge_id=None if charge_state is None else "fake-charge-id",
         can_stop=None if charge_state is None else True,
-        charge_kwh=None,
-        charge_kw=None,
+        charge_kwh=charge_kwh,
+        charge_kw=charge_kw,
     )
 
 

@@ -109,6 +109,10 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - When the unit of a sensor with `state_class` `measurement` changes while it has long-term statistics, HA
   stops compiling its statistics and raises its own repair, where the user picks what to do with the old
   statistics. Nothing in the integration has to handle it.
+- For a sensor with `state_class` `total_increasing`, the recorder's statistics skip non-numeric states
+  (unknown, unavailable) and start a new cycle only when the value drops below 90% of the previous one; a
+  drop to 90% or more is logged as a dip, not a reset. So a per-charge counter may go unknown between
+  charges, but a new cycle whose first value is at least 90% of the last one is missed.
 
 ## HACS
 

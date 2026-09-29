@@ -26,6 +26,7 @@ All notable changes to this project are documented in this file. The format is b
 - The charger's device name follows a rename in the Nortec Go app.
 - Debug logging turned on from the integration's page also covers the `pynortecgo` client, and the docs
   explain debug logging and what to leave out of a bug report.
+- *Energy this charge* (kWh) and *Charging power* (kW) sensors for the open charge.
 
 ## [0.0.1] - 2026-09-26
 

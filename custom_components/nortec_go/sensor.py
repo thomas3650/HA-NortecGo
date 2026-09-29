@@ -1,4 +1,4 @@
-"""Nortec Go sensors: the price for EV Smart Charging, the charge status, the last read and the car's values."""
+"""Nortec Go sensors: the price for EV Smart Charging, the charge status, the open charge's energy and power, the last read and the car's values."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,12 +11,12 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, EntityCategory
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
-from pynortecgo import Vehicle
+from pynortecgo import Charger, Vehicle
 
 from .charge_control import CHARGE_STATUS_OPTIONS, charge_status
 from .coordinator import NortecGoCoordinator
@@ -57,18 +57,51 @@ CAR_SENSORS: tuple[NortecGoCarSensorDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class NortecGoChargeSensorDescription(SensorEntityDescription):
+    """A sensor for the open charge, its value when no charge is open, and how to read it."""
+
+    no_charge_value: float | None
+    value_fn: Callable[[Charger], float | None]
+
+
+CHARGE_SENSORS: tuple[NortecGoChargeSensorDescription, ...] = (
+    NortecGoChargeSensorDescription(
+        key="charge_energy",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=2,
+        no_charge_value=None,
+        value_fn=lambda charger: charger.charge_kwh,
+    ),
+    NortecGoChargeSensorDescription(
+        key="charging_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        no_charge_value=0.0,
+        value_fn=lambda charger: charger.charge_kw,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: NortecGoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Add the price sensor, and the car sensors when the account has a car."""
+    """Add the charger sensors, and the car sensors when the account has a car."""
     coordinator = entry.runtime_data
     entities: list[SensorEntity] = [
         NortecGoPriceSensor(coordinator),
         NortecGoChargeStatusSensor(coordinator),
         NortecGoLastReadSensor(coordinator),
     ]
+    entities.extend(
+        NortecGoChargeSensor(coordinator, description) for description in CHARGE_SENSORS
+    )
     if coordinator.has_car:
         entities.extend(
             NortecGoCarSensor(coordinator, description) for description in CAR_SENSORS
@@ -150,6 +183,29 @@ class NortecGoLastReadSensor(NortecGoChargerEntity, SensorEntity):
     def native_value(self) -> datetime:
         """The last successful read's time."""
         return self.coordinator.data.read_at
+
+
+class NortecGoChargeSensor(NortecGoChargerEntity, SensorEntity):
+    """A sensor for one of the open charge's values."""
+
+    entity_description: NortecGoChargeSensorDescription
+
+    def __init__(
+        self,
+        coordinator: NortecGoCoordinator,
+        description: NortecGoChargeSensorDescription,
+    ) -> None:
+        """Set up the sensor from its description."""
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
+
+    @property
+    def native_value(self) -> float | None:
+        """The charge's value, or the no-charge value when no charge is open."""
+        charger = self.coordinator.data.charger
+        if charger.charge_id is None:
+            return self.entity_description.no_charge_value
+        return self.entity_description.value_fn(charger)
 
 
 class NortecGoCarSensor(NortecGoCarEntity, SensorEntity):

@@ -58,12 +58,14 @@ Facts used:
 - `version-check.yml` already runs on `edited` (a retitle) and skips drafts, and its job and check name is
   `version-check`. It isn't a required check on `main` yet (only `lint`, `tests`, `hassfest`, `hacs`,
   `gitleaks` are, checked 2026-09-29); the owner adds it (D39's follow-up in `docs/releasing.md`).
-- `main`'s branch protection has `strict: true`: a PR must be up to date with `main` before it merges, so a
-  second releasing PR always takes in the first one's merge before its own can merge.
+- `main`'s branch protection has `strict: true` and enforces it for admins: a PR must be up to date with
+  `main` before it merges, for the owner too, so a second releasing PR always takes in the first one's merge
+  before its own can merge.
 - Two releasing PRs from the same version both insert a different version section at the same place in
   `CHANGELOG.md`, so merging `main` into the second conflicts there. Their `version` lines don't conflict
-  when both PRs have the same level (identical edits merge cleanly); the check (§2) catches the stale
-  version.
+  when both PRs have the same level (identical edits merge cleanly). Until `main` is merged in, the PR's
+  merge base is the old one, so `pr-check` still passes and `version-check` doesn't re-run when `main`
+  moves: strict mode is what blocks the merge. Once `main` is merged in, `pr-check` fails on the stale bump.
 - GitHub's *Update branch* button offers a merge and a rebase; the rebase rewrites the branch (a
   force-push).
 - Creating a release whose tag doesn't exist yet, on a commit whose `.github/workflows/` differ from the
@@ -101,6 +103,7 @@ Facts used:
 | `.claude/agents/team-lead.md`, `.claude/agents/po.md` | The bump before `branch ready`; no re-runs or tags (§6) |
 | `CLAUDE.md` | The changelog rule and the `scripts/` layout line (§6) |
 | `docs/README.md` | The `releasing.md` row (§6) |
+| `docs/notes.md` | A pointer to the workflow-scope limit (§6) |
 | `docs/decisions.md` | D40, and D39's and D10's status (§7) |
 | `tests/test_release_check.py`, `tests/test_workflows.py` | §8 |
 
@@ -221,8 +224,8 @@ uv run python scripts/release_check.py release-pr --title="$(gh pr view --json t
 and push.
 - After a changelog change: put it under *Unreleased* and rerun. After a retitle to another releasing type:
   rerun. After a retitle to a non-releasing type: make `version` in `manifest.json` and `CHANGELOG.md` equal
-  `origin/main`'s again (only the `version` value, not the whole `manifest.json`, which a `pynortecgo` bump
-  also changes), and commit.
+  `origin/main`'s again, after merging `origin/main` in (only the `version` value, not the whole
+  `manifest.json`, which a `pynortecgo` bump also changes), and commit.
 - **Two releasing PRs at once:** once the first merges, the second is behind `main` (strict mode) and its
   bump is stale.
   1. Merge `origin/main` into the branch (`git merge origin/main`, or GitHub's *Update branch* with its
@@ -231,15 +234,17 @@ and push.
      back under its `## [Unreleased]`; take `main`'s `version` in `manifest.json`.
   3. Commit the merge, rerun `release-pr`, commit and push.
 
-  `pr-check` fails on the stale bump until this is done, so the PR can't merge with the wrong version once
-  `version-check` is required.
+  Strict mode blocks the merge until `main` is merged in, and from then on `pr-check` fails on the stale
+  bump until step 3 is done, so the PR can't merge with the wrong version once `version-check` is required.
 
 **`docs/releasing.md`** is rewritten:
 - versioning (no pre-releases); PR titles (§2's grammar, table and rules); a releasing PR and the bump step;
   two PRs at once; fixing an old changelog entry (`docs(changelog)`);
 - what happens on merge (the existing `auto-release` text, with "a bump PR" replaced by "a releasing PR");
 - *When a release fails*: the re-runs and the workflow-scope limit with its recovery (the Decisions table),
-  with the 403 message so it can be found by searching, all the owner's actions;
+  with the 403 message so it can be found by searching, all the owner's actions. This is the one home of the
+  workflow-scope fact; `docs/notes.md` → *GitHub Actions behaviour for release workflows* gains a one-line
+  pointer to it;
 - the sections that still hold: *What `release.yml` checks* (without the tag push and the pre-release
   marking), *Required workflows*, *Bumping `pynortecgo`*, *Bumping Home Assistant*; the last two say how to
   title such a PR;
@@ -299,8 +304,8 @@ release fails, what `release.yml` checks".
 - **Source:** [release model spec](superpowers/specs/2026-09-29-release-model-design.md), Decisions
 
 D39's status becomes `active; the bump PR and the fallbacks superseded by D40` (its automatic tag on a
-green `main` stays). D10's status becomes `superseded by D39 and D40` (the manual tag by D39, the bump PR by
-D40).
+green `main` stays). D10's status becomes `superseded by D40` (its text already records that D39 replaced
+the manual tag).
 
 ## 8. Tests and verification
 
@@ -337,7 +342,8 @@ D40).
   `git ls-remote origin refs/tags/v0.1.0`);
 - `pr-check` with this PR's title, against the merge base with a freshly fetched `origin/main`, says it is
   clean;
-- in a scratch clone of this branch from GitHub (so its `origin/main` is GitHub's), `release-pr
-  --title='fix: test'` writes `0.1.1` and a dated section; after committing that, `pr-check
-  --title='fix: test'` against the merge base with `origin/main` says it is clean. The scratch clone is
-  deleted and nothing from it is pushed.
+- in a scratch clone of this branch from GitHub (so its `origin/main` is GitHub's), with
+  `origin/main` merged in first if `main` has moved, `uv run --no-project --python 3.14 python
+  scripts/release_check.py release-pr --title='fix: test'` writes the next patch version and a dated section;
+  after committing that, `pr-check --title='fix: test'` against the merge base with `origin/main` says it is
+  clean. The scratch clone is deleted and nothing from it is pushed.

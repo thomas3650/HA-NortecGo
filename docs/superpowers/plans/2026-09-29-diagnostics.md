@@ -23,10 +23,10 @@
 
 ## Rulings (after merging `origin/main` with #60 into the branch)
 
-#60 (exception translations, #37) merged before this plan. It changes three things the spec assumed; the plan follows the code:
+Three places where the spec differs from the code; the plan follows the code. 1 and 2 come from #60 (exception translations, #37), which merged before this plan; 3 was in the code already.
 
 1. The coordinator comment that spec §6 rewrites ("pynortecgo's messages hold no tokens, emails or IDs …") is gone: #60 replaced it. No `coordinator.py` comment change.
-2. `last_exception` and the entry's `reason` now hold the integration's own translated texts (for example "Can't reach the Nortec Go service. Home Assistant will try again"), not `pynortecgo`'s messages. So spec test 5's setup retry expects that text as the reason, not `None`; the setup error expects the *charger not found* text.
+2. `last_exception` and the entry's `reason` now hold the integration's own translated texts (for example "Can't reach the Nortec Go service. Home Assistant will try again"), not `pynortecgo`'s messages. So spec test 5's setup retry expects that text as the reason, not `None`; the setup error expects the *charger not found* text. The same makes stale: spec *Facts used* and §2 *Messages* (that these fields may hold `pynortecgo` messages, that `reason` is `None` in `setup_retry`, that setup errors use `ConfigEntryError(str(err))`), and spec §8's "expected error messages come from fake exception strings": the tests assert the integration's own `strings.json` texts, as `tests/test_coordinator.py` does. Hard rule 3 holds: these are our own public texts.
 3. An open charge clears a start block (`charge_control.py`, `on_charger_read`), so spec test 2's "a charge open and starts blocked" can't be one state. Test 2 downloads twice: once while blocked (the repair issue is in the download), once after a read that sees a charge open (the charge ID is in the download).
 
 ## Review Focus
@@ -62,7 +62,7 @@ No task has guarded files.
 - Consumes: `NortecGoCoordinator` (`coordinator.py`) with `data: NortecGoData` (`read_at`, `charger`, `vehicle`, `control`), `last_update_success`, `last_exception`, `update_interval`, `has_car`, `known_prices: dict[datetime, float]`, `price_currency: str | None`; `NortecGoConfigEntry` (`entry.py`); `CONF_REFRESH_TOKEN` (`const.py`).
 - Produces:
   - `NortecGoCoordinator.car_read_failing -> bool`, `.price_read_failing -> bool`, `.price_retry_pending -> bool` (read-only properties).
-  - `custom_components/nortec_go/diagnostics.py`: `TO_REDACT: Final[set[str]]` and `async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: NortecGoConfigEntry) -> dict[str, Any]`.
+  - `custom_components/nortec_go/diagnostics.py`: `TO_REDACT: Final` (a `set[str]`) and `async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: NortecGoConfigEntry) -> dict[str, Any]`.
 
 - [ ] **Step 1: Write the failing tests**
 

@@ -14,7 +14,47 @@ full one.
    `## [X.Y.Z] - YYYY-MM-DD` section.
 3. Open a pull request with these changes and merge it once the gates pass.
 
-## Tagging (owner only)
+Merging it is the release, and nothing else is needed. Once the five required workflows (`lint`, `tests`,
+`hassfest`, `hacs`, `gitleaks`) have passed on `main` for the merge commit, `auto-release.yml` tags that
+commit `vX.Y.Z` and publishes the release through `release.yml`. The `version-check` check on the PR fails
+if the version changes in a way that wouldn't be released.
+
+## What counts as a bump
+
+A commit is a bump when, compared with the commit before it:
+
+- the version is higher (semver);
+- the same commit adds the `## [X.Y.Z]` heading to `CHANGELOG.md`;
+- that section has entries.
+
+Anything else, a revert to an older version included, releases nothing, and the `auto-release` run says
+why. The rule lives in `scripts/release_check.py`.
+
+## After a merge
+
+Check the `auto-release` runs for the merge commit. There are up to five, one per required workflow. Some
+show as cancelled, and the one that runs after the last workflow does the work. Then check the tag, the
+release with the changelog section as its notes, and that HACS offers the version.
+
+## Once, after the auto-release PR merges
+
+1. The owner adds `version-check` to `main`'s required status checks (a GitHub setting).
+2. Then, to release `0.1.0`, whose bump (`9441abd`) merged before the automation, the owner runs
+   `auto-release` from the Actions tab on `main` with `sha` `9441abd` and `dry_run` on, reads the log, then
+   runs it again with `dry_run` off.
+3. Last, the owner checks the tag `v0.1.0` on `9441abd`, the release, and HACS.
+
+The next bump PR removes this section.
+
+## Fallbacks
+
+Run `auto-release` from the Actions tab on `main`, with the commit's `sha`, `dry_run` on first. It takes
+any bump commit on `main` whose required workflows passed, also one merged before the automation. Without
+the dry run it tags a release, so it is the owner's action, like a tag by hand.
+
+### Tagging by hand
+
+For a commit the rule doesn't count as a bump. The pushed tag starts `release.yml`.
 
 ```bash
 git switch main
@@ -25,12 +65,22 @@ git push origin vX.Y.Z
 
 ## What `release.yml` checks
 
-- The pushed tag equals `v` followed by the `version` in `manifest.json`. If it doesn't match, the
-  release fails.
+It starts in two ways: a pushed `v*` tag, or a call from `auto-release.yml` with the tag and the commit.
+
+- The tag equals `v` followed by the `version` in `manifest.json`. If it doesn't match, the release fails.
 - The `CHANGELOG.md` has a `## [X.Y.Z]` section for that version, and it is not empty. If it's missing or
   empty, the release fails.
-- If both checks pass, it runs `gh release create`, using that changelog section as the release notes, and
+- A release that exists already means there is nothing to do: the run ends with no second release.
+- A tag that exists must point at the commit being released, or the release fails.
+- If the checks pass, it runs `gh release create`, using that changelog section as the release notes, and
   marks the release as a pre-release when the version is `0.0.x` or has a `-` suffix.
+
+## Required workflows
+
+`auto-release.yml`'s trigger list and `REQUIRED_WORKFLOWS` in `scripts/release_check.py` follow the
+required status checks on `main`. Each required workflow has one job with the workflow's name, and those
+names are the checks. `tests/test_workflows.py` fails if a workflow that runs on a push to `main` is added
+or renamed without them. It doesn't see a change made only in GitHub's settings.
 
 ## Bumping `pynortecgo`
 

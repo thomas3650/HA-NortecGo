@@ -171,7 +171,8 @@ review.
   or `v3` (nice to have, after version 2); chores may have none. Type labels come on top: `bug` for a bug,
   and `enhancement` or `documentation` where they fit. `active` marks the issues being worked on now: it goes
   on when the issue's branch is created, and comes off if the work stops before the PR is merged (a merge
-  closes the issue). When in doubt, ask the owner (D30).
+  closes the issue). `blocked-ha` ("Waits for a Home Assistant release") goes on an issue that can't move
+  until a Home Assistant release, for example #55. When in doubt, ask the owner (D30).
 - **Merging and pushing:** the owner merges. Only the controller pushes or marks a PR ready; in the PO flow
   (§8) the team lead pushes and the PO marks ready.
 - **Git guards:** run `uv run pre-commit install` once per clone. The hooks refuse commits on `main` and pushes

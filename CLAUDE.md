@@ -53,9 +53,10 @@ imported below. Lasting decisions are in `docs/decisions.md`.
    references, links into the private `NortecGo` repo's docs, or raw API endpoints, headers and response
    shapes. The integration uses only `pynortecgo`'s public API.
 4. Never commit `.env`, `config/`, or anything taken from a real instance.
-5. Diagnostics and logs redact tokens, email, IDs and location (`async_redact_data`), and credentials and
-   usernames are never logged, even wrong ones. Anything taken from a real instance (diagnostics downloads,
-   logs, dumps) goes in `local/` and is never committed.
+5. Diagnostics and logs redact the email, the password, the access and refresh tokens and the client's
+   device ID (`async_redact_data`; D38), and credentials and usernames are never logged, even wrong ones.
+   Anything taken from a real instance (diagnostics downloads, logs, dumps) goes in `local/` and is never
+   committed.
 6. Never auto-retry `start_charge`. On `AuthError`, start reauth instead of retrying login (login is
    rate-limited; a start places a card hold).
 7. Test fixtures are built from `pynortecgo` model objects, never from raw API JSON.

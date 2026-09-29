@@ -271,11 +271,23 @@ Remove it again when you're done: debug logging writes a lot.
 The logs hold no passwords or session tokens, but check them before you share them (see *Reporting a
 problem*).
 
+### Diagnostics
+
+The diagnostics file shows what the integration last read from the charger and the car, and how its reads
+are going. To download it, go to **Settings** > **Devices & services** > **Nortec Go**, open the entry's
+menu (⋮) and select **Download diagnostics**.
+
+The file leaves out your email, the session tokens and the device ID the integration signs in with; your
+password is never stored. It keeps your charger's and car's names and IDs, and Home Assistant adds its own
+information, such as its version, your installed custom integrations and your time zone. Check the file
+before you share it, and remove what you don't want public.
+
 ### Reporting a problem
 
 Open an issue with the bug report template. Include your Home Assistant and integration versions and the
-lines of the debug log around the problem, not the whole log. Before you post, remove your email address,
-your charger's and car's names, and anything else that identifies you or where you live.
+lines of the debug log around the problem, not the whole log. You can also attach the diagnostics file (see
+*Diagnostics*). Before you post log lines, remove your email address, your charger's and car's names, and
+anything else that identifies you or where you live.
 
 ## Removing the integration
 

@@ -119,6 +119,21 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         # The setup read can schedule a retry before the timers start.
         entry.async_on_unload(self._async_cancel_price_retry)
 
+    @property
+    def car_read_failing(self) -> bool:
+        """Whether the car reads fail now: from the first failure to the next good read."""
+        return self._car_failing
+
+    @property
+    def price_read_failing(self) -> bool:
+        """Whether the price reads fail now: from the first failure to the next good read (D37)."""
+        return self._prices_failing
+
+    @property
+    def price_retry_pending(self) -> bool:
+        """Whether a price read retry is scheduled (D37)."""
+        return self._price_retry is not None
+
     async def _async_update_data(self) -> NortecGoData:
         """Read the charger, then the car when due; set the next interval."""
         start_attempts = self.charge_control.start_attempts

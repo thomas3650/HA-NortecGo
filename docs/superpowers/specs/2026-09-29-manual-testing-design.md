@@ -31,7 +31,7 @@ Answered by the PO in the brainstorm (2026-09-29), unless marked otherwise.
 | Audience of the guide | The owner, and agents doing the PO's visual check (`way-of-working.md` §8 step 3) |
 | Expected behaviour | Each checklist item says what to check and links to the section of `docs/user/nortec_go.md` that describes it. The guide restates no values, units, sequences or timings, so it stays right when a feature changes (for example the price sensor after #51). States are named only as preconditions, spelled as in `strings.json` |
 | Owner-only steps | Marked in the guide (§2.5) |
-| What agents may do in the UI | Look only; press nothing (§2.5). *Controller*, from the review: the narrowest reading of §8 step 3 |
+| What agents may do in the UI | Navigate and read, and operate no control (§2.5). *Controller*, from the review: the narrowest reading of §8 step 3 |
 | EV Smart Charging and automations | *Owner, 2026-09-29 (via the PO):* EV Smart Charging's smart-charging switch stays off unless the owner gives an explicit OK for that session, and any automation that turns *Charge* on or off counts as a start or stop under hard rule 2. *Controller, from the review:* the session ends with the owner turning them off again, since `config/` keeps them for every later start of Home Assistant (§3.3) |
 | EV Smart Charging's charger control | *Pending, with the owner (via the PO), from the review:* whether the charger-control entity also stays empty unless the owner has given an OK, beyond the switch being off. The plan follows the answer |
 | Reauth | *Owner, 2026-09-29 (via the PO):* not tested manually, no second account; one line says the automated tests cover it. Normal testing reuses the stored session |
@@ -261,15 +261,17 @@ press, is in [`manual-testing.md`](manual-testing.md). Nothing else in `way-of-w
 
 ## 6. Checks
 
-The docs have no tests; `manifest.json` is checked by the gates and by hassfest in CI. Each task checks,
+The docs have no tests; `manifest.json` has its one test (§4.2) and is also checked by hassfest in CI. Each task checks,
 and the branch review re-checks:
 
 - Every relative link and anchor resolves (from `docs/`: the section names in `docs/user/nortec_go.md`,
   `CLAUDE.md`, `ha-notes.md` and `way-of-working.md`).
 - Every entity, state and error name matches `strings.json`.
-- A leak grep over the changed files finds no email address, IDs, tokens or API URLs: the task runs
-  `grep -nE '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[a-z]{2,}|https?://[^ )]*api'` over the files §1 gives it,
-  by name; a pass is no output (grep exits 1).
+- A leak grep finds no email address, IDs, tokens or API URLs in what the task adds. With
+  `PAT='[[:alnum:]._%+-]+@[[:alnum:].-]+\.[a-z]{2,}|https?://[^ )]*api'`, the task runs
+  `grep -nE "$PAT" docs/manual-testing.md` (task 1 only) and
+  `git diff <task base> -- <the task's other §1 files, by name> | grep '^+' | grep -nE "$PAT"`; a pass is
+  no output from either (whole files would fail on an existing, allowed link in `docs/README.md`).
 - No statement contradicts `scripts/develop`, `scripts/smoke`, `.vscode/`, `.gitignore` or the user docs;
   no link to D34 or to anything only on #51's branch.
 - The gates (CLAUDE.md *Commands*) and `uv run pre-commit run --all-files` pass.

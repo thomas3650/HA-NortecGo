@@ -71,8 +71,9 @@
 | 2 | Task 3 (docs) | After Tasks 1 and 2 are on the feature branch |
 | 3 | Task 4 (pre-merge checks) | After the draft PR exists and the branch is pushed |
 
-Guarded files: Task 3 only. Before its dispatch the controller writes `.claude/agents/po.md` and
-`.claude/agents/team-lead.md` to `$(git -C <task-3 worktree> rev-parse --absolute-git-dir)/subagent-guard-allow`,
+Guarded files: Task 3 only. It is alone in wave 2, so it runs in the main checkout (in the PO flow, the team
+lead's issue worktree). Before its dispatch the controller writes `.claude/agents/po.md` and
+`.claude/agents/team-lead.md` to `$(git -C <that checkout> rev-parse --absolute-git-dir)/subagent-guard-allow`,
 and empties it however the task ends.
 
 ---
@@ -368,7 +369,7 @@ def next_version(base: Version, title: Title) -> str:
     return f"{base.major}.{base.minor}.{base.patch + 1}"
 ```
 
-The imports that aren't used yet (`Collection`, `Sequence`, `UTC`, `datetime`) make `ruff check` fail until Step 7. Run only pytest for now.
+The imports that aren't used yet make `ruff check` fail for a while: `Collection` and `Sequence` until Step 7, `UTC` and `datetime` until Step 11. Run only pytest until then.
 
 - [ ] **Step 4: Go on to the changelog tests**
 
@@ -583,6 +584,18 @@ NEW_SECTION = MAIN_LOG.replace(
                 "## [0.1.1] - 2026-10-01\n\n### Fixed\n\n- A fix.\n\n", ""
             ),
             "heading of the released section [0.1.0] changed",
+        ),
+        (
+            "docs(changelog): x",
+            "0.1.0",
+            "# Changelog\n\n## [Unreleased]\n",
+            "released section [0.1.0] was removed",
+        ),
+        (
+            "docs(changelog): x",
+            "0.1.1",
+            MAIN_LOG,
+            "a docs PR doesn't change the version",
         ),
         ("Bump the uv group", "0.1.0", MAIN_LOG, "isn't 'type(scope)!: text'"),
     ],
@@ -868,7 +881,7 @@ def pr_problems(
 - [ ] **Step 8: Run the tests**
 
 Run: `uv run pytest tests/test_release_check.py -q`
-Expected: every test passes except the existing `test_cli_pr_check`, which still calls `pr-check BASE HEAD` (no `--title`). Steps 9 to 11 replace it.
+Expected: all pass, including the existing `test_cli_pr_check`, which still uses the old `pr-check BASE HEAD`. Steps 9 to 11 replace it and the subcommand.
 
 - [ ] **Step 9: Write the failing CLI tests**
 
@@ -1018,8 +1031,8 @@ def test_release_pr_two_releasing_prs(
     _write(origin, REAL_MANIFEST.replace('"0.1.0"', '"0.1.1"'), main_log)
     _commit_all(origin, "fix: main's fix")
     _git(work, "fetch", "-q", "origin")
-    # Conflicts on CHANGELOG.md, so check=False; the recipe below resolves it.
-    subprocess.run(
+    # The two changelogs conflict (spec, Facts), so check=False; the recipe below resolves it.
+    merge = subprocess.run(
         [
             "git",
             "-C",
@@ -1038,6 +1051,8 @@ def test_release_pr_two_releasing_prs(
         check=False,
         capture_output=True,
     )
+    assert merge.returncode != 0
+    assert (work / ".git" / "MERGE_HEAD").exists()
     recipe_log = main_log.replace(
         "## [Unreleased]\n\n", "## [Unreleased]\n\n### Fixed\n\n- A fix.\n\n"
     )
@@ -1103,7 +1118,8 @@ def _release_pr(title_text: str) -> int:
         return 1
     version = next_version(manifest_version(_git_show("origin/main", MANIFEST)), title)
     main_versions = parse_changelog(_git_show("origin/main", CHANGELOG)).versions()
-    changelog_path, manifest_path = Path(CHANGELOG), Path(MANIFEST)
+    root = Path(_git("rev-parse", "--show-toplevel").stdout.strip())
+    changelog_path, manifest_path = root / CHANGELOG, root / MANIFEST
     changelog = bump_changelog(
         changelog_path.read_text(encoding="utf-8"), main_versions, version, _today()
     )
@@ -1211,7 +1227,7 @@ def test_auto_release_triggers_and_permissions() -> None:
 
 
 def test_auto_release_guard() -> None:
-    """decide goes on only for a successful push run on main from this repository."""
+    """The decide job goes on only for a successful push run on main from this repository."""
     guard = _load("auto-release.yml")["jobs"]["decide"]["if"]
     for condition in (
         "github.event.workflow_run.conclusion == 'success'",
@@ -1280,7 +1296,7 @@ def test_version_check_passes_the_title_through_env() -> None:
 
 
 def test_dependabot_titles_are_chore() -> None:
-    """Dependabot's PR titles are chore(deps): …, a non-releasing type."""
+    """Dependabot's PR titles are chore(deps): … or chore(deps-dev): …, a non-releasing type."""
     config = yaml.safe_load(
         (WORKFLOWS.parent / "dependabot.yml").read_text(encoding="utf-8")
     )
@@ -1472,7 +1488,8 @@ Every PR title is `type(scope)!: text`. The `version-check` check reads it on ev
   user-visible has a non-releasing type.
 - GitHub's *Revert* button titles a PR `Revert "…"`. Retitle it, for example `fix: revert …`.
 - Only `!` marks a breaking change; a `BREAKING CHANGE:` footer isn't read.
-- Dependabot's titles are `chore(deps): …`. For one that users should get, retitle it `feat` or `fix` and
+- Dependabot's titles are `chore(deps): …`, or `chore(deps-dev): …` for development dependencies. For one
+  that users should get, retitle it `feat` or `fix` and
   run the bump step on its branch. Dependabot then stops rebasing it, which is fine for a PR about to merge.
 - The title's type is separate from the branch's type (`way-of-working.md` §1 step 2).
 
@@ -1730,15 +1747,17 @@ Expected: `Title, version and changelog agree`, exit 0. The title is `process: �
 
 - [ ] **Step 3: A bump in a throwaway clone**
 
+Run it as one Bash call: a subagent's shell doesn't keep the `cd` between calls.
+
 ```bash
 d="$(mktemp -d)"
 git clone -q --branch process/release-model https://github.com/thomas3650/HA-NortecGo.git "$d/c"
 cd "$d/c"
-git -c user.name=Test -c user.email=test@example.invalid merge -q --no-edit origin/main
+git -c user.name=Test -c user.email=test@example.invalid -c commit.gpgsign=false merge -q --no-edit origin/main
 perl -0pi -e 's/## \[Unreleased\]\n/## [Unreleased]\n\n### Fixed\n\n- A test entry.\n/' CHANGELOG.md
-git -c user.name=Test -c user.email=test@example.invalid commit -qam "fix: test entry"
+git -c user.name=Test -c user.email=test@example.invalid -c commit.gpgsign=false commit -qam "fix: test entry"
 uv run --no-project --python 3.14 python scripts/release_check.py release-pr --title='fix: test'
-git -c user.name=Test -c user.email=test@example.invalid commit -qam "chore: release"
+git -c user.name=Test -c user.email=test@example.invalid -c commit.gpgsign=false commit -qam "chore: release"
 uv run --no-project --python 3.14 python scripts/release_check.py pr-check --title='fix: test' "$(git merge-base origin/main HEAD)" HEAD
 cd - && rm -rf "$d"
 ```
@@ -1753,4 +1772,5 @@ Nothing is pushed: the clone has no credentials helper set up for pushing, and t
 
 - [ ] **Step 4: Report**
 
-Report each step's command and output. Don't commit anything.
+Report each step's command and output. Don't commit anything. The controller then checks that the PR
+description says `Closes #68` and `Closes #67`.

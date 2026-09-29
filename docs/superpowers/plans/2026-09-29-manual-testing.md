@@ -16,7 +16,7 @@
 - Never read `.env`, `config/` or `local/` (hard rule 9). Never start or stop a charge, and never run `scripts/develop` or `scripts/smoke`: this work needs neither.
 - The guide never tells anyone to turn *Charge* on or off, by hand, from EV Smart Charging or from an automation, without the owner's explicit OK first, each time; and never tells an agent to do it at all.
 - No duplication (`docs/way-of-working.md` §7): link to the section that owns a fact; don't restate values, units, price kinds, sequences or timings. States are named only as preconditions, spelled exactly as in `custom_components/nortec_go/strings.json`. No link to D34 or to anything only on `origin/feat/pynortecgo-0.5.0`.
-- Style: the repo's docs style — short sentences, plain words, lines wrapped at 110 characters, `*Entity name*` in italics, UI paths as **Settings** > **System** > **Logs**.
+- Style: the repo's docs style — short sentences, plain words, lines wrapped at 110 characters (table rows excepted), `*Entity name*` in italics, UI paths as **Settings** > **System** > **Logs**.
 - Gates before every commit (`CLAUDE.md` → Commands): `uv run pytest -q` and `uv run ruff check && uv run ruff format --check && uv run mypy`; the coverage gate passes at the end of Task 2. The pre-commit hooks run on commit; never bypass them.
 - Subagents write commit messages with the Write tool to a file outside the repo and commit with `git commit -F <file>` (no heredocs). End each message with the co-author trailer given in the dispatch.
 - Section names fixed by this plan (Task 1 links to them before Task 2 writes them): `### Debug logging` (anchor `#debug-logging`) and `### Reporting a problem` (anchor `#reporting-a-problem`) under `## Troubleshooting` in `docs/user/nortec_go.md`.
@@ -64,7 +64,7 @@ No task has guarded files.
 
 - [ ] **Step 1: Read the sources**
 
-Read the spec's §2, §3 and §5, then: `docs/user/nortec_go.md` (every section heading), `custom_components/nortec_go/strings.json`, `scripts/develop`, `scripts/smoke`, `.vscode/launch.json`, `.gitignore`, `docs/ha-notes.md` (*Tooling*), `CLAUDE.md` (*Commands*, *Hard rules*), `docs/way-of-working.md` §8. Every name the guide uses comes from these files.
+Read the spec's §2, §3 and §5, then: `docs/user/nortec_go.md` (every section heading), `custom_components/nortec_go/strings.json`, `scripts/develop`, `scripts/smoke`, `.vscode/launch.json`, `.vscode/tasks.json`, `.gitignore`, `docs/ha-notes.md` (*Tooling*), `CLAUDE.md` (*Commands*, *Hard rules*), `docs/way-of-working.md` §8. Every name the guide uses comes from these files.
 
 - [ ] **Step 2: Write `docs/manual-testing.md`**
 
@@ -99,21 +99,21 @@ Title `# Manual testing`, then one intro line: how to test the integration by ha
 `## Checklists`
 One intro line: each item says what to look at; the linked section of the user docs says what is right. Items marked **Owner** are done only by the owner. Then four subsections, each a `- [ ]` list:
 
-`### Setup and restart`
+`### Setup and restart (#7)`
 - [ ] **Owner** Add the integration (only when `config/` has no Nortec Go entry yet): the entry's name and its devices — [Configuration](user/nortec_go.md#configuration), [Supported functionality](user/nortec_go.md#supported-functionality).
 - [ ] The config flow's errors aren't tried live: every submit signs in, and the automated tests cover them.
-- [ ] Restart Home Assistant: the entry loads without a new sign-in, the entities come back, and there are no errors from the integration (see *Who does what* for how to check).
+- [ ] Restart Home Assistant (stop and start it as in *Running Home Assistant*, not from the UI): the entry loads without a new sign-in, the entities come back, and there are no errors from the integration (see *Who does what* for how to check).
 - [ ] **Owner** Reload the entry: the same.
 - [ ] Reauthentication isn't tested by hand; the automated tests cover it.
 
-`### Entities`
-- One line: for each entity, it exists, its name and type match its row in [Supported functionality](user/nortec_go.md#supported-functionality), and its value or state is plausible for what the charger, the car and the app show.
+`### Entities (#8)`
+- One line: for each entity, it exists and its name and type match its row in [Supported functionality](user/nortec_go.md#supported-functionality); the owner also checks that its value or state is plausible for what the charger, the car and the app show (an agent sees neither).
 - [ ] Charger: *Current price* (its value, unit and price-list attributes as its row and [Use cases](user/nortec_go.md#use-cases) describe them), *Cable connected*, *Charging*, *Charge* (its state only), *Charge status*, *Refresh* (present), *Last read* — one item per entity.
 - [ ] Car: *Battery*, *Charge limit*, *Last seen*, *Plugged in*, *Connected to charger* — one item per entity; and the car device's name ([Car](user/nortec_go.md#car)).
 - [ ] **Owner** Press *Refresh*: *Last read* moves ([Data updates](user/nortec_go.md#data-updates)). *Refresh* only reads.
 - [ ] The device page: both devices, their entities, the diagnostic entities in the diagnostic group.
 
-`### EV Smart Charging`
+`### EV Smart Charging (#8)`
 - Setting it up with the entities in [Use cases](user/nortec_go.md#use-cases) is owner only. Once its charger control is set, it turns *Charge* on and off by its schedule, and each of those is a real start or stop (see *Rules*).
 - Its smart-charging switch stays off unless the owner has given an explicit OK for that session. An automation that turns *Charge* on or off counts as a start or stop too, and stays off unless the owner has given the same OK. Don't assume the switch is EV Smart Charging's only way to drive *Charge*.
 - **The session ends** with the owner turning them off again: `config/` keeps them, and every later start of Home Assistant (`scripts/develop`, `scripts/smoke`, the PO's visual check) relies on them being off.
@@ -121,9 +121,9 @@ One intro line: each item says what to look at; the linked section of the user d
 - [ ] With them off: EV Smart Charging reads the price list, and its plan follows the prices.
 - [ ] **Owner, with explicit OK for that session:** a planned charge starts and stops as planned, and the notes in [Use cases](user/nortec_go.md#use-cases) hold.
 
-(If the owner's pending answer on the charger control, spec *Decisions*, changes this subsection, the controller gives the new text in the dispatch; it replaces this one.)
+(Controller note, not for the guide: if the owner's pending answer on the charger control, spec *Decisions*, changes this subsection, the controller gives the new text in the dispatch; it replaces this one.)
 
-`### Start and stop`
+`### Start and stop (#9)`
 - One line: every item here is **owner only, with explicit OK for that session**. Agents never do them.
 - [ ] Before: the cable is connected, and *Charge status* is not *Waiting for replug* or *Start blocked*.
 - [ ] Start: turn *Charge* on; the switch and *Charge status* follow [Starting a charge](user/nortec_go.md#starting-a-charge).
@@ -140,11 +140,11 @@ In `docs/README.md`, after the `ha-notes.md` row, add:
 | [`manual-testing.md`](manual-testing.md) | Testing by hand against the owner's real account: running it, where real data lives, who may do what, checklists per feature | Testing the integration live |
 ```
 
-In `docs/way-of-working.md` §8 *From branch ready to PR ready*, step 3, after "check against the spec," change the sentence so it reads "check against the spec (what to look at, and that an agent operates no control, is in [`manual-testing.md`](manual-testing.md)),". Nothing else in the file changes.
+In `docs/way-of-working.md` §8 *From branch ready to PR ready*, step 3, after "check against the spec," change the sentence so it reads "check against the spec (what to look at, and that an agent operates no control, are in [`manual-testing.md`](manual-testing.md)),". Rewrap the rest of step 3 at 110 characters if needed; nothing else in the file changes.
 
 - [ ] **Step 4: Check**
 
-(a) Read the guide as the PO doing a visual check: no instruction leads an agent to operate any control. (b) *EV Smart Charging* says the session ends with them off, and *Pitfalls* says they run on every start. (c) No unit, currency, price kind, timing or state sequence is restated; the only states named are *Waiting for replug* and *Start blocked*, spelled as in `strings.json` (`not_released`, `start_blocked`). (d) Every entity name matches `strings.json`. (e) Every relative link resolves to an existing file and heading (list them with `grep -on '](\([^)]*\))' docs/manual-testing.md` and check each heading's anchor against the target file's headings), except `#debug-logging` and `#reporting-a-problem`, which Task 2 adds. (f) The leak check from *Global Constraints*, over `docs/README.md docs/way-of-working.md` and `docs/manual-testing.md`: no output. (g) `uv run pre-commit run --files docs/manual-testing.md docs/README.md docs/way-of-working.md`: all pass.
+(a) Read the guide as the PO doing a visual check: no instruction leads an agent to operate any control. (b) *EV Smart Charging* says the session ends with them off, and *Pitfalls* says they run on every start. (c) No unit, currency, price kind, timing or state sequence is restated; the only *Charge status* states named are *Waiting for replug* and *Start blocked*, spelled as in `strings.json` (`not_released`, `start_blocked`). (d) Every entity name matches `strings.json`. (e) Every relative link resolves to an existing file and heading (list them with `grep -on '](\([^)]*\))' docs/manual-testing.md` and check each heading's anchor against the target file's headings), except `#debug-logging` and `#reporting-a-problem`, which Task 2 adds. (f) The leak check from *Global Constraints*, over `docs/README.md docs/way-of-working.md` and `docs/manual-testing.md`: no output. (g) `uv run pre-commit run --files docs/manual-testing.md docs/README.md docs/way-of-working.md`: all pass.
 
 - [ ] **Step 5: Commit**
 
@@ -209,7 +209,8 @@ To see what the integration does, turn on debug logging from its page in Home As
 [Enabling debug logging](https://www.home-assistant.io/docs/configuration/troubleshooting/#enabling-debug-logging).
 For Nortec Go this also covers `pynortecgo`, the library it uses to talk to the service.
 
-Or add this to `configuration.yaml` and restart Home Assistant:
+Or add this to `configuration.yaml` (or merge it into your `logger:` block if you have one) and restart
+Home Assistant:
 
 ```yaml
 logger:
@@ -240,7 +241,8 @@ In `.github/ISSUE_TEMPLATE/bug.yml`, the `diagnostics` field's `description` bec
 
 ```yaml
       description: >-
-        Optional. Turn on debug logging as described in the docs (Troubleshooting, Debug logging),
+        Optional. Turn on debug logging as described in
+        https://github.com/thomas3650/HA-NortecGo/blob/main/docs/user/nortec_go.md#debug-logging,
         reproduce the problem, and paste the lines around it. Before pasting, remove what the docs'
         "Reporting a problem" lists.
 ```

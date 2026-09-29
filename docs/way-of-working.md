@@ -67,6 +67,9 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
 - The implementer and reviewer dispatches give the worktree's absolute path, and every command runs there
   (`cd <worktree> && …` or `git -C <worktree> …`). A subagent's shell starts in the main checkout.
   (For a team lead in the PO flow, its issue worktree.)
+- Don't pass `isolation: "worktree"` to these dispatches. The harness worktree it creates (under
+  `.claude/worktrees/`) becomes the subagent's primary directory, and the guard hook and the isolation then
+  refuse its writes to the task worktree. Subagents edit files by absolute path, with Edit and Write.
 - The controller runs the SDD scripts (brief, review package, ledger) from the main checkout, so everything
   lands in its `.superpowers/sdd/` and survives the worktree. Branch refs are shared, so
   `review-package PLAN BASE wt/<topic>-task-<n>` works there. For a team lead in the PO flow (§8), "the main
@@ -101,6 +104,9 @@ Where subagent-driven-development (SDD) differs, this doc wins.
 - **Model:** the plan's `Model:` tag replaces SDD's model selection.
 - **Task review:** `task-reviewer` replaces SDD's spec-compliance and code-quality reviewers, and also does
   the scoped re-reviews, given the findings list and the `FIX_BASE..HEAD` package.
+- **Global Constraints:** SDD's `task-brief` script extracts only the task's own text. The controller saves
+  the plan's *Global Constraints* to a file in the SDD workspace and names it in both the implementer and
+  the `task-reviewer` dispatches.
 - **Pushes:** pushing the feature branch after an Approved task is pre-authorized. It is not an SDD stop point.
 - **Final review:** `full-reviewer` is SDD's final whole-branch reviewer (and also reviews specs and plans).
   Its fix rounds follow §3, not SDD's single fix wave.
@@ -303,7 +309,8 @@ One branch at a time, in the main checkout (only the PO works there, and only on
 3. **Visual check**, when the change is visible in HA (entities, names, icons, units, the options flow,
    translations, the device page): start `scripts/develop` with the Bash tool's `run_in_background` (not `&`
    in a shell: that crashes on macOS), open a new Chrome tab on `http://localhost:8123` with the owner's
-   existing login, check against the spec, save screenshots to `local/screenshots/<topic>/` (the Chrome
+   existing login, check against the spec (what to look at, and that an agent operates no control, are in
+   [`manual-testing.md`](manual-testing.md)), save screenshots to `local/screenshots/<topic>/` (the Chrome
    screenshot tool's `save_to_disk`, then `mv` into the folder without opening them), then stop HA with
    `pkill -f "hass -c config"`. Never the config flow or reauth, never credentials, never anything that calls
    an action on the charger. The screenshots are for the owner, who also cleans them up.

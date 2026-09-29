@@ -516,16 +516,32 @@ def _release_pr(title_text: str) -> int:
         return 1
     version = next_version(manifest_version(_git_show("origin/main", MANIFEST)), title)
     main_versions = parse_changelog(_git_show("origin/main", CHANGELOG)).versions()
-    root = Path(_git("rev-parse", "--show-toplevel").stdout.strip())
-    changelog_path, manifest_path = root / CHANGELOG, root / MANIFEST
+    top = _git("rev-parse", "--show-toplevel")
+    if top.returncode != 0:
+        raise ReleaseCheckError(f"Can't find the repository root: {top.stderr.strip()}")
+    root = Path(top.stdout.strip())
     changelog = bump_changelog(
-        changelog_path.read_text(encoding="utf-8"), main_versions, version, _today()
+        _read_file(root, CHANGELOG), main_versions, version, _today()
     )
-    manifest = set_manifest_version(manifest_path.read_text(encoding="utf-8"), version)
-    manifest_path.write_text(manifest, encoding="utf-8")
-    changelog_path.write_text(changelog, encoding="utf-8")
+    manifest = set_manifest_version(_read_file(root, MANIFEST), version)
+    _write_file(root, MANIFEST, manifest)
+    _write_file(root, CHANGELOG, changelog)
     print(version)
     return 0
+
+
+def _read_file(root: Path, name: str) -> str:
+    try:
+        return (root / name).read_text(encoding="utf-8")
+    except OSError as err:
+        raise ReleaseCheckError(f"Can't read {name}: {err.strerror}") from err
+
+
+def _write_file(root: Path, name: str, text: str) -> None:
+    try:
+        (root / name).write_text(text, encoding="utf-8")
+    except OSError as err:
+        raise ReleaseCheckError(f"Can't write {name}: {err.strerror}") from err
 
 
 def _verdict(base: str, head: str) -> Verdict:

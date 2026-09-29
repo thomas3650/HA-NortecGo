@@ -55,8 +55,8 @@ Facts used, public-safe:
   token's issue time and 30-minute expiry with 10 s leeway, so a request after the clock is moved back before
   the token's issue time, or more than 30 minutes forward, gets a 401.
 - `pynortecgo`'s error messages hold no email, password, tokens or device ID (the device ID goes only in a
-  request header, and transport errors carry exception type names, not requests); some name the endpoint's path template
-  (for example the method and path of a rejected request). The logs already carry them.
+  request header, and transport errors carry exception type names, not requests); some name the endpoint's
+  path template (for example the method and path of a rejected request). The logs already carry them.
 
 ## 1. Files
 
@@ -119,8 +119,8 @@ The three properties expose the coordinator's `_car_failing`, `_prices_failing` 
   (`entry.reason`: `None` for a failed first read, the error's message for a setup error; Facts used). It keeps
   a request for an entry that isn't loaded (through the API) from failing with an error; the frontend may
   offer the download only for a loaded entry, so neither the user docs nor the design rely on it. On the
-  loaded path `runtime_data` and
-  `coordinator.data` are always set (Facts used), so there is no `None` case for `data`.
+  loaded path `runtime_data` and `coordinator.data` are always set (Facts used), so there is no `None` case
+  for `data`.
 - **Last exception:** `None` while `last_update_success` is true, because the coordinator keeps an old error
   after a recovery, which would read as a current one.
 - **Serializable:** datetimes and `StrEnum`s serialize with Home Assistant's encoder; the interval is given
@@ -227,16 +227,17 @@ D38, *Diagnostics redact only the sign-in secrets*:
 ## 8. Tests
 
 `tests/test_diagnostics.py`, with fixtures from `pynortecgo` model objects (`conftest.py`'s `make_charger`
-and `make_vehicle`, hard rule 7), through Home Assistant's real endpoint
-(`pytest_homeassistant_custom_component.components.diagnostics.get_diagnostics_for_config_entry` with
-`hass_client`), so serialization is tested too. Test 2 needs the whole response body, so it calls
-`/api/diagnostics/config_entry/<entry_id>` with `hass_client` directly (the helper returns only `data`).
-Tests 1, 2 and 4 run with time frozen (`freezer`, as `test_coordinator.py` does): `read_at` comes from
+and `make_vehicle`, hard rule 7), through Home Assistant's real endpoint, so serialization is tested too.
+Every download in the test file goes through one helper, used instead of
+`pytest_homeassistant_custom_component`'s `get_diagnostics_for_config_entry` (which returns only `data` and
+uses the fixture's token): it sets up the `diagnostics` component, GETs
+`/api/diagnostics/config_entry/<entry_id>` with `hass_client` and a fresh access token, asserts 200, and
+returns the whole body. Tests read `["data"]` from it; test 2 uses the whole body. Tests 1, 2 and 4 run with time frozen (`freezer`, as `test_coordinator.py` does): `read_at` comes from
 `utcnow()`, the price store prunes past slots, and a price retry is only scheduled when it falls before the
-next price read. Because `hass_client`'s token is made at fixture setup (Facts used), every download in the
-test file goes through one helper that fetches with a fresh access token made after the last clock move
-(a refresh token for `hass_admin_user`, then `hass.auth.async_create_access_token`, passed to
-`hass_client`). Expected error messages come from fake exception strings in the test, never from copied
+next price read. The token is fresh because `hass_client`'s own is made at fixture setup (Facts used): the
+helper makes one after the last clock move, from a refresh token for `hass_admin_user` created with
+`CLIENT_ID` (from `pytest_homeassistant_custom_component.common`; a normal refresh token needs a client ID),
+then `hass.auth.async_create_access_token`, passed to `hass_client`. Expected error messages come from fake exception strings in the test, never from copied
 client messages (hard rule 3).
 
 1. **The whole output, exactly:** a set-up entry with a charge open (so `charge_id` is set) and a car, with

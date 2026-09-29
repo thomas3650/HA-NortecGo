@@ -24,7 +24,7 @@ Proposed by the team lead, backed by the PO, and escalated to the owner on issue
 | Trigger | A new `auto-release.yml`, run by `workflow_run` on each of the five workflows that are required checks on `main` (`lint`, `tests`, `hassfest`, `hacs`, `gitleaks`). It acts only on a successful `push` run on `main` from this repository, and only once all five checks have passed on that commit. The workflows aren't merged into one (§2.1) |
 | Release path | `release.yml` gains `workflow_call`, and `auto-release.yml` calls it as a reusable workflow. There is one release code path, and the write permission needed is `contents: write` only: no `actions: write`, no `gh workflow run` |
 | What is a bump | The version at the commit is higher (semver) than at its first parent, and the same commit adds the `## [X.Y.Z]` changelog heading, with a non-empty section. Anything else, a revert to an older version included, releases nothing |
-| Older versions | The automation never back-fills. A version whose bump commit merged before this work (`0.1.0`) is tagged by hand, as today (§5) |
+| Older versions | The automation never back-fills on its own. A bump commit merged before this work is released by the owner's dispatch of the fallback (§2.3); `0.1.0` (`9441abd`) is released that way, as the first real use |
 | Repeats | A run for a commit whose tag already points at it and whose release exists does nothing. A tag of that name on another commit fails the run. No second release is ever created |
 | Fallback | `workflow_dispatch` on `auto-release.yml`, with a `sha` and a `dry_run` input (default `true`); the manual tag push stays as the last fallback |
 | PR check | A new `version-check.yml` on `pull_request` (never `pull_request_target`), skipped for drafts. It isn't a required check; making it one is the owner's GitHub setting (§6) |
@@ -46,6 +46,10 @@ Facts used, public-safe:
 - The repository has no rulesets, so nothing stops the workflow creating a tag. The default workflow
   token is read-only, so each job states its permissions.
 - `gh release create <tag> --target <sha>` creates the tag on that commit if it doesn't exist.
+- A local reusable workflow (`uses: ./.github/workflows/...`) is read from the same commit as the caller's
+  workflow file, so a dispatch on `main` calls `main`'s `release.yml`, whatever commit it releases.
+- `9441abd` (the `0.1.0` bump) raises the version from `0.0.1` to `0.1.0`, adds the `## [0.1.0]` heading,
+  and has all five required checks green.
 
 ## 1. Files
 
@@ -121,6 +125,18 @@ runs for one commit follow each other and a later one sees what an earlier one d
 The token that can write never reaches a job that runs a script from the repository other than
 `release.yml`'s own steps (§4), and those run on the merged commit.
 
+### 2.3 The first real use: `0.1.0`
+
+`0.1.0` was merged (`9441abd`) before this work and isn't tagged; the owner doesn't tag it by hand. After
+this PR merges, the owner dispatches `auto-release.yml` on `main` with `sha=9441abd`, first with
+`dry_run=true` and then `false`:
+
+- `decide` runs `bump 9441abd`: a bump (`0.0.1` to `0.1.0`, heading added), and all five checks are green;
+  the tag `v0.1.0` is missing;
+- `release` calls `main`'s `release.yml` (which has `workflow_call`), which checks out `9441abd`, reads the
+  manifest and the `[0.1.0]` section there, and creates `v0.1.0` on `9441abd` with that section as the
+  notes. `0.1.0` is a full release, not a pre-release.
+
 ## 3. `scripts/release_check.py`
 
 Stdlib only, run with `python3` (no `uv sync` in the workflows that call it). Pure functions, a thin CLI,
@@ -165,9 +181,10 @@ and every branch unit tested (§9).
   rule from §3, in words.
 - **What to check after a merge:** the `auto-release` run for the merge commit, the tag, the release, and
   that HACS offers it.
-- **Fallbacks:** the `workflow_dispatch` run (dry run first), and then the manual tag, which stays the only
-  way for a version whose bump merged before this work (v0.1.0, if the owner hasn't tagged it yet) or for a
-  commit the rule doesn't count as a bump.
+- **Fallbacks:** the `workflow_dispatch` run (dry run first), also for a bump commit merged before this
+  work; then the manual tag, for a commit the rule doesn't count as a bump.
+- **After this work merges (once):** dispatch `auto-release.yml` with `sha=9441abd`, a dry run and then a
+  real one, to release `0.1.0` (§2.3); then check the tag, the release and HACS.
 - **What `release.yml` checks:** add the "no second release" rule and the two ways it starts.
 - **Required checks:** the list in `auto-release.yml`'s trigger and in `REQUIRED_CHECKS` must follow the
   required checks on `main`; `tests/test_workflows.py` catches a workflow added or renamed in the repo,
@@ -218,7 +235,11 @@ D10's status becomes `active; the manual tag superseded by D39`.
 equal, lower, bad input); the changelog section (present, missing, blank, last section in the file); bump
 (raised with section, raised without section, heading already in the parent, unchanged, lowered, a revert
 to an older version); checks green (all green, one missing, one failed, a scheduled rerun that is newer);
-the CLI's outputs and exit codes, with `git` run in a temporary repository.
+the CLI's outputs and exit codes, with `git` run in a temporary repository. The `0.1.0` case (§2.3): a
+temporary repository whose last commit raises `0.0.1` to `0.1.0` and adds its section, then a later commit
+that doesn't change the version: `bump` on the older commit says bump with `version=0.1.0` and
+`tag=v0.1.0`, and on the later one says not a bump. A test on this repository's own history is not used:
+the shallow checkout in CI may not hold `9441abd`.
 
 **Workflow tests** (`tests/test_workflows.py`, PyYAML parse):
 - the set of workflows that run on `push` to `main` (excluding `auto-release`), by `name`, equals
@@ -233,6 +254,7 @@ the CLI's outputs and exit codes, with `git` run in a temporary repository.
 merge the owner checks:
 1. This PR's merge isn't a bump, so `auto-release` runs (up to five times) and each run ends with a
    "nothing to release" line. That tests the trigger, the filters and `bump`.
-2. Optionally, a dispatch dry run on the merge commit, which logs the same.
+2. The `0.1.0` dispatch (§2.3), which is the first real test of the release path: the tag on `9441abd`,
+   the release with the `[0.1.0]` section as notes, and HACS offering `0.1.0`.
 3. The next bump PR is the end-to-end test: the tag on the merge commit, the release with the changelog
    section as notes, and HACS offering the version.

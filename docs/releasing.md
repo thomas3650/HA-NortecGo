@@ -166,9 +166,6 @@ request that bumps both pins, updates the lock with `uv lock --upgrade-package p
 the other pins alone, apart from what the new version needs), runs the usual gates, and works through this
 checklist before merging:
 
-Title such a PR by what it changes for users (*PR titles*). If users see a difference, it's a `feat` or
-`fix` with a changelog entry and the bump step. If they don't, it's `chore(deps): …`.
-
 - [ ] Read the new version's exception messages, including errors it wraps from lower layers, and confirm
   they hold no email, password, tokens, device ID or request bodies. The integration passes them into its
   logs (`CLAUDE.md`, hard rule 5).
@@ -178,6 +175,9 @@ Title such a PR by what it changes for users (*PR titles*). If users see a diffe
 - [ ] Look for new exception classes the charger, car, price, start and stop calls can raise, and give each
   the right handling. The charger read's catch-all only keeps an unknown error from crashing the read.
 - [ ] Read the client's changelog for breaking changes to the models the entities use.
+
+Title such a PR by what it changes for users (*PR titles*). If users see a difference, it's a `feat` or
+`fix` with a changelog entry and the bump step. If they don't, it's `chore(deps): …`.
 
 ## Bumping Home Assistant
 

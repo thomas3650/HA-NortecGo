@@ -73,7 +73,7 @@ superseded. How to add one:
 - **Source:** [ground-structure spec](superpowers/specs/2026-09-26-ground-structure-design.md), Decisions, §3.4
 
 ### D10: Manual releases
-- **Date:** 2026-09-26 · **Status:** active
+- **Date:** 2026-09-26 · **Status:** active; the manual tag superseded by D39
 - **Decision:** Releases are manual: a bump PR updates `manifest.json`'s version and moves the CHANGELOG
   section from *Unreleased*, then the owner pushes tag `vX.Y.Z`, and `release.yml` publishes the GitHub
   release.
@@ -332,3 +332,12 @@ superseded. How to add one:
   devices, and aren't secrets. `asdict` shows every field, and Dependabot bumps the client; a new secret key
   in `entry.data` under another name still needs adding to the list by hand.
 - **Source:** [diagnostics spec](superpowers/specs/2026-09-29-diagnostics-design.md), §3, §4 and §6
+
+### D39: A merged bump PR is the release
+- **Date:** 2026-09-29 · **Status:** active
+- **Decision:** When CI passes on `main` for a commit that raises the version and adds its changelog
+  section, `auto-release.yml` tags that commit and publishes the release through `release.yml`. A dispatch
+  of `auto-release.yml` is the fallback, also for a bump merged before it; tagging by hand is the last one.
+- **Why:** The bump PR already holds everything a release needs; the owner still decides when a release goes
+  out by merging it.
+- **Source:** [auto-release spec](superpowers/specs/2026-09-29-auto-release-design.md), Decisions and §2

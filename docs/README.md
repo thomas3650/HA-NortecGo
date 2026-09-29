@@ -8,7 +8,7 @@ The root [`README.md`](../README.md) is the public intro; everything else lives 
 | [`../CLAUDE.md`](../CLAUDE.md) | What this repo is, layout, commands, hard rules | Starting any work here |
 | [`way-of-working.md`](way-of-working.md) | Flow, agents, model policy, conventions, the PO flow | Doing non-trivial work |
 | [`decisions.md`](decisions.md) | Lasting decisions, newest last | Why something is the way it is |
-| [`releasing.md`](releasing.md) | The bump PR, tagging, what `release.yml` checks | Cutting a release |
+| [`releasing.md`](releasing.md) | The bump PR, the automatic release, fallbacks and tagging by hand, what `release.yml` checks | Cutting a release |
 | [`notes.md`](notes.md) | Small learned facts that fit no other doc | Looking for a fact that isn't elsewhere |
 | [`ha-notes.md`](ha-notes.md) | Learned Home Assistant and HACS facts: loading, config flows, tooling, testing, coordinators and actions, devices and entities, diagnostics | Building or testing the integration |
 | [`manual-testing.md`](manual-testing.md) | Testing by hand against the owner's real account: running it, where real data lives, who may do what, checklists per feature | Testing the integration live |

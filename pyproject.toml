@@ -12,17 +12,23 @@ dev = [
   "ruff",
   "mypy",
   "pre-commit",
+  "actionlint-py",
+  "shellcheck-py",
+  "zizmor",
+  "types-PyYAML",
   "pynortecgo==0.5.0",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["scripts"]
 
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["custom_components", "tests"]
+files = ["custom_components", "tests", "scripts/release_check.py"]
+mypy_path = "scripts"
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
@@ -78,7 +84,7 @@ mark-parentheses = false
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
-known-first-party = ["custom_components.nortec_go", "tests"]
+known-first-party = ["custom_components.nortec_go", "tests", "release_check"]
 combine-as-imports = true
 split-on-trailing-comma = false
 
@@ -87,3 +93,7 @@ max-complexity = 25
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# A script run by the workflows, not a package; it prints its verdicts.
+"scripts/*.py" = ["INP001", "T201"]

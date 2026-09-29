@@ -185,9 +185,11 @@ The integration reads the charger:
 While the charger can't be read, the 30-second reads stop after about 2 minutes, or about 10 minutes after
 you turn *Charge* on.
 
-It reads the car with the charger, but at most about every 5 minutes, and on every *Refresh*. It reads the price forecast when it
-starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. The current price moves to the next 15 minutes by
-itself, without a read.
+It reads the car with the charger, but at most about every 5 minutes, and on every *Refresh*. It reads the
+price forecast when it starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. If a price read at start-up or at
+one of these times fails, the integration tries once more 15 minutes later (or later, if the Nortec Go
+service asks it to wait), unless the next read time comes first. The current price moves to the next 15
+minutes by itself, without a read.
 
 *Energy this charge* and *Charging power* come from the last charger read, so while charging they can be up
 to 5 minutes old.
@@ -207,7 +209,7 @@ entity reads the charger, and the car if it wasn't read in the last few minutes,
   integration.
 - The prices have been checked only for the DK2 price area (DKK).
 - Tomorrow's prices are a forecast until the day-ahead prices come out, around 13:00; the 15:05 read
-  replaces them.
+  replaces them (or its retry about 15 minutes later, if it fails).
 - Car data can be hours old (see *Last seen*), so *Connected to charger* can turn on late.
 - Days and the price times follow Home Assistant's time zone.
 - A car removed from the account, with its entities, disappears after you reload the integration.

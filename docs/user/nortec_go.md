@@ -286,8 +286,8 @@ before you share it, and remove what you don't want public.
 
 Open an issue with the bug report template. Include your Home Assistant and integration versions and the
 lines of the debug log around the problem, not the whole log. You can also attach the diagnostics file (see
-*Diagnostics*). Before you post, remove your email address, your charger's and car's names, and anything
-else that identifies you or where you live.
+*Diagnostics*). Before you post log lines, remove your email address, your charger's and car's names, and
+anything else that identifies you or where you live.
 
 ## Removing the integration
 

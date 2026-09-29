@@ -136,8 +136,9 @@ At workflow level (so a run's `decide` never overlaps another run's `release`):
 
 1. **`decide`** (`permissions: contents: read, actions: read`):
    - checks out `main` with full history and `persist-credentials: false` (only merged code runs, never a
-     PR's), and installs Python 3.14 with `astral-sh/setup-uv` (the pinned SHA the other workflows use,
-     `enable-cache: false`); the script runs with `uv run --no-project`;
+     PR's), and installs Python 3.14 with `astral-sh/setup-uv` (the pinned SHA the other workflows use, with
+     `python-version: "3.14"`, which sets `UV_PYTHON`, and `enable-cache: false`); the script runs with
+     `uv run --no-project --python 3.14`;
    - runs `release_check.py bump <commit>` (§3); if it isn't a bump, logs why (for example
      `0.1.0 unchanged: nothing to release`) and ends with success;
    - lists the commit's push runs (`gh api "repos/<repo>/actions/runs?head_sha=<commit>&event=push&per_page=100"`)
@@ -196,7 +197,8 @@ on the integration; the unit tests (§9) cover every branch of the script.
     Version changed and a bump: exit 0. Version changed and not a bump: exit 1 with the reason.
   - `runs-green`: the runs JSON on stdin; exit 0 when green, 1 when not, listing the missing and failed
     names.
-  - `tag-commit <tag>`: `git ls-remote` output on stdin; prints the commit, or nothing if missing.
+  - `tag-commit <tag>`: `git ls-remote` output on stdin; prints the commit, or nothing if missing. A
+    missing tag is empty output (`git ls-remote` exits 0 for it), never judged by the exit code.
 
 ## 4. `release.yml`
 
@@ -230,10 +232,13 @@ on the integration; the unit tests (§9) cover every branch of the script.
 - **What to check after a merge:** the `auto-release` runs for the merge commit (some show as cancelled:
   §2.2), the tag, the release, and that HACS offers it.
 - **Fallbacks:** the `workflow_dispatch` run on `main` (dry run first), also for a bump commit merged
-  before the automation; then the manual tag, for a commit the rule doesn't count as a bump.
+  before the automation; then the manual tag, for a commit the rule doesn't count as a bump. A dispatch with
+  `dry_run=false` tags a release, so, like the manual tag, it is the owner's action (way of working §6: the
+  controller doesn't tag releases).
 - **Once, after the auto-release PR merges:** the owner adds `version-check` to `main`'s required status
   checks (§6), then dispatches `auto-release.yml` with `sha=9441abd`, a dry run and then a real one, to
-  release `0.1.0` (§2.4), and checks the tag, the release and HACS. The next bump PR removes this step.
+  release `0.1.0` (§2.4), and checks the tag, the release and HACS. The next bump PR removes this step; the
+  PR description lists the same steps.
 - **What `release.yml` checks:** add the two ways it starts, the "no second release" rule and the tag's
   commit check.
 - **Required workflows:** the list in `auto-release.yml`'s trigger and in `REQUIRED_WORKFLOWS` follows
@@ -245,11 +250,15 @@ on the integration; the unit tests (§9) cover every branch of the script.
 
 ## 6. `version-check.yml`
 
-- **On:** `pull_request` with `types: [opened, synchronize, reopened, ready_for_review]`; the job has
+- **On:** `pull_request` with `types: [opened, synchronize, reopened, ready_for_review, edited]`
+  (`edited` covers a change of base branch); the job has
   `if: github.event.pull_request.draft == false`. `permissions: contents: read`.
 - **Does:** checks out the PR head (full history, `persist-credentials: false`), installs Python 3.14 as in
-  §2.3, and runs `release_check.py pr-check <base sha> <head sha>` (§3), with both SHAs from
-  `github.event.pull_request` through `env:`. A version change that isn't a bump fails with the reason, so a
+  §2.3, and runs `release_check.py pr-check <merge base> <head sha>` (§3). The merge base is
+  `git merge-base "$BASE_SHA" "$HEAD_SHA"`, with both SHAs from `github.event.pull_request` through
+  `env:`: what the PR itself changes, so a PR behind a newer release on `main` doesn't see a lowered
+  version. `main` requires branches to be up to date, so at merge time the merge base is the squash commit's
+  first parent, and the check predicts `bump` exactly. A version change that isn't a bump fails with the reason, so a
   PR that passes is released when it merges.
 - **Check name:** the job's id is `version-check` and it has no `name:`, so its check is `version-check`.
 - **Required check:** after the merge, the owner adds `version-check` to `main`'s required status checks;
@@ -303,7 +312,8 @@ D10's status becomes `active; the manual tag superseded by D39`.
   history: CI's checkout is shallow.)
 
 **Workflow tests** (`tests/test_workflows.py`, PyYAML, with `on:` read as `True`):
-- the workflows that run on `push` to `main` (other than `auto-release`), by `name`, equal
+- the workflows that run on `push` to `main` (whose `push.branches` holds `main`; `release.yml`'s
+  `push: tags` doesn't count), by `name`, equal
   `auto-release.yml`'s `workflow_run.workflows` and `REQUIRED_WORKFLOWS`, and each has exactly one job,
   whose id equals the workflow's name (the required check names on `main` are those job names);
 - `auto-release.yml` has no `pull_request` or `pull_request_target` trigger, top-level `permissions: {}`,

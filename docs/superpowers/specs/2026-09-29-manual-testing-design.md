@@ -32,8 +32,7 @@ Answered by the PO in the brainstorm (2026-09-29), unless marked otherwise.
 | Expected behaviour | Each checklist item says what to check and links to the section of `docs/user/nortec_go.md` that describes it. The guide restates no values, units, sequences or timings, so it stays right when a feature changes (for example the price sensor after #51). States are named only as preconditions, spelled as in `strings.json` |
 | Owner-only steps | Marked in the guide (§2.5) |
 | What agents may do in the UI | Navigate and read, and operate no control (§2.5). *Controller*, from the review: the narrowest reading of §8 step 3 |
-| EV Smart Charging and automations | *Owner, 2026-09-29 (via the PO):* EV Smart Charging's smart-charging switch stays off unless the owner gives an explicit OK for that session, and any automation that turns *Charge* on or off counts as a start or stop under hard rule 2. *Controller, from the review:* the session ends with the owner turning them off again, since `config/` keeps them for every later start of Home Assistant (§3.3) |
-| EV Smart Charging's charger control | *Pending, with the owner (via the PO), from the review:* whether the charger-control entity also stays empty unless the owner has given an OK, beyond the switch being off. The plan follows the answer |
+| EV Smart Charging | *Owner, 2026-09-29 (via the PO):* it isn't set up or tested in `config/`; the owner tests it in production, outside this guide (§3.3). Setting it up in `config/`, or an automation there that drives *Charge*, is owner only and counts under hard rule 2. If one is ever set up there, the owner's earlier ruling stands: its smart-charging switch stays off unless the owner gives an explicit OK for that session (and is turned off again at the session's end), and any automation that turns *Charge* on or off counts as a start or stop. The charger-control question is moot |
 | Reauth | *Owner, 2026-09-29 (via the PO):* not tested manually, no second account; one line says the automated tests cover it. Normal testing reuses the stored session |
 | Public results | Results posted on issues or PRs follow `way-of-working.md` §8 *Public text*; the guide links to it |
 | §8 pointer | One line in §8 step 3 points to the guide for what to look at; the guide points back to §8 for the check's rules. §1 step 10 is unchanged |
@@ -134,8 +133,9 @@ OK first, each time**, including a turn-on expected to be refused.
   so that start is slower.
 - `--debug` is asyncio debug mode, not debug logging; debug logging is in the user docs' *Debug logging*
   (§4.1).
-- EV Smart Charging and automations in `config/` run on every start of HA, `scripts/smoke` and the PO's
-  visual check included (§3.3).
+- `config/` has no EV Smart Charging and no automation on *Charge*, and must stay that way unless the
+  owner sets one up (§3.3): anything there runs on every start of HA, `scripts/smoke` and the PO's visual
+  check included.
 
 ### 2.5 Who does what
 
@@ -146,8 +146,7 @@ OK first, each time**, including a turn-on expected to be refused.
   - the entry's ⋮ menu (reload, delete, disable);
   - anything that calls an action on the charger, and every item in §3.4.
 - **Agents** (the PO's visual check) look only: they navigate and read, and operate no control. Not the *Charge*
-  row or toggle anywhere (its state is read without opening it), not *Refresh*, not any EV Smart Charging
-  control, not **Submit** in a repair, not the entry's ⋮ menu. The rules of the check itself are in
+  row or toggle anywhere (its state is read without opening it), not *Refresh*, not **Submit** in a repair, not the entry's ⋮ menu. The rules of the check itself are in
   `way-of-working.md` §8 step 3 (linked).
 - Checking for errors: agents use `scripts/smoke`'s output or HA's logs page in the UI (**Settings** >
   **System** > **Logs**), never `config/`'s log file.
@@ -184,19 +183,15 @@ entities by name (from `strings.json`), each against its table row:
 
 ### 3.3 EV Smart Charging (#8)
 
-- Setting it up with the user docs' *Use cases* entities is **owner** only (§2.5). Once its charger control
-  is set, EV Smart Charging turns *Charge* on and off by its schedule: each is a real start or stop (§2.1).
-- Its smart-charging switch stays off unless the owner has given an explicit OK for that session. Any
-  automation that turns *Charge* on or off counts as a start or stop under hard rule 2 and stays off unless
-  the owner has given the same OK. The guide doesn't claim the switch is the only way EV Smart Charging can
-  drive *Charge*.
-- **The session ends** with the owner turning them off again: `config/` keeps them, and every later start
-  of HA (`scripts/develop`, `scripts/smoke`, the PO's visual check) relies on them being off.
-- **owner** While setting it up (with them off): EV Smart Charging accepts each entity.
-- **Checks without charger actions** (with them off): EV Smart Charging reads the price list, and its plan
-  follows the prices.
-- **owner, with explicit OK:** a planned charge starts and stops as planned; the user docs' *Use cases*
-  notes (continuous charging, the replug) hold.
+- EV Smart Charging isn't set up in `config/`, and it isn't tested there: the owner tests it in the owner's
+  own production Home Assistant, outside this guide. No checklist.
+- Setting it up in `config/`, or creating or turning on an automation there that turns *Charge* on or off,
+  is **owner** only (§2.5) and counts under hard rule 2 (§2.1), so nobody adds one to the dev config by
+  accident. If one is ever set up there, the owner's earlier rule applies: its smart-charging switch (and
+  any such automation) stays off unless the owner has given an explicit OK for that session, and the owner
+  turns it off again at the end of the session, since `config/` keeps it for every later start of HA.
+- The *Current price* attributes that EV Smart Charging reads are checked in §3.2, without EV Smart
+  Charging.
 
 ### 3.4 Start and stop (#9, and the later start and stop deadlines)
 

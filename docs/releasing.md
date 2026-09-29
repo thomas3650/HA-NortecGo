@@ -3,7 +3,9 @@
 ## Versioning
 
 This project uses [Semantic Versioning](https://semver.org/). Versions `0.0.x` and any version with a `-`
-suffix (for example `1.0.0-beta.1`) are published as pre-releases.
+suffix (for example `1.0.0-beta.1`) are published as pre-releases. HACS installs from the default branch,
+not a pre-release, when a repository has no full release, so the first release a user should install is a
+full one.
 
 ## The bump PR
 

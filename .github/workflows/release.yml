@@ -2,21 +2,43 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: The tag to release, v<version>
+        required: true
+        type: string
+      sha:
+        description: The commit to release
+        required: true
+        type: string
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ inputs.sha || github.ref }}
           persist-credentials: false
+      - name: The tag and the commit
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # Called: the tag is an input (a called workflow sees the caller's github context).
+          # Pushed: the tag is the pushed ref.
+          if [ -n "$INPUT_TAG" ]; then tag="$INPUT_TAG"; else tag="$REF_NAME"; fi
+          echo "TAG=${tag}" >> "$GITHUB_ENV"
+          echo "COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Tag must match manifest.json version
         run: |
           version="$(python3 -c 'import json; print(json.load(open("custom_components/nortec_go/manifest.json"))["version"])')"
-          test "${GITHUB_REF_NAME}" = "v${version}" || { echo "Tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
+          test "${TAG}" = "v${version}" || { echo "Tag ${TAG} != v${version}"; exit 1; }
           echo "VERSION=${version}" >> "$GITHUB_ENV"
       - name: Extract release notes from CHANGELOG.md
         run: |
@@ -26,10 +48,32 @@ jobs:
             found {print}
           ' CHANGELOG.md > notes.md
           grep -q '[^[:space:]]' notes.md || { echo "No CHANGELOG section for $VERSION"; exit 1; }
-      - name: Create the GitHub release
+      - name: Skip a release that exists
+        id: existing
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release ${TAG} already exists: nothing to do"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: The tag must point at the commit
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          # The repo is public, so ls-remote works without credentials (persist-credentials: false).
+          tagged="$(git ls-remote origin "refs/tags/${TAG}" "refs/tags/${TAG}^{}" \
+            | awk -v t="refs/tags/${TAG}" '$2 == t "^{}" {p=$1} $2 == t {l=$1} END {print (p != "" ? p : l)}')"
+          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then
+            echo "Tag ${TAG} points at ${tagged}, not ${COMMIT}"
+            exit 1
+          fi
+      - name: Create the GitHub release
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           prerelease=()
           case "$VERSION" in 0.0.*|*-*) prerelease=(--prerelease) ;; esac
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md "${prerelease[@]}"
+          gh release create "$TAG" --target "$COMMIT" --title "$TAG" --notes-file notes.md "${prerelease[@]}"

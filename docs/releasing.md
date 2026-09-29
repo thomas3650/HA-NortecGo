@@ -39,8 +39,8 @@ the other pins alone, apart from what the new version needs), runs the usual gat
 checklist before merging:
 
 - [ ] Read the new version's exception messages, including errors it wraps from lower layers, and confirm
-  they hold no email, password, token, IDs or request bodies. The integration passes them into logs and
-  `ConfigEntry*` errors (`CLAUDE.md`, hard rule 5).
+  they hold no email, password, token, IDs or request bodies. The integration passes them into its logs
+  (`CLAUDE.md`, hard rule 5).
 - [ ] Look for new exception classes the charger, car, price, start and stop calls can raise, and give each
   the right handling. The charger read's catch-all only keeps an unknown error from crashing the read.
 - [ ] Read the client's changelog for breaking changes to the models the entities use.

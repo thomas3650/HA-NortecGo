@@ -151,6 +151,24 @@
     },
     "unloading": {
       "message": "The Nortec Go integration is reloading. Try again in a moment."
+    },
+    "rate_limited": {
+      "message": "The Nortec Go service is limiting requests. Home Assistant will read again later."
+    },
+    "cannot_connect": {
+      "message": "Can't reach the Nortec Go service. Home Assistant will try again."
+    },
+    "api_error": {
+      "message": "The Nortec Go service returned an error. Home Assistant will try again."
+    },
+    "charger_not_found": {
+      "message": "The charger is no longer on the Nortec Go account. Remove the integration and add it again."
+    },
+    "unexpected_response": {
+      "message": "The Nortec Go service sent an answer this integration doesn't understand. Check for an update of the integration."
+    },
+    "read_failed": {
+      "message": "Reading the charger failed. Home Assistant will try again."
     }
   },
   "issues": {

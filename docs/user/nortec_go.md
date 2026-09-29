@@ -237,7 +237,7 @@ When the stored session is rejected, Home Assistant shows a **Reauthentication r
 Go. Select it and enter your password. You sign in to the same account; signing in to an account with
 another charger is refused.
 
-### "The set charger was not found"
+### "The charger is no longer on the Nortec Go account"
 
 The charger you added is no longer on your Nortec Go account. Remove the integration and add it again.
 

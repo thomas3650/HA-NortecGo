@@ -85,6 +85,13 @@ def test_no_dry_run_or_dispatch_left() -> None:
         assert "inputs.sha ||" not in text
 
 
+def test_auto_release_tag_step_fails_only_on_a_tag_elsewhere() -> None:
+    """A tag already on the commit goes on (the 403 recovery); only a tag on another commit fails."""
+    steps = _load("auto-release.yml")["jobs"]["decide"]["steps"]
+    [step] = [s for s in steps if s.get("name") == "The tag"]
+    assert '[ -n "$tagged" ] && [ "$tagged" != "$SHA" ]' in step["run"]
+
+
 def test_concurrency_group_per_event_and_commit() -> None:
     """One group per event and commit, at workflow level, never cancelling a running release."""
     concurrency = _load("auto-release.yml")["concurrency"]

@@ -850,8 +850,10 @@ def test_release_pr_non_releasing_title(
 
 
 def test_release_pr_malformed_title(work: Path) -> None:
-    """A malformed title is an error."""
+    """A malformed title is an error: exit 2, files untouched."""
+    before = _read(work)
     assert main(["release-pr", "--title=Bump the uv group"]) == 2
+    assert _read(work) == before
 
 
 def test_release_pr_refuses_without_main_merged_in(

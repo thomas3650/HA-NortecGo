@@ -14,7 +14,7 @@ workflow can be started by hand, and a pushed tag publishes nothing on its own.
 
 Every PR title is `type(scope)!: text`. The `version-check` check reads it on every PR that isn't a draft.
 - `type` is lowercase, and one of the types in the table.
-- `(scope)` is optional: one or more characters other than brackets and whitespace.
+- `(scope)` is optional: one or more characters other than `(`, `)` and whitespace.
 - `!` is optional, comes right before the colon, and marks a breaking change.
 - Then a colon, one space, and the text. The text may hold `(#n)` references.
 
@@ -31,8 +31,8 @@ Every PR title is `type(scope)!: text`. The `version-check` check reads it on ev
 - GitHub's *Revert* button titles a PR `Revert "…"`. Retitle it, for example `fix: revert …`.
 - Only `!` marks a breaking change; a `BREAKING CHANGE:` footer isn't read.
 - Dependabot's titles are `chore(deps): …`, or `chore(deps-dev): …` for development dependencies. For one
-  that users should get, retitle it `feat` or `fix` and
-  run the bump step on its branch. Dependabot then stops rebasing it, which is fine for a PR about to merge.
+  that users should get, retitle it `feat` or `fix` and run the bump step on its branch. Dependabot then
+  stops rebasing it, which is fine for a PR about to merge.
 - The title's type is separate from the branch's type (`way-of-working.md` §1 step 2).
 
 ## A releasing PR
@@ -121,9 +121,17 @@ takes one only when the owner says so for that release.
     `auto-release` runs again.
   - A real break is fixed in a PR. The version it would have released may never be published. Its
     `CHANGELOG.md` section stays as history, and the next releasing PR carries only its own entries.
-- **`auto-release` or `release` failed.** If the cause is in the repo, fix it in a PR first. Then re-run the
-  failed `auto-release` run. A re-run acts on the same commit, and neither a release that already exists
-  nor a tag already on that commit gets in the way.
+- **`auto-release` or `release` failed.**
+  - A re-run replays the original event with the original commit: it runs that run's `auto-release.yml`
+    and the `./.github/workflows/release.yml` from that same commit. A fix to either workflow file merged to
+    `main` never reaches a re-run, and merging one makes the releasing commit's workflows differ from
+    `main`'s head, which is the HTTP 403 case below. Only `scripts/release_check.py` is picked up, because
+    the `decide` job checks out `main`.
+  - So re-run the failed `auto-release` run when the cause has passed (a GitHub outage, say), or when it was
+    a bug in `scripts/release_check.py`, fixed on `main` in a PR first. Neither a release that already
+    exists nor a tag already on that commit gets in the way.
+  - A bug in `auto-release.yml` or `release.yml` means that version isn't published. Its `CHANGELOG.md`
+    section stays as history, and the next releasing PR carries only its own entries.
 - **`HTTP 403: Resource not accessible by integration` when the release is created.**
   - Why: GitHub needs the `workflows` permission to create a release with a new tag on a commit whose
     `.github/workflows/` differ from `main`'s head, and a workflow's `GITHUB_TOKEN` can't have that
@@ -132,7 +140,7 @@ takes one only when the owner says so for that release.
   - When: a PR that changes the workflows merged after the releasing PR, but before its release was tagged.
     A re-run fails the same way.
   - Fix: the owner pushes the tag on the releasing commit by hand, then re-runs the failed `auto-release`
-    run. The re-run finds the tag on that commit and publishes. `0.1.0` was released this way.
+    run. The re-run finds the tag on that commit and publishes.
 
   ```bash
   git fetch origin

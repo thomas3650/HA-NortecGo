@@ -67,6 +67,8 @@ syntax error before 3.14). A repo Python script run by a workflow goes through `
   `defaults.run.shell: bash`) adds `-o pipefail`.
 - Creating a release with a new tag on a commit whose workflows differ from `main`'s head needs a permission
   `GITHUB_TOKEN` can't have: see [`releasing.md`](releasing.md#when-a-release-fails).
+- A re-run replays the original run's commit and workflow files, so a fix to a workflow file never reaches
+  it: see [`releasing.md`](releasing.md#when-a-release-fails).
 
 The detail is in the [auto-release spec](superpowers/specs/2026-09-29-auto-release-design.md), *Facts used*.
 Found in #64.

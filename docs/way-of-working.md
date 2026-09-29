@@ -137,7 +137,7 @@ implements it with TDD, runs the gates and `scripts/smoke`, and opens a ready PR
 review.
 
 A PR opened ready with a releasing title runs the bump step ([`releasing.md`](releasing.md#a-releasing-pr))
-before it is opened; give the title in single quotes.
+before it is opened.
 
 ## 5. Model policy and guarded files
 

@@ -4,10 +4,10 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 import logging
 
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.typing import UNDEFINED
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -37,10 +37,11 @@ from .const import (
     INTERVAL_IDLE,
     PRICE_READ_HOURS,
     PRICE_READ_MINUTE,
+    PRICE_RETRY_DELAY,
     TICK_MINUTES,
 )
 from .entry import NortecGoConfigEntry
-from .prices import KnownSlots, PriceStore, merge_forecast, prune
+from .prices import KnownSlots, PriceStore, merge_forecast, next_price_read, prune
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -113,6 +114,10 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self._car_read_at: datetime | None = None
         self._read_car_next = False
         self._price_store = PriceStore(hass, entry.entry_id)
+        self._prices_failing = False
+        self._price_retry: CALLBACK_TYPE | None = None
+        # The setup read can schedule a retry before the timers start.
+        entry.async_on_unload(self._async_cancel_price_retry)
 
     async def _async_update_data(self) -> NortecGoData:
         """Read the charger, then the car when due; set the next interval."""
@@ -269,20 +274,30 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         )
         self.price_currency = stored.currency
 
-    async def async_read_prices(self, *, during_setup: bool = False) -> None:
-        """Read the forecast, merge, prune and save it with its currency; keep the known slots on failure (§4.3)."""
+    async def async_read_prices(
+        self, *, during_setup: bool = False, retry_on_failure: bool = False
+    ) -> None:
+        """Read the forecast, merge, prune and save it with its currency; keep the known slots on failure (§4.3).
+
+        A failed read asked to retry on failure is read once more later (D37).
+        """
         try:
             forecast = await self.client.get_price_forecast()
         except AuthError as err:
+            self._async_cancel_price_retry()
             if during_setup:
                 raise ConfigEntryAuthFailed(str(err)) from err
             self.config_entry.async_start_reauth(self.hass)
             return
         except NortecGoError as err:
-            _LOGGER.warning(
-                "Could not read the price forecast; keeping the known prices: %s", err
-            )
+            self._log_price_error(err)
+            if retry_on_failure:
+                self._async_schedule_price_retry(err)
             return
+        self._async_cancel_price_retry()
+        if self._prices_failing:
+            self._prices_failing = False
+            _LOGGER.info("Reading the price forecast works again")
         self.known_prices = prune(
             merge_forecast(self.known_prices, forecast),
             dt_util.utcnow(),
@@ -293,11 +308,52 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         await self._price_store.async_save(self.known_prices, self.price_currency)
         self.async_update_listeners()
 
+    def _log_price_error(self, err: NortecGoError) -> None:
+        """Log the first price read failure of a run at warning, later ones at debug (D37)."""
+        level = logging.DEBUG if self._prices_failing else logging.WARNING
+        self._prices_failing = True
+        _LOGGER.log(
+            level,
+            "Could not read the price forecast; keeping the known prices: %s",
+            err,
+        )
+
     @callback
-    def async_start_price_read(self) -> None:
+    def _async_schedule_price_retry(self, err: NortecGoError) -> None:
+        """Read the prices once more later, unless the next scheduled read comes first (D37)."""
+        delay = PRICE_RETRY_DELAY
+        if isinstance(err, RateLimitError) and err.retry_after is not None:
+            delay = max(delay, timedelta(seconds=err.retry_after))
+        now = dt_util.utcnow()
+        if now + delay >= next_price_read(now, dt_util.get_default_time_zone()):
+            return
+        self._async_cancel_price_retry()
+
+        @callback
+        def _due(_now: datetime) -> None:
+            self._price_retry = None
+            self.async_start_price_read()
+
+        self._price_retry = async_call_later(
+            self.hass,
+            delay,
+            HassJob(_due, f"{DOMAIN} price read retry", cancel_on_shutdown=True),
+        )
+
+    @callback
+    def _async_cancel_price_retry(self) -> None:
+        """Cancel a pending price read retry, if any."""
+        if self._price_retry is not None:
+            self._price_retry()
+            self._price_retry = None
+
+    @callback
+    def async_start_price_read(self, *, retry_on_failure: bool = False) -> None:
         """Start one price read as a background task that unload cancels."""
         self.config_entry.async_create_background_task(
-            self.hass, self.async_read_prices(), f"{DOMAIN} price read"
+            self.hass,
+            self.async_read_prices(retry_on_failure=retry_on_failure),
+            f"{DOMAIN} price read",
         )
 
     @callback
@@ -306,7 +362,9 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
 
         @callback
         def _price_time(now: datetime) -> None:
-            self.async_start_price_read()
+            # The scheduled read replaces a pending retry (D37).
+            self._async_cancel_price_retry()
+            self.async_start_price_read(retry_on_failure=True)
 
         @callback
         def _tick(now: datetime) -> None:

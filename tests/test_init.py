@@ -1,7 +1,7 @@
 """Tests for the Nortec Go integration setup."""
 
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 import json
 import logging
 from pathlib import Path
@@ -223,6 +223,84 @@ async def test_unload_cancels_a_price_read_in_flight(
     mock_client.get_price_forecast.side_effect = _slow_forecast
     mock_config_entry.runtime_data.async_start_price_read()
     await started.wait()
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert cancelled.is_set()
+
+
+# 2026-09-27 10:00 local (CEST) is 08:00 UTC.
+TEN_AM = datetime(2026, 9, 27, 8, 0, tzinfo=UTC)
+
+
+async def test_failed_setup_price_read_retries(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A failed setup price read still loads the entry and is read once more 15 minutes later."""
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    freezer.move_to(TEN_AM - timedelta(minutes=30))  # 09:30 local
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert mock_client.get_price_forecast.await_count == 1
+
+    mock_client.get_price_forecast.side_effect = None
+    freezer.tick(timedelta(minutes=15))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert mock_client.get_price_forecast.await_count == 2
+    assert mock_config_entry.runtime_data.known_prices
+
+
+async def test_unload_cancels_a_pending_price_retry(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Unload cancels a retry that isn't due yet."""
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    freezer.move_to(TEN_AM - timedelta(minutes=30))
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    freezer.tick(timedelta(minutes=15))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert mock_client.get_price_forecast.await_count == 1
+
+
+async def test_unload_cancels_a_price_retry_in_flight(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A retry read still running at unload is cancelled."""
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    freezer.move_to(TEN_AM - timedelta(minutes=30))
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def _slow_forecast() -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    mock_client.get_price_forecast.side_effect = _slow_forecast
+    freezer.tick(timedelta(minutes=15))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert started.is_set()  # not started.wait(): without a retry that would hang
     assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
     await hass.async_block_till_done()
     assert cancelled.is_set()

@@ -20,6 +20,8 @@ All notable changes to this project are documented in this file. The format is b
   card holds, and shown off right after a stop until the charger follows; a *Charge status* sensor; and a
   repair issue to allow starts again after a failed start.
 - A *Refresh* button that reads the charger, the car and the prices right away.
+- A failed price read at start-up or at a read time is tried once more 15 minutes later, and an outage logs
+  one warning instead of one per read.
 - A *Last read* sensor that shows when the charger was last read.
 - The charger is read every 30 seconds while a charge is starting or stopping, for about 2 minutes (10 after
   a start) while it can't be read, and right away after turning *Charge* on or off.

@@ -57,10 +57,16 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - `hass.async_create_task` and `ConfigEntry.async_create_background_task` start the task eagerly: it runs
   up to its first real wait before the caller's next line. With an `AsyncMock` that never waits, a
   "background" task has finished by then. To test the state while it is in flight, make the mock wait on an
-  `asyncio.Event`.
+  `asyncio.Event`. To check that the task started, use `await hass.async_block_till_done()` and then
+  `assert started.is_set()`, not `await started.wait()`: without the code under test, that wait hangs (no
+  pytest timeout is configured).
 - The test plugin fails a test that leaves an `async_call_later` timer scheduled, unless its `HassJob` has
   `cancel_on_shutdown=True`. Work that a timer starts as a background task needs
   `hass.async_block_till_done(wait_background_tasks=True)`; the default doesn't wait for background tasks.
+- HA doesn't unload config entries when it stops (it only calls `entry.async_shutdown`), so an entry's
+  `async_call_later` timers need `cancel_on_shutdown=True` even when an `async_on_unload` callback cancels
+  them. The `hass` fixture unloads loaded entries at teardown, so the lingering-timer check doesn't catch a
+  missing flag on an entry's timer: check it in review.
 - A `Store` version bump needs a `Store` subclass that overrides `_async_migrate_func`; without it, loading
   an older version raises `NotImplementedError`. The migrated data is saved straight back. `hass_storage`
   loads through HA's real `Store` load, so the migration runs in tests too.

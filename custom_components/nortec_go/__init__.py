@@ -58,7 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
         )
         if device is not None:
             device_registry.async_remove_device(device.id)
-    await coordinator.async_read_prices(during_setup=True)
+    await coordinator.async_read_prices(during_setup=True, retry_on_failure=True)
     coordinator.async_start_timers()
 
     entry.runtime_data = coordinator

@@ -15,7 +15,7 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
    (and a `Guarded files:` line where needed; see §5) and a `Wave:` number on every task, written for
    parallel work (see [Parallel waves](#parallel-waves)). Then `full-reviewer` until Ready. The `ruff-format`
    hook reformats Python blocks in Markdown, so a fragment that isn't a whole statement (parametrize rows,
-   say) goes in a `text` block.
+   say) goes in a `text` block, and so do class methods (indented `def`s), which it dedents to module level.
 6. **Draft PR:** once the spec and plan are both Ready, commit them, push, and open a **draft** PR with
    `Closes #n` and links to the spec and plan. The owner reviews the spec and plan there.
 7. **Execute:** `superpowers:subagent-driven-development`. For each task:
@@ -158,7 +158,8 @@ review.
   - The allowlist covers only file-editing tools (Edit, Write, NotebookEdit). A subagent can't delete or move a guarded file (`git rm`, `rm`,
     `mv`), even an allowlisted one, so the plan gives deletes under `.claude/` to the controller.
   - The guard refuses a bare heredoc (`<<`) in Bash as unparseable. Subagents write scripts and commit messages
-    with the Write tool, to a file outside the repo, and commit with `git commit -F <file>`.
+    with the Write tool, to a uniquely named file outside the repo (after the topic and task, for example
+    `/tmp/<topic>-task-<n>-msg.txt`, or from `mktemp`), and commit with `git commit -F <file>`.
   - The controller is not restricted by it.
 
 ## 6. Conventions

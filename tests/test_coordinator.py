@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+import logging
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -660,6 +661,298 @@ async def test_later_price_auth_error_starts_reauth(
         await coordinator.async_read_prices()
     start_reauth.assert_called_once()
     mock_client.login.assert_not_awaited()
+
+
+async def _at(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, when: datetime
+) -> None:
+    """Move the clock to when and run what is due, background tasks included."""
+    freezer.move_to(when)
+    async_fire_time_changed(hass, when)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+
+def _local(hours: int, minutes: int = 0) -> datetime:
+    """A local time on 2026-09-27, in UTC."""
+    return MIDNIGHT + timedelta(hours=hours, minutes=minutes)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        NortecGoConnectionError("network down"),
+        UnexpectedResponseError("GET /example", "gap"),
+    ],
+)
+async def test_failed_scheduled_price_read_retries_once(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    error: NortecGoError,
+) -> None:
+    """A failed 15:05 read is read once more at 15:20, and then not until 20:05."""
+    freezer.move_to(_local(15))
+    await setup_integration(hass, mock_config_entry)
+    forecast = mock_client.get_price_forecast
+    mock_client.get_price_forecast.side_effect = error
+
+    await _at(hass, freezer, _local(15, 5))
+    assert forecast.await_count == 2
+    await _at(hass, freezer, _local(15, 19))
+    assert forecast.await_count == 2
+    await _at(hass, freezer, _local(15, 20))
+    assert forecast.await_count == 3
+    await _at(hass, freezer, _local(15, 35))
+    await _at(hass, freezer, _local(20, 4))
+    assert forecast.await_count == 3
+    await _at(hass, freezer, _local(20, 5))
+    assert forecast.await_count == 4
+
+
+async def test_successful_refresh_cancels_price_retry(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A successful read (Refresh) cancels a pending retry."""
+    freezer.move_to(_local(15))
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await _at(hass, freezer, _local(15, 5))
+
+    mock_client.get_price_forecast.side_effect = None
+    freezer.move_to(_local(15, 10))
+    await coordinator.async_read_prices()
+    assert mock_client.get_price_forecast.await_count == 3
+    await _at(hass, freezer, _local(15, 20))
+    assert mock_client.get_price_forecast.await_count == 3
+
+
+async def test_failed_refresh_keeps_a_pending_retry(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A failed Refresh schedules no retry of its own and leaves a pending one."""
+    freezer.move_to(_local(12))
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    forecast = mock_client.get_price_forecast
+    forecast.side_effect = NortecGoConnectionError("network down")
+
+    await coordinator.async_read_prices()
+    assert forecast.await_count == 2
+    await _at(hass, freezer, _local(12, 15))
+    assert forecast.await_count == 2
+
+    await _at(hass, freezer, _local(15, 5))
+    assert forecast.await_count == 3
+    freezer.move_to(_local(15, 10))
+    await coordinator.async_read_prices()
+    assert forecast.await_count == 4
+    await _at(hass, freezer, _local(15, 20))
+    assert forecast.await_count == 5
+    await _at(hass, freezer, _local(15, 35))
+    assert forecast.await_count == 5
+
+
+async def test_failed_setup_read_near_a_read_time_gets_no_retry(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A failed setup read at 14:55 gets no retry: the 15:05 read comes first."""
+    freezer.move_to(_local(14, 55))
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    forecast = mock_client.get_price_forecast
+    assert forecast.await_count == 1
+
+    await _at(hass, freezer, _local(15, 4))
+    assert forecast.await_count == 1
+    await _at(hass, freezer, _local(15, 5))
+    assert forecast.await_count == 2
+    await _at(hass, freezer, _local(15, 10))
+    assert forecast.await_count == 2
+    await _at(hass, freezer, _local(15, 20))
+    assert forecast.await_count == 3
+
+
+@pytest.mark.parametrize(
+    ("retry_after", "retry_minutes"),
+    [(1800.0, 30), (60.0, 15), (None, 15), (18000.0, None)],
+)
+async def test_rate_limited_price_read_retry_delay(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    retry_after: float | None,
+    retry_minutes: int | None,
+) -> None:
+    """The retry waits the longer of 15 minutes and retry_after, and is dropped if it reaches 20:05."""
+    freezer.move_to(_local(15))
+    await setup_integration(hass, mock_config_entry)
+    forecast = mock_client.get_price_forecast
+    forecast.side_effect = RateLimitError("too many requests", retry_after=retry_after)
+    await _at(hass, freezer, _local(15, 5))
+    assert forecast.await_count == 2
+
+    for minutes in range(10, 300, 5):  # 15:15 to 20:00
+        await _at(hass, freezer, _local(15, 5 + minutes))
+        retried = retry_minutes is not None and minutes >= retry_minutes
+        assert forecast.await_count == (3 if retried else 2), minutes
+
+
+async def test_no_retry_due_at_the_next_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A retry that would be due at the next read time is not scheduled."""
+    freezer.move_to(_local(12))
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    forecast = mock_client.get_price_forecast
+    forecast.side_effect = NortecGoConnectionError("network down")
+    # The next read time is exactly when the retry would be due; no scheduled read runs then.
+    with patch(
+        "custom_components.nortec_go.coordinator.next_price_read",
+        return_value=_local(12, 15),
+    ):
+        await coordinator.async_read_prices(retry_on_failure=True)
+    await _at(hass, freezer, _local(12, 15))
+    assert forecast.await_count == 2
+
+
+async def test_price_auth_error_schedules_no_retry(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An AuthError in a scheduled read starts reauth, with no retry and no login."""
+    freezer.move_to(_local(15))
+    await setup_integration(hass, mock_config_entry)
+    mock_client.get_price_forecast.side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth") as start_reauth:
+        await _at(hass, freezer, _local(15, 5))
+        await _at(hass, freezer, _local(15, 20))
+    assert mock_client.get_price_forecast.await_count == 2
+    start_reauth.assert_called_once()
+    mock_client.login.assert_not_awaited()
+
+
+async def test_price_auth_error_on_the_retry_starts_reauth(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An AuthError in the retry starts reauth, without logging in."""
+    freezer.move_to(_local(15))
+    await setup_integration(hass, mock_config_entry)
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await _at(hass, freezer, _local(15, 5))
+
+    mock_client.get_price_forecast.side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth") as start_reauth:
+        await _at(hass, freezer, _local(15, 20))
+    assert mock_client.get_price_forecast.await_count == 3
+    start_reauth.assert_called_once()
+    mock_client.login.assert_not_awaited()
+
+
+async def test_price_auth_error_cancels_a_pending_retry(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An AuthError (here in a Refresh) cancels a pending retry."""
+    freezer.move_to(_local(15))
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await _at(hass, freezer, _local(15, 5))
+
+    mock_client.get_price_forecast.side_effect = AuthError("token rejected")
+    freezer.move_to(_local(15, 10))
+    with patch.object(ConfigEntry, "async_start_reauth"):
+        await coordinator.async_read_prices()
+    mock_client.get_price_forecast.side_effect = None
+    await _at(hass, freezer, _local(15, 20))
+    assert mock_client.get_price_forecast.await_count == 3
+
+
+async def test_scheduled_read_cancels_a_pending_retry(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A scheduled read cancels a pending retry, also when it schedules none of its own."""
+    freezer.move_to(_local(14, 55))
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    forecast = mock_client.get_price_forecast
+    forecast.side_effect = NortecGoConnectionError("network down")
+    # Let the too-late check pass, so a retry is pending for 15:10, past the 15:05 read.
+    with patch(
+        "custom_components.nortec_go.coordinator.next_price_read",
+        return_value=_local(24),
+    ):
+        await coordinator.async_read_prices(retry_on_failure=True)
+    assert forecast.await_count == 2
+
+    # retry_after reaches 20:05, so the 15:05 read schedules no retry of its own.
+    forecast.side_effect = RateLimitError("too many requests", retry_after=18000.0)
+    await _at(hass, freezer, _local(15, 5))
+    assert forecast.await_count == 3
+    await _at(hass, freezer, _local(15, 10))
+    assert forecast.await_count == 3
+
+
+async def test_price_log_run(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A run of failed price reads logs one warning, then debug; its end logs one info line."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.nortec_go")
+    freezer.move_to(_local(12))
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert "Reading the price forecast works again" not in caplog.text
+
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await coordinator.async_read_prices()
+    await coordinator.async_read_prices()
+    failures = [
+        record.levelno
+        for record in caplog.records
+        if record.getMessage().startswith("Could not read the price forecast")
+    ]
+    assert failures == [logging.WARNING, logging.DEBUG]
+
+    mock_client.get_price_forecast.side_effect = None
+    await coordinator.async_read_prices()
+    await coordinator.async_read_prices()
+    recoveries = [
+        record.levelno
+        for record in caplog.records
+        if record.getMessage() == "Reading the price forecast works again"
+    ]
+    assert recoveries == [logging.INFO]
 
 
 async def test_tick_updates_listeners_without_api_calls(

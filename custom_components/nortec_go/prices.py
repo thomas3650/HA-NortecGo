@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta, tzinfo
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 import logging
 from typing import Any
 
@@ -13,6 +13,8 @@ from pynortecgo import PriceForecast
 from .const import (
     MISSING_SLOT_PRICE,
     PAST_SLOT_PRICE,
+    PRICE_READ_HOURS,
+    PRICE_READ_MINUTE,
     PRICE_STORE_KEY,
     PRICE_STORE_VERSION,
     SLOT_LENGTH,
@@ -103,6 +105,23 @@ def current_price(known: Mapping[datetime, float], now: datetime) -> float | Non
     now = now.astimezone(UTC)
     slot = now.replace(minute=now.minute - now.minute % 15, second=0, microsecond=0)
     return known.get(slot)
+
+
+def _local_read_time(day: date, hour: int, time_zone: tzinfo) -> datetime:
+    """A read time on a local day, in UTC; fold=0 on a repeated hour."""
+    return datetime.combine(
+        day, time(hour, PRICE_READ_MINUTE), tzinfo=time_zone
+    ).astimezone(UTC)
+
+
+def next_price_read(now: datetime, time_zone: tzinfo) -> datetime:
+    """The first scheduled price read after now, in UTC (D37)."""
+    today = now.astimezone(time_zone).date()
+    for hour in PRICE_READ_HOURS:
+        read = _local_read_time(today, hour, time_zone)
+        if read > now:
+            return read
+    return _local_read_time(today + timedelta(days=1), PRICE_READ_HOURS[0], time_zone)
 
 
 def _parse_start(value: str) -> datetime:

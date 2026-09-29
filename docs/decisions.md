@@ -311,3 +311,12 @@ superseded. How to add one:
 - **Why:** The owner's ruling, so that what one OK covers is clear in manual testing.
 - **Source:** [manual testing spec](superpowers/specs/2026-09-29-manual-testing-design.md), §2.1 and
   §3.4; the owner's ruling on PR #57
+
+### D37: One retry for a failed price read
+- **Date:** 2026-09-29 · **Status:** active
+- **Decision:** A failed setup or scheduled price read, except on an `AuthError`, is read once more after
+  15 minutes (or a longer `retry_after`), unless the next scheduled read comes first; a failed retry or
+  *Refresh* gets none. A run of failed price reads logs one warning and one recovery line.
+- **Why:** A failed 15:05 read left EV Smart Charging on the forecast until 20:05; one retry per read keeps
+  the rate-limited API's load at most doubled.
+- **Source:** [price read retry spec](superpowers/specs/2026-09-29-price-read-retry-design.md), Decisions and §3

@@ -12,6 +12,10 @@ dev = [
   "ruff",
   "mypy",
   "pre-commit",
+  "actionlint-py",
+  "shellcheck-py",
+  "zizmor",
+  "types-PyYAML",
   "pynortecgo==0.5.0",
 ]
 

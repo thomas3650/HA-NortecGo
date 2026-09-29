@@ -56,7 +56,8 @@
 | 2 | Task 2 (`release_check.py`) | Edits `pyproject.toml` after Task 1 (same file, so not in wave 1) |
 | 3 | Task 3 (workflows) | Uses Task 2's script and `REQUIRED_WORKFLOWS`, and Task 1's linters |
 
-Guarded files: Task 1 only (`.pre-commit-config.yaml`).
+Guarded files: Task 1 only. Before its dispatch the controller writes `.pre-commit-config.yaml` to
+`$(git -C <task-1 worktree> rev-parse --absolute-git-dir)/subagent-guard-allow`, and empties it however the task ends.
 
 ---
 
@@ -94,7 +95,10 @@ Expected: all four installed; `uv run actionlint -version`, `uv run shellcheck -
 - [ ] **Step 2: See what the linters find today**
 
 Run: `uv run actionlint; uv run zizmor --offline .github/workflows`
-Expected: at least `release.yml`'s unquoted `$flags` (ShellCheck SC2086), and zizmor's `artipacked` findings on checkouts without `persist-credentials: false`. Note every finding.
+Expected: actionlint clean; zizmor's `artipacked` findings on the five checkouts without `persist-credentials: false` (gitleaks, hassfest, lint, release, tests). Note every finding.
+
+Run: `uv run actionlint -verbose 2>&1 | grep 'Rule "shellcheck" was disabled'`
+Expected: no output (ShellCheck is on the `PATH`, so actionlint runs it).
 
 - [ ] **Step 3: Fix the findings**
 
@@ -201,6 +205,7 @@ process: actionlint and zizmor in the gates (#64)
 
 In `pyproject.toml`:
 - `[tool.pytest.ini_options]`: add `pythonpath = ["scripts"]`.
+- `[tool.ruff.lint.isort]`: `known-first-party` becomes `["custom_components.nortec_go", "tests", "release_check"]`.
 - `[tool.mypy]`: change `files` to `["custom_components", "tests", "scripts/release_check.py"]` and add `mypy_path = "scripts"`.
 - Add, after `[tool.ruff.lint.pydocstyle]`:
 
@@ -220,6 +225,7 @@ Create `tests/test_release_check.py`:
 import io
 import json
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 
@@ -597,6 +603,24 @@ def test_cli_tag_commit(
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     assert main(["tag-commit", "v0.1.0"]) == 0
     assert capsys.readouterr().out == ""
+
+
+def test_tag_commit_skips_other_lines() -> None:
+    """Lines that aren't a SHA and a ref are skipped."""
+    assert (
+        tag_commit("warning: something\n" + LIGHT, "v0.1.0")
+        == "1111111111111111111111111111111111111111"
+    )
+
+
+def test_script_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run as a script, it exits with main()'s code."""
+    script = Path(__file__).parent.parent / "scripts" / "release_check.py"
+    monkeypatch.setattr(sys, "argv", [str(script), "tag-commit", "v0.1.0"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    with pytest.raises(SystemExit) as exit_info:
+        runpy.run_path(str(script), run_name="__main__")
+    assert exit_info.value.code == 0
 ```
 
 Let `ruff format` wrap the long lines; mypy runs strict on tests.
@@ -618,6 +642,7 @@ import argparse
 from dataclasses import dataclass, field
 import json
 import os
+from pathlib import Path
 import re
 import subprocess
 import sys
@@ -797,7 +822,7 @@ def _verdict(base: str, head: str) -> Verdict:
 def _write_outputs(values: dict[str, str]) -> None:
     path = os.environ.get("GITHUB_OUTPUT")
     if path:
-        with open(path, "a", encoding="utf-8") as output:
+        with Path(path).open("a", encoding="utf-8") as output:
             output.writelines(f"{key}={value}\n" for key, value in values.items())
 
 
@@ -868,7 +893,6 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-`ruff` may ask for `Path.open` instead of `open` (`PTH123`); use `Path(path).open(...)` if it does.
 
 - [ ] **Step 4: Run the tests**
 
@@ -984,7 +1008,7 @@ def test_concurrency_group_per_event_and_commit() -> None:
 
 
 def test_release_triggers_and_permissions() -> None:
-    """release runs on a tag push or a call with a tag and a commit."""
+    """Release runs on a tag push or a call with a tag and a commit."""
     workflow = _load("release.yml")
     on = _on(workflow)
     assert on["push"] == {"tags": ["v*"]}
@@ -1044,7 +1068,7 @@ def test_no_expressions_inside_run_blocks() -> None:
 ```
 
 Run: `uv run pytest tests/test_workflows.py -q`
-Expected: FAIL. `auto-release.yml` and `version-check.yml` don't exist yet (`FileNotFoundError`), and the `release.yml` tests fail. `test_required_workflows_have_one_job_named_like_them`, `test_no_pull_request_target` and `test_no_expressions_inside_run_blocks` may already pass.
+Expected: FAIL. `auto-release.yml` and `version-check.yml` don't exist yet (`FileNotFoundError`), and the other `release.yml` tests fail. `test_required_workflows_have_one_job_named_like_them`, `test_no_pull_request_target`, `test_no_expressions_inside_run_blocks` and `test_release_is_shell_only` may already pass.
 
 - [ ] **Step 2: `release.yml`**
 
@@ -1114,6 +1138,7 @@ jobs:
       - name: The tag must point at the commit
         if: steps.existing.outputs.exists != 'true'
         run: |
+          # The repo is public, so ls-remote works without credentials (persist-credentials: false).
           tagged="$(git ls-remote origin "refs/tags/${TAG}" "refs/tags/${TAG}^{}" \
             | awk -v t="refs/tags/${TAG}" '$2 == t "^{}" {p=$1} $2 == t {l=$1} END {print (p != "" ? p : l)}')"
           if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then
@@ -1177,6 +1202,7 @@ jobs:
       contents: read
       actions: read
     outputs:
+      version: ${{ steps.bump.outputs.version }}
       tag: ${{ steps.bump.outputs.tag }}
       sha: ${{ steps.commit.outputs.sha }}
       release: ${{ steps.tag.outputs.release }}
@@ -1215,11 +1241,13 @@ jobs:
           SHA: ${{ steps.commit.outputs.sha }}
         run: |
           gh api "repos/${REPO}/actions/runs?head_sha=${SHA}&event=push&per_page=100" > "${RUNNER_TEMP}/runs.json"
-          if uv run --no-project --python 3.14 python scripts/release_check.py runs-green < "${RUNNER_TEMP}/runs.json"; then
-            echo "green=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Not all required workflows have passed yet: nothing to release in this run"
-          fi
+          rc=0
+          uv run --no-project --python 3.14 python scripts/release_check.py runs-green < "${RUNNER_TEMP}/runs.json" || rc=$?
+          case "$rc" in
+            0) echo "green=true" >> "$GITHUB_OUTPUT" ;;
+            1) echo "Not all required workflows have passed yet: nothing to release in this run" ;;
+            *) exit "$rc" ;;
+          esac
       - name: The tag
         id: tag
         if: steps.runs.outputs.green == 'true'
@@ -1228,6 +1256,7 @@ jobs:
           SHA: ${{ steps.commit.outputs.sha }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
+          # The repo is public, so ls-remote works without credentials (persist-credentials: false).
           tagged="$(git ls-remote origin "refs/tags/${TAG}" "refs/tags/${TAG}^{}" \
             | uv run --no-project --python 3.14 python scripts/release_check.py tag-commit "$TAG")"
           if [ -n "$tagged" ] && [ "$tagged" != "$SHA" ]; then
@@ -1245,12 +1274,13 @@ jobs:
     if: needs.decide.outputs.release == 'true'
     permissions:
       contents: write
-    uses: ./.github/workflows/release.yml
+    uses: ./.github/workflows/release.yml  # zizmor: ignore[self-repository] actionlint and GitHub's documented syntax take ./ (spec §2.3)
     with:
       tag: ${{ needs.decide.outputs.tag }}
       sha: ${{ needs.decide.outputs.sha }}
 ```
 
+- **`self-repository`:** zizmor suggests `$/.github/workflows/release.yml` for the `uses:` line. Never apply that fix: actionlint rejects it, and the spec and `test_auto_release_triggers_and_permissions` fix `./`. The inline ignore above stays.
 - **The zizmor comment:** if zizmor wants the ignore comment on the `workflow_run:` line itself, move it there and keep the reason as a comment above. The same goes for any other finding: fix it where the fix is small; otherwise ignore it inline with a reason and list it in the report.
 - **`test_concurrency_group_per_event_and_commit`:** the test looks for the `head_sha` expression in the group, which is there. Don't change the test to fit a different group.
 
@@ -1298,7 +1328,7 @@ Run: `uv run pytest tests/test_workflows.py -q`
 Expected: all pass.
 
 Run: `uv run actionlint && uv run zizmor --offline .github/workflows`
-Expected: no findings.
+Expected: actionlint exits 0; zizmor says `No findings to report` with 2 ignored (`dangerous-triggers`, `self-repository`).
 
 - [ ] **Step 6: The checks before the merge (spec §9)**
 
@@ -1362,7 +1392,7 @@ Keep *Versioning*, *Bumping `pynortecgo`* and *Bumping Home Assistant* as they a
    - End with the sentence: "The next bump PR removes this section."
 5. **`## Fallbacks`:**
    - A run of `auto-release` from the Actions tab on `main`, with the commit's `sha`, `dry_run` on first. It takes any bump commit on `main` whose required workflows passed, also one merged before the automation. Without the dry run, it tags a release, so it is the owner's action, like a tag by hand.
-   - `### Tagging by hand` (renamed from *Tagging (owner only)*, same commands): for a commit the rule doesn't count as a bump. The pushed tag starts `release.yml`.
+   - `### Tagging by hand` (renamed from *Tagging (owner only)*; spec §5's *Tagging by hand (fallback)*, shortened because it sits under *Fallbacks*; same commands): for a commit the rule doesn't count as a bump. The pushed tag starts `release.yml`.
 6. **`## What release.yml checks`:**
    - It starts in two ways: a pushed `v*` tag, or a call from `auto-release.yml` with the tag and the commit.
    - Keep the two checks and the pre-release rule.
@@ -1392,7 +1422,11 @@ Append after D38:
 
 - [ ] **Step 3: `docs/README.md`**
 
-In the map, the `releasing.md` row's *Contents* cell becomes: `The bump PR, the automatic release, fallbacks and tagging by hand, what `release.yml` checks`.
+In the map, the `releasing.md` row's *Contents* cell becomes:
+
+```text
+The bump PR, the automatic release, fallbacks and tagging by hand, what `release.yml` checks
+```
 
 - [ ] **Step 4: `docs/way-of-working.md`, the `blocked-ha` label**
 

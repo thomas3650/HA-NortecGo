@@ -34,8 +34,8 @@ git push origin vX.Y.Z
 
 `requirements` in `manifest.json` pins the `pynortecgo` client library to an exact version, for example
 `pynortecgo==X.Y.Z`, and `pyproject.toml` pins the same version. A new client release gets its own pull
-request that bumps both pins, updates the lock with `uv lock --upgrade-package pynortecgo` (which changes only
-that package in `uv.lock`), runs the usual gates, and works through this checklist before merging:
+request that bumps both pins, updates the lock with `uv lock --upgrade-package pynortecgo` (which leaves the other
+pins alone, apart from what the new version needs), runs the usual gates, and works through this checklist before merging:
 
 - [ ] Read the new version's exception messages, including errors it wraps from lower layers, and confirm
   they hold no email, password, token, IDs or request bodies. The integration passes them into logs and

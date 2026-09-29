@@ -130,6 +130,7 @@ class _PriceData(Store[dict[str, Any]]):
         old_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Version 1 held spot prices: drop them, as they can't be mixed with totals (D34)."""
+        # Version 1 is the only older version; a version 3 must branch on old_major_version.
         return {"currency": None, "slots": []}
 
 

@@ -25,11 +25,13 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: false
-      - name: A version change must be a bump
+      - name: Title, version and changelog agree
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           # Against the merge base: what this PR changes, even if main has a newer release.
+          # --title= so a title that starts with - isn't read as an option (docs/releasing.md).
           base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
-          uv run --no-project --python 3.14 python scripts/release_check.py pr-check "$base" "$HEAD_SHA"
+          uv run --no-project --python 3.14 python scripts/release_check.py pr-check --title="$PR_TITLE" "$base" "$HEAD_SHA"

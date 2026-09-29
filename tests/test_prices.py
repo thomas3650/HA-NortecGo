@@ -14,6 +14,7 @@ from custom_components.nortec_go.prices import (
     StoredPrices,
     current_price,
     merge_forecast,
+    next_price_read,
     prices_today,
     prices_tomorrow,
     prune,
@@ -193,3 +194,53 @@ async def test_store_wrong_shape(
     hass_storage[KEY] = {"version": 2, "minor_version": 1, "key": KEY, "data": data}
     assert await PriceStore(hass, "entry1").async_load() == StoredPrices({}, None)
     assert "stored prices" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        (
+            datetime(2026, 9, 27, 0, 0, tzinfo=TZ),
+            datetime(2026, 9, 27, 0, 5, tzinfo=TZ),
+        ),
+        (
+            datetime(2026, 9, 27, 15, 4, 59, tzinfo=TZ),
+            datetime(2026, 9, 27, 15, 5, tzinfo=TZ),
+        ),
+        (
+            datetime(2026, 9, 27, 15, 5, tzinfo=TZ),
+            datetime(2026, 9, 27, 20, 5, tzinfo=TZ),
+        ),
+        (
+            datetime(2026, 9, 27, 20, 5, tzinfo=TZ),
+            datetime(2026, 9, 28, 0, 5, tzinfo=TZ),
+        ),
+        (
+            datetime(2026, 9, 27, 23, 59, tzinfo=TZ),
+            datetime(2026, 9, 28, 0, 5, tzinfo=TZ),
+        ),
+        # Spring forward (02:00 -> 03:00): from before and after the change.
+        (
+            datetime(2026, 3, 29, 1, 0, tzinfo=TZ),
+            datetime(2026, 3, 29, 5, 5, tzinfo=TZ),
+        ),
+        (
+            datetime(2026, 3, 29, 20, 10, tzinfo=TZ),
+            datetime(2026, 3, 30, 0, 5, tzinfo=TZ),
+        ),
+        # Fall back (03:00 -> 02:00): from before and after the change.
+        (
+            datetime(2026, 10, 25, 0, 10, tzinfo=TZ),
+            datetime(2026, 10, 25, 5, 5, tzinfo=TZ),
+        ),
+        (
+            datetime(2026, 10, 25, 20, 10, tzinfo=TZ),
+            datetime(2026, 10, 26, 0, 5, tzinfo=TZ),
+        ),
+    ],
+)
+def test_next_price_read(now: datetime, expected: datetime) -> None:
+    """The next read time is the first local 00:05, 05:05, 10:05, 15:05 or 20:05 after now, in UTC."""
+    result = next_price_read(now.astimezone(UTC), TZ)
+    assert result == expected
+    assert result.tzinfo is UTC

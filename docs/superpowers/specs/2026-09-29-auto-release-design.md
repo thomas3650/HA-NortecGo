@@ -258,8 +258,9 @@ on the integration; the unit tests (§9) cover every branch of the script.
   `git merge-base "$BASE_SHA" "$HEAD_SHA"`, with both SHAs from `github.event.pull_request` through
   `env:`: what the PR itself changes, so a PR behind a newer release on `main` doesn't see a lowered
   version. `main` requires branches to be up to date, so at merge time the merge base is the squash commit's
-  first parent, and the check predicts `bump` exactly. A version change that isn't a bump fails with the reason, so a
-  PR that passes is released when it merges.
+  first parent, and the check predicts `bump` exactly. A version change that isn't a bump fails with the
+  reason, so a PR that passes is released when it merges. (`edited` also fires for a title or body edit,
+  which only re-runs this read-only check.)
 - **Check name:** the job's id is `version-check` and it has no `name:`, so its check is `version-check`.
 - **Required check:** after the merge, the owner adds `version-check` to `main`'s required status checks;
   it is a GitHub setting, so it isn't done here (way of working §6). A check skipped for a draft counts as

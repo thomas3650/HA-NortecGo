@@ -17,8 +17,8 @@ Date: 2026-09-29 · Branch: `fix/price-read-retry` · Issue: #39
 
 ## Decisions
 
-Proposed by the team lead, recommended by the PO and escalated to the owner (issue #39, 2026-09-29), unless
-marked *team lead*.
+Proposed by the team lead and approved by the owner through the PO (issue #39, 2026-09-29). The cancel at
+the start of a scheduled read, the retry timer's form and the DST handling were settled in the spec review.
 
 | Topic | Decision |
 |---|---|

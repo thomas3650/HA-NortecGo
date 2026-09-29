@@ -11,7 +11,8 @@ All notable changes to this project are documented in this file. The format is b
 - Add the integration from the UI with your Nortec Go email and password. Your email and the session are
   stored, never the password.
 - Reauthentication: when the session is rejected, Home Assistant asks for the password again.
-- If the charger is removed from your Nortec Go account, setup stops with a "charger not found" error.
+- If the charger is removed from your Nortec Go account, setup stops with the error "The charger is no
+  longer on the Nortec Go account".
 - Sensors and binary sensors for [EV Smart Charging](https://github.com/jonasbkarlsson/ev_smart_charging):
   the current total price (spot, fees and grid tariff) in the price data's currency, with today's and
   tomorrow's prices, the car's battery and charge limit, and whether your own car is connected to the
@@ -29,6 +30,7 @@ All notable changes to this project are documented in this file. The format is b
 - Debug logging turned on from the integration's page also covers the `pynortecgo` client, and the docs
   explain debug logging and what to leave out of a bug report.
 - *Energy this charge* (kWh) and *Charging power* (kW) sensors for the open charge.
+- Setup and read errors show the integration's own texts, not the client library's.
 
 ## [0.0.1] - 2026-09-26
 

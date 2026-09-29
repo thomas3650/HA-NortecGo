@@ -73,6 +73,10 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - Setup reads the coordinator's data before it forwards the platforms, so a test that only looks after
   setup can't tell a value set once in the entity's `__init__` from a property. To show a value is live,
   change it in a read after setup.
+- `str()` of a `HomeAssistantError` raised with a `translation_key` (and no message) is the English text
+  from the translations without its final period: HA strips it. A test that compares it with
+  `strings.json` drops the period. The texts come from the translations HA has loaded, so set up the
+  integration before building such an exception in a test.
 
 ## Coordinators and actions
 
@@ -94,6 +98,11 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - A coordinator schedules its next read at whole loop seconds plus a random 0.05–0.5 s, so a read can come
   up to about 1 s before one full interval has passed. A time threshold compared with the interval needs a
   margin, and a test that fires the timer ticks a second more than the interval.
+- At the first refresh, an `UpdateFailed` re-raises as `ConfigEntryNotReady` with the cause's translation
+  domain, key and placeholders; `ConfigEntryError` and `ConfigEntryAuthFailed` pass through as they are. A
+  setup that fails or retries with any of the three stores the translation as the entry's
+  `error_reason_translation_*`, which the frontend shows translated. So a translated `UpdateFailed` or
+  `ConfigEntryError` also translates the setup error.
 
 ## Devices and entities
 

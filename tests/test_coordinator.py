@@ -9,6 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryError,
+    HomeAssistantError,
+)
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -73,6 +78,13 @@ def _coordinator(entry: MockConfigEntry) -> NortecGoCoordinator:
     # there are no entities yet. Adding the first listener also schedules a poll.
     coordinator.async_add_listener(lambda: None)
     return coordinator
+
+
+class _UnknownClientError(NortecGoError):
+    """A client error type from a later pynortecgo version."""
+
+
+AUTH_TEXT = "The Nortec Go session was rejected. Sign in again from the repair notice"
 
 
 _PENDING = ChargeControlState(start_pending=True)
@@ -184,18 +196,28 @@ async def test_interval_changes_after_a_poll(
 
 
 @pytest.mark.parametrize(
-    ("error", "state"),
+    ("error", "state", "key"),
     [
-        (NortecGoConnectionError("network down"), ConfigEntryState.SETUP_RETRY),
-        (RateLimitError("too many requests"), ConfigEntryState.SETUP_RETRY),
-        (ApiError("GET /example", 500), ConfigEntryState.SETUP_RETRY),
+        (
+            NortecGoConnectionError("network down"),
+            ConfigEntryState.SETUP_RETRY,
+            "cannot_connect",
+        ),
+        (
+            RateLimitError("too many requests"),
+            ConfigEntryState.SETUP_RETRY,
+            "rate_limited",
+        ),
+        (ApiError("GET /example", 500), ConfigEntryState.SETUP_RETRY, "api_error"),
         (
             UnexpectedResponseError("GET /example", "bad shape"),
             ConfigEntryState.SETUP_ERROR,
+            "unexpected_response",
         ),
         (
             ChargerNotFoundError("GET /example: the set charger was not found"),
             ConfigEntryState.SETUP_ERROR,
+            "charger_not_found",
         ),
     ],
 )
@@ -205,15 +227,16 @@ async def test_first_refresh_charger_errors(
     mock_client: AsyncMock,
     error: Exception,
     state: ConfigEntryState,
+    key: str,
 ) -> None:
-    """Charger errors at setup retry or stop setup; the car isn't read."""
+    """Charger errors at setup retry or stop setup with our text; the car isn't read."""
     mock_client.get_charger.side_effect = error
     await setup_integration(hass, mock_config_entry)
 
-    entry_state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
-    assert entry_state is state
-    if entry_state is ConfigEntryState.SETUP_ERROR:
-        assert mock_config_entry.reason == str(error)
+    assert mock_config_entry.state is state
+    assert mock_config_entry.error_reason_translation_domain == DOMAIN
+    assert mock_config_entry.error_reason_translation_key == key
+    assert str(error) not in (mock_config_entry.reason or "")
     mock_client.get_vehicle.assert_not_awaited()
 
 
@@ -232,6 +255,37 @@ async def test_first_refresh_auth_error_starts_reauth(
     assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
     start_reauth.assert_called_once()
     mock_client.login.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("method", "debug_line"),
+    [
+        ("get_charger", "Reading the charger failed: token rejected"),
+        ("get_vehicle", "Reading the car was rejected: token rejected"),
+        (
+            "get_price_forecast",
+            "Reading the price forecast was rejected: token rejected",
+        ),
+    ],
+)
+async def test_first_refresh_auth_error_text(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+    method: str,
+    debug_line: str,
+) -> None:
+    """An AuthError at setup fails it with our auth_failed text; the client's text is at debug."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.nortec_go")
+    getattr(mock_client, method).side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth_if_available"):
+        await setup_integration(hass, mock_config_entry)
+
+    assert mock_config_entry.error_reason_translation_domain == DOMAIN
+    assert mock_config_entry.error_reason_translation_key == "auth_failed"
+    assert "token rejected" not in (mock_config_entry.reason or "")
+    assert debug_line in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -362,18 +416,130 @@ async def test_unknown_client_error_fails_the_read(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A NortecGoError subclass this integration doesn't know fails the read cleanly."""
-
-    class FutureClientError(NortecGoError):
-        """A client error type from a later pynortecgo version."""
-
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
-    mock_client.get_charger.side_effect = FutureClientError("something new")
+    mock_client.get_charger.side_effect = _UnknownClientError("something new")
     await coordinator.async_refresh()
     assert not coordinator.last_update_success
     assert isinstance(coordinator.last_exception, UpdateFailed)
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert "Unexpected error" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("error", "error_type", "key", "text"),
+    [
+        (AuthError("token rejected"), ConfigEntryAuthFailed, "auth_failed", AUTH_TEXT),
+        (
+            RateLimitError("too many requests", retry_after=30.0),
+            UpdateFailed,
+            "rate_limited",
+            "The Nortec Go service is limiting requests. Home Assistant will read again later",
+        ),
+        (
+            NortecGoConnectionError("network down"),
+            UpdateFailed,
+            "cannot_connect",
+            "Can't reach the Nortec Go service. Home Assistant will try again",
+        ),
+        (
+            ApiError("GET /example", 500),
+            UpdateFailed,
+            "api_error",
+            "The Nortec Go service returned an error. Home Assistant will try again",
+        ),
+        (
+            ChargerNotFoundError("GET /example: the set charger was not found"),
+            ConfigEntryError,
+            "charger_not_found",
+            "The charger is no longer on the Nortec Go account. "
+            "Remove the integration and add it again",
+        ),
+        (
+            UnexpectedResponseError("GET /example", "bad shape"),
+            ConfigEntryError,
+            "unexpected_response",
+            "The Nortec Go service sent an answer this integration doesn't understand. "
+            "Check for an update of the integration",
+        ),
+        (
+            _UnknownClientError("something new"),
+            UpdateFailed,
+            "read_failed",
+            "Reading the charger failed. Home Assistant will try again",
+        ),
+    ],
+)
+async def test_charger_error_texts(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+    error: Exception,
+    error_type: type[HomeAssistantError],
+    key: str,
+    text: str,
+) -> None:
+    """A failed charger read raises our translated text; the client's text goes to the debug log."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.nortec_go")
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = error
+    with patch.object(ConfigEntry, "async_start_reauth"):
+        await coordinator.async_refresh()
+
+    raised = coordinator.last_exception
+    assert isinstance(raised, HomeAssistantError)
+    assert type(raised) is error_type
+    assert raised.translation_domain == DOMAIN
+    assert raised.translation_key == key
+    assert str(raised) == text
+    assert str(error) not in str(raised)
+    assert f"Reading the charger failed: {error}" in caplog.text
+    if isinstance(error, RateLimitError):
+        assert isinstance(raised, UpdateFailed)
+        assert raised.retry_after == 30.0
+
+
+async def test_later_car_auth_error_text(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A later AuthError from the car raises our auth_failed text; the client's text is at debug."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.nortec_go")
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_vehicle.side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth"):
+        await coordinator.async_read_now(with_car=True)
+
+    raised = coordinator.last_exception
+    assert isinstance(raised, ConfigEntryAuthFailed)
+    assert raised.translation_domain == DOMAIN
+    assert raised.translation_key == "auth_failed"
+    assert str(raised) == AUTH_TEXT
+    assert "Reading the car was rejected: token rejected" in caplog.text
+
+
+async def test_later_price_auth_error_debug_line(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A later price read's AuthError logs the client's text at debug."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.nortec_go")
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_price_forecast.side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth"):
+        await coordinator.async_read_prices()
+    assert "Reading the price forecast was rejected: token rejected" in caplog.text
 
 
 @pytest.mark.parametrize("method", ["get_charger", "get_vehicle"])

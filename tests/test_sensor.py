@@ -399,10 +399,10 @@ async def test_charge_energy_and_power_sensors(
                 is_connected=True,
                 charge_state=ChargeState.CHARGING,
                 charge_kwh=1.5,
-                charge_kw=0.0,
+                charge_kw=2.3,
             ),
             "1.5",
-            "0.0",
+            "2.3",
         ),
     ],
     ids=[

@@ -215,6 +215,10 @@ entity reads the charger, and the car if it wasn't read in the last few minutes,
   use the repair issue to allow starts again in that case.
 - A charge started or resumed outside Home Assistant, for example in the Nortec Go app, can take up to 60
   minutes to show. Press *Refresh* to see it sooner.
+- Because of that delay, the first reading of a charge started outside Home Assistant can come late. If it
+  is already at least 90% of the previous charge's final energy, the Energy dashboard doesn't see it as a new
+  charge and counts only the difference. Energy delivered after the last read of a charge isn't counted
+  either.
 - A hold that led to no charge is expected to expire by itself within about 7 days and can't be cancelled
   from Home Assistant.
 - After a stop, the charger needs the cable unplugged and replugged before the next start, so an EV Smart
@@ -222,9 +226,6 @@ entity reads the charger, and the car if it wasn't read in the last few minutes,
 - EV Smart Charging logs the integration's start errors as its own failed action.
 - *Charging power* has read 0 kW for about the first 30 seconds after a start, for up to about 2 minutes
   after a resume, and while stopping.
-- A charge started outside Home Assistant can be seen up to 60 minutes late. If its first reading is already
-  at least 90% of the previous charge's final energy, the Energy dashboard doesn't see it as a new charge and
-  counts only the difference. Energy delivered after the last read of a charge isn't counted either.
 
 ## Troubleshooting
 

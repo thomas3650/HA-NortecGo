@@ -31,6 +31,8 @@ All notable changes to this project are documented in this file. The format is b
   explain debug logging and what to leave out of a bug report.
 - *Energy this charge* (kWh) and *Charging power* (kW) sensors for the open charge.
 - Setup and read errors show the integration's own texts, not the client library's.
+- A diagnostics download for the integration, with your email, the session tokens and the device ID left
+  out.
 
 ## [0.0.1] - 2026-09-26
 

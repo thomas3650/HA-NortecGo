@@ -38,6 +38,7 @@ body:
         Optional. Turn on debug logging as described in
         https://github.com/thomas3650/HA-NortecGo/blob/main/docs/user/nortec_go.md#debug-logging,
         reproduce the problem, and paste the lines around it. Before pasting, remove what the docs'
-        "Reporting a problem" lists.
+        "Reporting a problem" lists. You can also attach the diagnostics file (see the docs'
+        "Diagnostics").
     validations:
       required: false

@@ -320,3 +320,15 @@ superseded. How to add one:
 - **Why:** A failed 15:05 read left EV Smart Charging on the forecast until 20:05; one retry per read keeps
   the rate-limited API's load at most doubled.
 - **Source:** [price read retry spec](superpowers/specs/2026-09-29-price-read-retry-design.md), Decisions and §3
+
+### D38: Diagnostics redact only the sign-in secrets
+- **Date:** 2026-09-29 · **Status:** active
+- **Decision:** Diagnostics and logs redact only the email, the password, the access and refresh tokens and
+  the client's device ID, with `async_redact_data` over the whole diagnostics output; the charger's and car's
+  IDs and names and the entry's title and unique ID stay. A test pins the `pynortecgo` model fields the
+  output dumps, so a client bump that adds a field fails the tests until someone decides whether it is a
+  secret.
+- **Why:** The owner's ruling (issue #11): the IDs and names help match a download to an issue and to the
+  devices, and aren't secrets. `asdict` shows every field, and Dependabot bumps the client; a new secret key
+  in `entry.data` under another name still needs adding to the list by hand.
+- **Source:** [diagnostics spec](superpowers/specs/2026-09-29-diagnostics-design.md), §3, §4 and §6

@@ -150,3 +150,9 @@ its OK; trying again needs a new one.** Agents never do them.
   request: it counts as a start and uses its OK; trying again needs a new one.
 - [ ] The start block and its repair are checked only if one happens; there is no way here to cause a
   failed start.
+
+### Diagnostics (#11)
+
+- [ ] **Owner** Download the diagnostics from the entry's menu and save the file in `local/`: the email,
+  both tokens and the device ID show as `**REDACTED**`, and the charger's and car's data are there
+  ([Diagnostics](user/nortec_go.md#diagnostics)). Agents never open the file.

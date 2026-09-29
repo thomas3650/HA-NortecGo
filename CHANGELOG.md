@@ -13,8 +13,9 @@ All notable changes to this project are documented in this file. The format is b
 - Reauthentication: when the session is rejected, Home Assistant asks for the password again.
 - If the charger is removed from your Nortec Go account, setup stops with a "charger not found" error.
 - Sensors and binary sensors for [EV Smart Charging](https://github.com/jonasbkarlsson/ev_smart_charging):
-  the current price with today's and tomorrow's prices, the car's battery and charge limit, and whether
-  your own car is connected to the charger.
+  the current total price (spot, fees and grid tariff) in the price data's currency, with today's and
+  tomorrow's prices, the car's battery and charge limit, and whether your own car is connected to the
+  charger.
 - A *Charge* switch that starts and stops charging, guarded against repeated starts that could place extra
   card holds, and shown off right after a stop until the charger follows; a *Charge status* sensor; and a
   repair issue to allow starts again after a failed start.

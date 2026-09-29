@@ -80,6 +80,84 @@ async def test_current_price(
     assert state.attributes["prices_tomorrow"] == []
 
 
+async def test_price_unit_follows_forecast_currency(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The unit is the forecast's currency, not Home Assistant's."""
+    hass.config.currency = "EUR"
+    freezer.move_to(MIDNIGHT + timedelta(minutes=5))
+    mock_client.get_price_forecast.return_value = make_forecast(MIDNIGHT, [1.0])
+    await setup_integration(hass, mock_config_entry)
+
+    state = hass.states.get(PRICE)
+    assert state is not None
+    assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == "DKK/kWh"
+
+
+async def test_price_unit_falls_back_to_home_assistant_currency(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """With no currency known, the unit is Home Assistant's currency."""
+    hass.config.currency = "EUR"
+    freezer.move_to(MIDNIGHT + timedelta(minutes=5))
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [1.0], currency=None
+    )
+    await setup_integration(hass, mock_config_entry)
+
+    state = hass.states.get(PRICE)
+    assert state is not None
+    assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == "EUR/kWh"
+
+
+async def test_price_unit_survives_a_reload_with_a_failing_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The stored currency is used when the price read fails after a reload."""
+    hass.config.currency = "EUR"
+    freezer.move_to(MIDNIGHT + timedelta(minutes=5))
+    mock_client.get_price_forecast.return_value = make_forecast(MIDNIGHT, [1.0])
+    await setup_integration(hass, mock_config_entry)
+
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(PRICE)
+    assert state is not None
+    assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == "DKK/kWh"
+
+
+async def test_price_unit_follows_a_currency_learned_after_setup(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A currency first seen in a later read changes the unit at the next state write."""
+    hass.config.currency = "EUR"
+    freezer.move_to(MIDNIGHT + timedelta(minutes=5))
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [1.0], currency=None
+    )
+    await setup_integration(hass, mock_config_entry)
+    assert hass.states.get(PRICE).attributes[ATTR_UNIT_OF_MEASUREMENT] == "EUR/kWh"  # type: ignore[union-attr]
+
+    mock_client.get_price_forecast.return_value = make_forecast(MIDNIGHT, [1.0])
+    await mock_config_entry.runtime_data.async_read_prices()
+    await hass.async_block_till_done()
+    assert hass.states.get(PRICE).attributes[ATTR_UNIT_OF_MEASUREMENT] == "DKK/kWh"  # type: ignore[union-attr]
+
+
 async def test_current_price_follows_the_tick(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,

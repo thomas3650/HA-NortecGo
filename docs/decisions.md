@@ -285,6 +285,15 @@ superseded. How to add one:
   docs.
 - **Source:** owner ruling on 2026-09-28 (PR for #34, #35)
 
+### D34: The total price, in the forecast's currency
+- **Date:** 2026-09-28 · **Status:** active
+- **Decision:** The price sensor and EV Smart Charging's lists use the total price per kWh incl. VAT
+  (spot, fees and grid tariff); the unit is the forecast's currency per kWh, falling back to Home
+  Assistant's currency.
+- **Why:** The total is what the owner pays, and the hourly grid tariff changes which slots are cheapest;
+  the forecast knows its own currency, so the unit is right without a Home Assistant setting (#20).
+- **Source:** [pynortecgo 0.5.0 spec](superpowers/specs/2026-09-28-pynortecgo-0.5.0-design.md), Decisions
+
 ### D35: The PO flow
 - **Date:** 2026-09-28 · **Status:** active
 - **Decision:** Besides the direct flow (way-of-working §1), the owner can start a PO session that runs up

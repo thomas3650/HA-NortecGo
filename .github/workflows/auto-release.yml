@@ -78,6 +78,8 @@ jobs:
         env:
           TAG: ${{ steps.bump.outputs.tag }}
           SHA: ${{ steps.commit.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           # The repo is public, so ls-remote works without credentials (persist-credentials: false).
           # A tag already on this commit is fine: the owner's recovery for the workflow-scope limit
@@ -87,6 +89,12 @@ jobs:
           if [ -n "$tagged" ] && [ "$tagged" != "$SHA" ]; then
             echo "Tag ${TAG} points at ${tagged}, not ${SHA}"
             exit 1
+          fi
+          # Another run for this merge (the concurrency group runs them one at a time) may have
+          # released it already. If this check fails for another reason, release.yml checks again.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release ${TAG} already exists: nothing to do"
+            exit 0
           fi
           echo "release=true" >> "$GITHUB_OUTPUT"
 

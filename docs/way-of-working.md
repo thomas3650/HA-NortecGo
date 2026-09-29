@@ -303,7 +303,8 @@ One branch at a time, in the main checkout (only the PO works there, and only on
 3. **Visual check**, when the change is visible in HA (entities, names, icons, units, the options flow,
    translations, the device page): start `scripts/develop` with the Bash tool's `run_in_background` (not `&`
    in a shell: that crashes on macOS), open a new Chrome tab on `http://localhost:8123` with the owner's
-   existing login, check against the spec, save screenshots to `local/screenshots/<topic>/` (the Chrome
+   existing login, check against the spec (what to look at, and that an agent operates no control, are in
+   [`manual-testing.md`](manual-testing.md)), save screenshots to `local/screenshots/<topic>/` (the Chrome
    screenshot tool's `save_to_disk`, then `mv` into the folder without opening them), then stop HA with
    `pkill -f "hass -c config"`. Never the config flow or reauth, never credentials, never anything that calls
    an action on the charger. The screenshots are for the owner, who also cleans them up.

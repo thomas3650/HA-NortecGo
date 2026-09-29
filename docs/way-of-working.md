@@ -177,7 +177,8 @@ review.
   (§8) the team lead pushes and the PO marks ready.
 - **Git guards:** run `uv run pre-commit install` once per clone. The hooks refuse commits on `main` and pushes
   to `main`, and `.claude/settings.json` denies pushes to `main` and `--no-verify`. `main` is also protected
-  server-side, with the required checks.
+  server-side, with the required checks. Some hooks run a dev tool with `uv run` (`actionlint`, `zizmor`), so
+  after a merge that adds such a tool, every checkout and worktree runs `uv sync` before its next commit.
 - **Questions to the owner:** plain terminal text, one at a time. In the PO flow, the PO also posts them on the
   issue (§8).
 - **Delegated plan approval:** the owner may let the controller approve a plan once `full-reviewer` rates it

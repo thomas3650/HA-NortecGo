@@ -38,11 +38,13 @@ release with the changelog section as its notes, and that HACS offers the versio
 
 ## Once, after the auto-release PR merges
 
-1. The owner adds `version-check` to `main`'s required status checks (a GitHub setting).
-2. Then, to release `0.1.0`, whose bump (`9441abd`) merged before the automation, the owner runs
+1. Every checkout and worktree runs `uv sync`: the new `actionlint` and `zizmor` pre-commit hooks need the
+   tools.
+2. The owner adds `version-check` to `main`'s required status checks (a GitHub setting).
+3. Then, to release `0.1.0`, whose bump (`9441abd`) merged before the automation, the owner runs
    `auto-release` from the Actions tab on `main` with `sha` `9441abd` and `dry_run` on, reads the log, then
    runs it again with `dry_run` off.
-3. Last, the owner checks the tag `v0.1.0` on `9441abd`, the release, and HACS.
+4. Last, the owner checks the tag `v0.1.0` on `9441abd`, the release, and HACS.
 
 The next bump PR removes this section.
 

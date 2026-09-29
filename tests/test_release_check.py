@@ -7,6 +7,7 @@ import re
 import runpy
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 
@@ -925,6 +926,55 @@ def test_release_pr_without_origin(
     _commit(repo, "0.1.0", UNRELEASED_LOG)
     assert main(["release-pr", "--title=fix: a fix"]) == 2
     assert "git fetch origin main failed" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("missing", ["CHANGELOG.md", str(MANIFEST_PATH)])
+def test_release_pr_missing_file(
+    work: Path, missing: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A missing file is an error (exit 2), and the other file is left as it was."""
+    (work / missing).unlink()
+    other = work / (str(MANIFEST_PATH) if missing == "CHANGELOG.md" else "CHANGELOG.md")
+    before = other.read_text(encoding="utf-8")
+    assert main(["release-pr", "--title=fix: a fix"]) == 2
+    assert f"error: Can't read {missing}" in capsys.readouterr().err
+    assert other.read_text(encoding="utf-8") == before
+
+
+def test_release_pr_unwritable_manifest(
+    work: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A file that can't be written is an error (exit 2); the manifest is written first, so nothing changes."""
+    manifest = work / MANIFEST_PATH
+    manifest.chmod(0o444)
+    before = _read(work)
+    try:
+        assert main(["release-pr", "--title=fix: a fix"]) == 2
+    finally:
+        manifest.chmod(0o644)
+    assert f"error: Can't write {MANIFEST_PATH}" in capsys.readouterr().err
+    assert _read(work) == before
+
+
+def test_release_pr_without_a_repository_root(
+    work: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """When git can't name the repository root, the bump is an error and writes nothing."""
+    real_run = subprocess.run
+
+    def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if args[:2] == ["git", "rev-parse"]:
+            return subprocess.CompletedProcess(args, 128, "", "fatal: no root")
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    before = _read(work)
+    assert main(["release-pr", "--title=fix: a fix"]) == 2
+    assert (
+        "error: Can't find the repository root: fatal: no root"
+        in capsys.readouterr().err
+    )
+    assert _read(work) == before
 
 
 def test_tag_commit_skips_other_lines() -> None:

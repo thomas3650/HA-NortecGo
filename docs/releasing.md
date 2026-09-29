@@ -196,12 +196,3 @@ version needs a newer Python. A `requires-python` change also updates `[tool.myp
 
 Title such a PR by what it changes for users (*PR titles*). A higher minimum Home Assistant version is
 something users see, so that PR is a `feat` or `fix` with a changelog entry and the bump step.
-
-## Once, after the release model PR merges
-
-1. Every checkout and worktree runs `uv sync`: the `actionlint` and `zizmor` pre-commit hooks need the
-   tools.
-2. The owner adds `version-check` to `main`'s required status checks (a GitHub setting).
-3. Any PR still open then gets a title by these rules and, if the title releases, the bump step.
-
-The first PR after these are done removes this section.

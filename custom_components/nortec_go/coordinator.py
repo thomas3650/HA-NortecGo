@@ -122,20 +122,40 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
     async def _async_update_data(self) -> NortecGoData:
         """Read the charger, then the car when due; set the next interval."""
         start_attempts = self.charge_control.start_attempts
-        # pynortecgo's messages hold no tokens, emails or IDs, so they may be passed on.
+        # The user sees our translated texts; the client's text goes only to the debug log (#37).
         try:
             charger = await self._async_read_charger()
         except AuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN, translation_key="auth_failed"
+            ) from err
         except RateLimitError as err:
-            raise UpdateFailed(str(err), retry_after=err.retry_after) from err
-        except (NortecGoConnectionError, ApiError) as err:
-            raise UpdateFailed(str(err)) from err
-        except (ChargerNotFoundError, UnexpectedResponseError) as err:
-            raise ConfigEntryError(str(err)) from err
+            raise UpdateFailed(
+                retry_after=err.retry_after,
+                translation_domain=DOMAIN,
+                translation_key="rate_limited",
+            ) from err
+        except NortecGoConnectionError as err:
+            raise UpdateFailed(
+                translation_domain=DOMAIN, translation_key="cannot_connect"
+            ) from err
+        except ApiError as err:
+            raise UpdateFailed(
+                translation_domain=DOMAIN, translation_key="api_error"
+            ) from err
+        except ChargerNotFoundError as err:
+            raise ConfigEntryError(
+                translation_domain=DOMAIN, translation_key="charger_not_found"
+            ) from err
+        except UnexpectedResponseError as err:
+            raise ConfigEntryError(
+                translation_domain=DOMAIN, translation_key="unexpected_response"
+            ) from err
         except NortecGoError as err:
             # Last: the specific errors above are its subclasses. A later client version may add more.
-            raise UpdateFailed(str(err)) from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN, translation_key="read_failed"
+            ) from err
 
         self.charge_control.on_charger_read(charger, start_attempts)
         self._async_update_charger_device(charger)
@@ -156,7 +176,8 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         """Read the charger; a failed read first sets the next interval from the last good one (D31)."""
         try:
             return await self.client.get_charger()
-        except NortecGoError:
+        except NortecGoError as err:
+            _LOGGER.debug("Reading the charger failed: %s", err)
             if self.data is not None:
                 self.update_interval = interval_for(
                     self.data.charger,
@@ -203,7 +224,10 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         try:
             vehicle = await self.client.get_vehicle()
         except AuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
+            _LOGGER.debug("Reading the car was rejected: %s", err)
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN, translation_key="auth_failed"
+            ) from err
         except (VehicleNotFoundError, MultipleVehiclesError) as err:
             if not self._car_checked:
                 self._car_checked = True
@@ -284,9 +308,12 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         try:
             forecast = await self.client.get_price_forecast()
         except AuthError as err:
+            _LOGGER.debug("Reading the price forecast was rejected: %s", err)
             self._async_cancel_price_retry()
             if during_setup:
-                raise ConfigEntryAuthFailed(str(err)) from err
+                raise ConfigEntryAuthFailed(
+                    translation_domain=DOMAIN, translation_key="auth_failed"
+                ) from err
             self.config_entry.async_start_reauth(self.hass)
             return
         except NortecGoError as err:

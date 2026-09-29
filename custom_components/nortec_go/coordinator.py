@@ -122,7 +122,8 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
     async def _async_update_data(self) -> NortecGoData:
         """Read the charger, then the car when due; set the next interval."""
         start_attempts = self.charge_control.start_attempts
-        # The user sees our translated texts; the client's text goes only to the debug log (#37).
+        # The user sees our translated texts; the client's text is only in the debug log and the
+        # chained traceback (#37).
         try:
             charger = await self._async_read_charger()
         except AuthError as err:

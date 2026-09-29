@@ -416,13 +416,9 @@ async def test_unknown_client_error_fails_the_read(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A NortecGoError subclass this integration doesn't know fails the read cleanly."""
-
-    class FutureClientError(NortecGoError):
-        """A client error type from a later pynortecgo version."""
-
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
-    mock_client.get_charger.side_effect = FutureClientError("something new")
+    mock_client.get_charger.side_effect = _UnknownClientError("something new")
     await coordinator.async_refresh()
     assert not coordinator.last_update_success
     assert isinstance(coordinator.last_exception, UpdateFailed)

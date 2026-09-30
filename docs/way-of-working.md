@@ -166,6 +166,10 @@ before it is opened.
   - The guard refuses a bare heredoc (`<<`) in Bash as unparseable. Subagents write scripts and commit messages
     with the Write tool, to a uniquely named file outside the repo (after the topic and task, for example
     `/tmp/<topic>-task-<n>-msg.txt`, or from `mktemp`), and commit with `git commit -F <file>`.
+  - A task that edits the guard hook runs in a task worktree, even alone in its wave: the checkout the session
+    started in holds the live hook for every subagent. After the pick, and before the next wave or the push,
+    check the live hook: its tests, one subagent payload it must refuse with the Guarded-files message (not
+    `guard error`), and one that goes through its git lookups and must pass.
   - The controller is not restricted by it.
 
 ## 6. Conventions

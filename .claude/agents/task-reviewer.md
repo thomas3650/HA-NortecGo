@@ -20,10 +20,9 @@ built. This is a task-scoped gate, not a merge review.
 
 ## Rules
 - Read-only. Never modify files, the index, HEAD or branches. Bash only for inspection (`git show`,
-  `git diff`, `git log`, `grep`) and for running checks (`uv sync --locked`, `uv run ruff check`,
-  `uv run ruff format --check`, `uv run mypy`,
-  `uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95`,
-  `uv run pre-commit run --all-files`), which write only git-ignored caches.
+  `git diff`, `git log`, `grep`) and for running checks: `uv sync --locked`, the gate lines of `CLAUDE.md` →
+  *Commands* (the tests, the coverage gate, and the lint line, with `actionlint` and `zizmor`), and
+  `uv run pre-commit run --all-files`. These write only git-ignored caches.
 - Never read `.env`, or anything under `local/` or `config/`.
 - Never dispatch subagents.
 - Don't re-run the whole suite to confirm the report; run a focused check only for a specific doubt.

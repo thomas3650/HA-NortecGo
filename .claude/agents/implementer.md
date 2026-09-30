@@ -17,8 +17,10 @@ vocabulary come from the dispatch prompt.
   line, and then only with Edit/Write. Never edit files under `.git/` by hand. A guard hook enforces this.
 - A `subagent-guard:` refusal means stop and report BLOCKED. The one exception is an "unparseable command"
   refusal: rephrase once (use the Write tool, or `git commit -F <file>`), then BLOCKED if it is refused again.
-- Gates pass before each commit: `uv run ruff check`, `uv run ruff format --check`, `uv run mypy`,
-  `uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95`.
+- Gates pass before each commit: the gate lines of `CLAUDE.md` → *Commands*, which are the tests, the
+  coverage gate, and the lint line (ruff, ruff format, mypy, `actionlint`, `zizmor`). The rest of that
+  section (`uv sync`, `pre-commit install`, the `scripts/`) isn't a gate: don't run `pre-commit install` or
+  the scripts.
 - Commit messages end with the co-author trailer given in the dispatch.
 - A pre-commit hook that **changed files** (`end-of-file-fixer`, `trailing-whitespace`, ruff `--fix`,
   `ruff-format`): review the change, re-stage, and commit again, once.

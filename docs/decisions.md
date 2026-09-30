@@ -354,3 +354,13 @@ superseded. How to add one:
   release should come from a reviewed, merged PR; a stale bump between two ready PRs is accepted as the
   price.
 - **Source:** [release model spec](superpowers/specs/2026-09-29-release-model-design.md), Decisions
+
+### D41: pre-commit runs ruff from `uv.lock`
+- **Date:** 2026-09-30 · **Status:** active
+- **Decision:** pre-commit runs ruff as local hooks through `uv run ruff`, so it uses the version in `uv.lock`,
+  as CI does. Dependabot's `pre-commit` ecosystem bumps the remaining remote hooks (`pre-commit-hooks`,
+  `gitleaks`) monthly.
+- **Why:** a separately pinned `ruff-pre-commit` drifts from `uv.lock` after a Dependabot `uv` bump, so a
+  commit that passes the hook can fail CI's `ruff format --check`. Letting Dependabot bump both would still
+  bring them in separate PRs.
+- **Source:** [tooling hygiene spec](superpowers/specs/2026-09-30-tooling-hygiene-design.md), Decisions

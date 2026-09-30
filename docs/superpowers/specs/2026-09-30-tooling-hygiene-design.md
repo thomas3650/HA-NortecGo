@@ -104,7 +104,8 @@ Tests:
   - an allowlisted guarded Write in the linked worktree passes (exit 0). Before the fix the lookups resolve
     to the decoy, which has no allowlist, so it is refused;
   - a guarded Write that isn't in the worktree's allowlist, but is in the decoy's
-    `<git dir>/subagent-guard-allow`, is refused (exit 2) with the Guarded-files message. Before the fix the
+    `<git dir>/subagent-guard-allow` (as an absolute path: with `GIT_WORK_TREE` set, a relative line would
+    resolve against the decoy), is refused (exit 2) with the Guarded-files message. Before the fix the
     decoy's allowlist opens it. This is the direction that matters: a variable that widens access.
 - A test that every variable `git rev-parse --local-env-vars` prints is in the hook's constant (a superset
   check), so a newer git that adds one fails loudly.
@@ -129,7 +130,8 @@ Tests:
 - **Wave 1:** #54 alone, in a task worktree even as a single-task wave. The issue worktree's guard is the live
   one, so an implementer editing it there could break its own tool calls.
   - After the cherry-pick, the team lead checks the live hook before dispatching anything else. Each payload
-    is a file written with the Write tool and fed with `python3 .claude/hooks/subagent_guard.py < <file>`:
+    (with `agent_id` and `cwd` set, or the hook allows it before any check) is a file written with the Write
+    tool outside the repo, as `/tmp/tooling-hygiene-guard-<n>.json`, and fed with `python3 .claude/hooks/subagent_guard.py < <file>`:
     - `uv run pytest tests/test_subagent_guard.py` passes;
     - a subagent Write of `.claude/settings.json` in the issue worktree exits 2, and its stderr names the
       Guarded-files refusal ("not in this task's Guarded files"), not `guard error` or `crashed`;
@@ -141,7 +143,7 @@ Tests:
   - #54: `.claude/hooks/subagent_guard.py`. Reason: the fix is in the guard itself (#54).
   - #45: `.pre-commit-config.yaml`.
   - #66: `.claude/agents/implementer.md`, `.claude/agents/task-reviewer.md`, `.claude/agents/full-reviewer.md`
-    (and the unguarded `.github/pull_request_template.md`).
+    The task also edits `.github/pull_request_template.md`, which isn't guarded and so isn't on that line.
 - Every task is `Model: opus`: each touches the guard or the agents' rules, and #66 is a docs task (D33).
 
 ## Risks

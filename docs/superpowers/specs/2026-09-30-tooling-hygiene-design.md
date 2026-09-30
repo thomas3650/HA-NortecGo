@@ -15,8 +15,9 @@ Date: 2026-09-30 · Branch: `process/tooling-hygiene` · Issues: #45, #54, #66
     `GIT_WORK_TREE` or `GIT_COMMON_DIR` set there would override the `-C` lookup.
   - #66: the gate lists in `implementer.md`, `task-reviewer.md` and `full-reviewer.md` predate `actionlint`
     and `zizmor` (#64). A subagent's own gate run can miss a workflow finding until the hook or CI catches it.
-- **Not in this work:** renaming the session names (#53), other guard limits listed in its docstring, and
-  CI changes (`lint.yml` already runs `uv run ruff`).
+- **Not in this work:** renaming the session names (#53), other guard limits listed in its docstring, CI
+  changes (`lint.yml` already runs `uv run ruff`), and the devcontainer's ruff editor extension (manual
+  testing only, not a gate).
 - **Done when:** the ruff version can't drift between pre-commit and CI; gitleaks and `pre-commit-hooks` get
   Dependabot bumps; the guard finds the right worktree with those variables set; the three agent files point
   at the full gate set. The gates pass, and D41 is in the decision log.
@@ -32,7 +33,7 @@ Proposed by the team lead and approved by the owner through the PO (issue #45, 2
 | #54 variables | The guard's git calls drop the variables that `git rev-parse --local-env-vars` lists, a fixed list in the hook |
 | Rejected for #54 | Only the three variables the issue names (git has more that redirect a lookup: `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, …); every `GIT_*` (drops `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_NOSYSTEM`, which the guard tests set to keep the owner's config out) |
 | #66 form | The agent files point at `CLAUDE.md` → *Commands* and name its gate lines: the tests, the coverage gate and the lint line. Not "every command there": that section also holds `pre-commit install` (which breaks commits when run in a task worktree) and the dev scripts |
-| Decision log | D41, for the #45 route (a lasting tooling rule). #54 and #66 need no entry |
+| Decision log | D41, for the #45 route (a lasting tooling rule). #54 and #66 need no entry. No earlier entry records the remote ruff hook (D4 mentions pre-commit only in general), so none changes status |
 | Title | `process: tooling hygiene (#45, #54, #66)`; non-releasing, so no `CHANGELOG.md` entry and no bump |
 
 Facts used:
@@ -58,15 +59,17 @@ Facts used:
 ### 1. pre-commit ruff from `uv.lock` (#45)
 
 `.pre-commit-config.yaml`:
-- Remove the `ruff-pre-commit` repo.
-- In the `local` repo, add two hooks:
+- Replace the `ruff-pre-commit` repo, in place, with a second `repo: local` block (pre-commit allows more
+  than one). It holds two hooks:
   - `ruff-check`: `entry: uv run ruff check --force-exclude`, `args: [--fix]`,
     `types_or: [python, pyi, jupyter]`;
   - `ruff-format`: `entry: uv run ruff format --force-exclude`, `types_or: [python, pyi, jupyter, markdown]`.
-- Both hooks get `language: system` and `require_serial: true`, and each gets a `name` like the other local
+- Both hooks get `language: system` (like the existing local hooks; pre-commit 4.6 treats it as
+  `unsupported`, which behaves the same) and `require_serial: true`, and each gets a `name` like the other local
   hooks have.
 - They keep the upstream ids, so the docs and `implementer.md` that name `ruff-format` stay true.
-- The hooks stay in the same order: ruff before `gitleaks`, as today.
+- The hooks stay in the same order: ruff after `pre-commit-hooks` and before `gitleaks`, as today. The
+  existing `local` block (`actionlint`, `zizmor`, `no-push-to-main`) stays last.
 
 `.github/dependabot.yml`: add an update for `package-ecosystem: pre-commit`, `directory: /`, monthly, one
 group of all hooks. Its commit message is prefix `chore` with scope included, like the other two.
@@ -80,7 +83,8 @@ Tests:
 - `tests/test_workflows.py` already checks that every Dependabot entry is titled `chore`, so it covers the new
   entry.
 - A new test in the same file checks two things: no repo in `.pre-commit-config.yaml` is `ruff-pre-commit`,
-  and the `ruff-check` and `ruff-format` hooks are local, with entries starting `uv run ruff`.
+  and the `ruff-check` and `ruff-format` hooks are found in a `local` repo (searching every `local` block),
+  with entries starting `uv run ruff`.
 - Another new test checks that Dependabot has a `pre-commit` entry.
 
 ### 2. Guard git calls without repo-location variables (#54)
@@ -92,18 +96,26 @@ Tests:
 - The module docstring gets one line: the git lookups ignore those variables.
 - It stays stdlib-only and Python 3.9-compatible.
 
-`tests/test_subagent_guard.py`, a new test, red before the fix:
-- Set up an allowlisted guarded Write in the linked worktree.
-- Run the hook with `GIT_DIR`, `GIT_WORK_TREE` and `GIT_COMMON_DIR` pointing at a separate tmp repo. Set them
-  on the hook's environment only, never in the `git()` setup helper.
-- The Write passes (exit 0).
-- A second case in the same setup: a guarded Write that isn't allowlisted is still refused (exit 2).
+`tests/test_subagent_guard.py`:
+- `run_write` and `run_bash` get an optional `env` argument, added on top of the environment they build, so
+  a test can set variables on the hook call only (never in the `git()` setup helper).
+- A new test, red before the fix, with `GIT_DIR`, `GIT_WORK_TREE` and `GIT_COMMON_DIR` pointing at a separate
+  tmp repo (a decoy):
+  - an allowlisted guarded Write in the linked worktree passes (exit 0). Before the fix the lookups resolve
+    to the decoy, which has no allowlist, so it is refused;
+  - a guarded Write that isn't in the worktree's allowlist, but is in the decoy's
+    `<git dir>/subagent-guard-allow`, is refused (exit 2) with the Guarded-files message. Before the fix the
+    decoy's allowlist opens it. This is the direction that matters: a variable that widens access.
+- A test that every variable `git rev-parse --local-env-vars` prints is in the hook's constant (a superset
+  check), so a newer git that adds one fails loudly.
 
 ### 3. Agent gate lists (#66)
 
 - `implementer.md`: the *Gates pass before each commit* bullet points at `CLAUDE.md` → *Commands* and names
   its gate lines: the tests, the coverage gate, and the lint line (ruff, mypy, `actionlint`, `zizmor`). It
   also says the rest of that section (`pre-commit install` and the scripts) isn't for implementers.
+- `.github/pull_request_template.md`: its *Gates pass* checkbox lists the gates too (without the workflow
+  linters). It points at `CLAUDE.md` → *Commands* instead. This file isn't guarded.
 - `task-reviewer.md` and `full-reviewer.md`: their *Rules* bullet lists the checks they may run, and that list
   is also their Bash scope. It becomes:
   - `uv sync --locked`;
@@ -116,15 +128,20 @@ Tests:
 
 - **Wave 1:** #54 alone, in a task worktree even as a single-task wave. The issue worktree's guard is the live
   one, so an implementer editing it there could break its own tool calls.
-  - After the cherry-pick, the team lead checks the live hook before dispatching anything else:
-    `uv run pytest tests/test_subagent_guard.py`, a subagent Write payload for a guarded path piped into
-    `python3 .claude/hooks/subagent_guard.py` (exit 2), and one for a `docs/` path (exit 0).
+  - After the cherry-pick, the team lead checks the live hook before dispatching anything else. Each payload
+    is a file written with the Write tool and fed with `python3 .claude/hooks/subagent_guard.py < <file>`:
+    - `uv run pytest tests/test_subagent_guard.py` passes;
+    - a subagent Write of `.claude/settings.json` in the issue worktree exits 2, and its stderr names the
+      Guarded-files refusal ("not in this task's Guarded files"), not `guard error` or `crashed`;
+    - a subagent Write of `<issue worktree>/docs/.pre-commit-config.yaml` exits 0. That path runs
+      `worktree_of`, so it runs the new `env=`.
 - **Wave 2:** #45 and #66 in parallel, on disjoint files, each in its own task worktree.
   - D41 goes with #45.
 - **Guarded files:**
   - #54: `.claude/hooks/subagent_guard.py`. Reason: the fix is in the guard itself (#54).
   - #45: `.pre-commit-config.yaml`.
-  - #66: `.claude/agents/implementer.md`, `.claude/agents/task-reviewer.md`, `.claude/agents/full-reviewer.md`.
+  - #66: `.claude/agents/implementer.md`, `.claude/agents/task-reviewer.md`, `.claude/agents/full-reviewer.md`
+    (and the unguarded `.github/pull_request_template.md`).
 - Every task is `Model: opus`: each touches the guard or the agents' rules, and #66 is a docs task (D33).
 
 ## Risks

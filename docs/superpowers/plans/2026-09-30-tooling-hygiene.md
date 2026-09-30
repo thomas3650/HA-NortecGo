@@ -39,7 +39,7 @@
 
 | Wave | Tasks | Notes |
 |---|---|---|
-| 1 | Task 1 (guard) | Alone, but in a task worktree (`/Users/thomas/Documents/Sourcecode/HA-NortecGo-wt/tooling-hygiene-task-1`). The issue worktree's guard is live for every subagent, so it isn't edited in place |
+| 1 | Task 1 (guard) | Alone, but in a task worktree (`<HA-NortecGo-wt>/tooling-hygiene-task-1`). The issue worktree's guard is live for every subagent, so it isn't edited in place |
 | 2 | Task 2 (pre-commit, Dependabot, D41), Task 3 (agents, PR template) | Disjoint files, in `…-task-2` and `…-task-3`. They start only after the live-guard check below |
 
 **Guarded files:**
@@ -49,11 +49,11 @@
 
 Before each dispatch, the team lead writes the task's paths (absolute, under its worktree) to `$(git -C <task worktree> rev-parse --absolute-git-dir)/subagent-guard-allow`. It empties that file however the task ends.
 
-**Live-guard check (team lead, after Task 1 is cherry-picked onto the feature branch, before wave 2).** Run it in the issue worktree `/Users/thomas/Documents/Sourcecode/HA-NortecGo-wt/tooling-hygiene`:
+**Live-guard check (team lead, after Task 1 is cherry-picked onto the feature branch, before wave 2).** The order is: the pick, the gates, this check, then the push. Run every step from the issue worktree `<HA-NortecGo-wt>/tooling-hygiene` (`cd` there first):
 1. Run `uv run pytest tests/test_subagent_guard.py -q`. Expect all tests to pass.
 2. With the Write tool, create `/tmp/tooling-hygiene-guard-1.json`:
    `{"tool_name": "Write", "tool_input": {"file_path": "<issue worktree>/.claude/settings.json", "content": "x"}, "cwd": "<issue worktree>", "agent_id": "check"}`.
-   Run `python3 .claude/hooks/subagent_guard.py < /tmp/tooling-hygiene-guard-1.json; echo "exit $?"`. Expect exit 2, with stderr that contains `not in this task's Guarded files`. It must not contain `guard error` or `crashed`.
+   Run `python3 "$PWD/.claude/hooks/subagent_guard.py" < /tmp/tooling-hygiene-guard-1.json; echo "exit $?"` (by absolute path, as `.claude/settings.json` calls it). Expect exit 2, with stderr that contains `not in this task's Guarded files`. It must not contain `guard error` or `crashed`.
 3. Create `/tmp/tooling-hygiene-guard-2.json` the same way, for `<issue worktree>/docs/.pre-commit-config.yaml`, and run the hook on it. Expect exit 0. This path goes through `worktree_of`, so it exercises the new `env=`.
 4. If any step fails: revert the pick on the feature branch (`git revert`), don't push, and re-run Task 1 as a fix round.
 
@@ -97,7 +97,7 @@ def load_hook() -> Any:
 
 @pytest.fixture
 def decoy(tmp_path: Path) -> dict[str, str]:
-    """git location variables that point at a separate repository."""
+    """Git location variables that point at a separate repository."""
     repo = tmp_path / "decoy"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
@@ -249,7 +249,7 @@ Message: `process: guard's git lookups ignore GIT_DIR and friends (#54)`, a one-
 
 **Interfaces:**
 - Consumes: `WORKFLOWS` and `yaml` in `tests/test_workflows.py`.
-- Produces: the local hook ids `ruff-check` and `ruff-format`. `way-of-working.md` §1 step 5, `notes.md`, `ha-notes.md` and `implementer.md` already use these names.
+- Produces: the local hook ids `ruff-check` and `ruff-format`. `way-of-working.md` §1 step 5, `notes.md` and `implementer.md` already use these names (`ha-notes.md` says "the pre-commit `ruff format` hook", which stays true).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -296,6 +296,7 @@ def test_pre_commit_ruff_runs_before_gitleaks() -> None:
     gitleaks = next(i for i, repo_ids in enumerate(ids) if "gitleaks" in repo_ids)
     hygiene = next(i for i, repo_ids in enumerate(ids) if "check-yaml" in repo_ids)
     assert hygiene < ruff < gitleaks
+    assert repos[ruff]["repo"] == "local"
     assert "ruff-format" in ids[ruff]
 
 
@@ -314,7 +315,7 @@ def test_dependabot_bumps_pre_commit_hooks() -> None:
 - [ ] **Step 2: Run the new tests to verify they fail**
 
 Run: `uv run pytest tests/test_workflows.py -q -k "pre_commit"`
-Expected: `test_pre_commit_ruff_is_the_locked_one` fails (the `ruff-pre-commit` repo is still there), `test_pre_commit_ruff_runs_before_gitleaks` fails with `StopIteration` inside the test (no local `ruff-check` yet), and `test_dependabot_bumps_pre_commit_hooks` fails with `KeyError: 'pre-commit'`.
+Expected: `test_pre_commit_ruff_is_the_locked_one` fails (the `ruff-pre-commit` repo is still there), `test_pre_commit_ruff_runs_before_gitleaks` fails on `repos[ruff]["repo"] == "local"` (the remote repo still holds `ruff-check`), and `test_dependabot_bumps_pre_commit_hooks` fails with `KeyError: 'pre-commit'`.
 
 - [ ] **Step 3: Replace the ruff repo in `.pre-commit-config.yaml`**
 
@@ -374,7 +375,7 @@ Append to the `updates:` list in `.github/dependabot.yml`:
 Run: `uv run pytest tests/test_workflows.py -q`
 Expected: all pass, `test_dependabot_titles_are_chore` included.
 
-Then run `uv run pre-commit validate-config` and `uv run pre-commit run ruff-check --all-files && uv run pre-commit run ruff-format --all-files`. Expected: both hooks show `Passed` and change no files, because the locked ruff is the same 0.16.9 the old hook used. If a hook changes files, stop and report BLOCKED with the list of files.
+Then run `uv run pre-commit validate-config .pre-commit-config.yaml` (with no filename it checks nothing) and `uv run pre-commit run ruff-check --all-files && uv run pre-commit run ruff-format --all-files`. Expected: both hooks show `Passed` and change no files, because the locked ruff is the same 0.16.9 the old hook used. If a hook changes files, stop and report BLOCKED with the list of files.
 
 - [ ] **Step 6: Update `docs/way-of-working.md` §6**
 

@@ -42,6 +42,8 @@ whole-tree revert check covers the hook's own checkout (``ROOT``) only.
 The allowlist is per worktree: ``<git dir>/subagent-guard-allow`` of the worktree (of this repository)
 the edited file is in (``git rev-parse --absolute-git-dir``); relative lines resolve against that
 worktree's top level. A worktree whose common git dir differs from ``ROOT``'s (a nested repo) has none.
+The git lookups run without git's repository-location variables (``GIT_DIR``, ``GIT_WORK_TREE``,
+``GIT_COMMON_DIR`` and the rest of ``git rev-parse --local-env-vars``), so they follow ``-C`` only.
 """
 
 from __future__ import annotations
@@ -82,6 +84,27 @@ GUARDED_TEXT = re.compile(
     r"(?:^|[^\w.-])\.(?:claude|git)(?:/|$|[^\w.-])|\.pre-commit-config\.yaml", re.IGNORECASE
 )
 UNPARSEABLE = "unparseable command: rephrase with the Write tool or `git commit -F <file>`"
+# git's repository-location variables (`git rev-parse --local-env-vars`). The guard's git lookups run
+# without them, so they find the repository from `-C <dir>` only.
+GIT_LOCAL_ENV_VARS = frozenset(
+    {
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_DIR",
+        "GIT_GRAFT_FILE",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_NO_REPLACE_OBJECTS",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_PREFIX",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SHALLOW_FILE",
+        "GIT_WORK_TREE",
+    }
+)
 
 
 class Refuse(Exception):
@@ -95,6 +118,11 @@ def norm(path: str) -> str:
 
 def resolve(path: str, cwd: str | None) -> str:
     return norm(os.path.join(cwd or str(ROOT), os.path.expanduser(path)))
+
+
+def git_env() -> dict[str, str]:
+    """The hook's environment without git's repository-location variables."""
+    return {k: v for k, v in os.environ.items() if k not in GIT_LOCAL_ENV_VARS}
 
 
 def has_git_part(resolved: str) -> bool:
@@ -124,6 +152,7 @@ def worktree_of(resolved: str) -> tuple[str, Path] | None:
         capture_output=True,
         text=True,
         check=False,
+        env=git_env(),
         timeout=10,
     )
     lines = result.stdout.splitlines()
@@ -186,6 +215,7 @@ def common_git_dir(directory: str) -> str | None:
         capture_output=True,
         text=True,
         check=False,
+        env=git_env(),
         timeout=10,
     )
     lines = result.stdout.splitlines()

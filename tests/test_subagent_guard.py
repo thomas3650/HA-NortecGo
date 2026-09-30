@@ -1,11 +1,13 @@
 """Tests for the subagent guard hook's per-worktree allowlist."""
 
+import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 
@@ -61,9 +63,16 @@ def allow(checkout: Path, *lines: str) -> None:
 
 
 def run_write(
-    hook: Path, target: Path, cwd: Path, agent: bool = True
+    hook: Path,
+    target: Path,
+    cwd: Path,
+    agent: bool = True,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run the hook on a Write of target, as a subagent unless agent is False."""
+    """Run the hook on a Write of target, as a subagent unless agent is False.
+
+    extra_env is set on the hook's environment only.
+    """
     payload: dict[str, object] = {
         "tool_name": "Write",
         "tool_input": {"file_path": str(target), "content": "x"},
@@ -78,12 +87,17 @@ def run_write(
         capture_output=True,
         text=True,
         check=False,
-        env={**env, **GIT_ENV},
+        env={**env, **GIT_ENV, **(extra_env or {})},
     )
 
 
-def run_bash(hook: Path, command: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Run the hook on a subagent Bash call of command."""
+def run_bash(
+    hook: Path, command: str, cwd: Path, extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run the hook on a subagent Bash call of command.
+
+    extra_env is set on the hook's environment only.
+    """
     payload: dict[str, object] = {
         "tool_name": "Bash",
         "tool_input": {"command": command},
@@ -97,7 +111,7 @@ def run_bash(hook: Path, command: str, cwd: Path) -> subprocess.CompletedProcess
         capture_output=True,
         text=True,
         check=False,
-        env={**env, **GIT_ENV},
+        env={**env, **GIT_ENV, **(extra_env or {})},
     )
 
 
@@ -247,3 +261,81 @@ def test_main_thread_is_not_restricted(repos: tuple[Path, Path, Path]) -> None:
         hook, worktree / ".claude" / "settings.json", worktree, agent=False
     )
     assert result.returncode == 0, result.stderr
+
+
+def load_hook() -> Any:
+    """Import the hook as a module, for its constants and helpers."""
+    spec = importlib.util.spec_from_file_location("subagent_guard", HOOK)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def decoy(tmp_path: Path) -> dict[str, str]:
+    """Git location variables that point at a separate repository."""
+    repo = tmp_path / "decoy"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git_dir = repo / ".git"
+    return {
+        "GIT_DIR": str(git_dir),
+        "GIT_WORK_TREE": str(repo),
+        "GIT_COMMON_DIR": str(git_dir),
+    }
+
+
+def test_git_location_variables_ignored_for_an_allowlisted_write(
+    repos: tuple[Path, Path, Path], decoy: dict[str, str]
+) -> None:
+    """An allowlisted Write passes although GIT_DIR and friends point at another repository."""
+    _, worktree, hook = repos
+    target = worktree / ".claude" / "settings.json"
+    allow(worktree, str(target))
+    result = run_write(hook, target, worktree, extra_env=decoy)
+    assert result.returncode == 0, result.stderr
+
+
+def test_git_location_variables_cannot_widen_the_allowlist(
+    repos: tuple[Path, Path, Path], decoy: dict[str, str]
+) -> None:
+    """Another repository's allowlist, reached through GIT_DIR, opens nothing."""
+    _, worktree, hook = repos
+    allow(worktree, str(worktree / ".claude" / "settings.json"))
+    target = worktree / ".claude" / "other.md"
+    # An absolute line: a relative one would resolve against the decoy's top level.
+    Path(decoy["GIT_DIR"], "subagent-guard-allow").write_text(
+        f"{target}\n", encoding="utf-8"
+    )
+    result = run_write(hook, target, worktree, extra_env=decoy)
+    assert result.returncode == 2
+    assert "not in this task's Guarded files" in result.stderr
+
+
+def test_guard_ignores_every_git_local_env_var() -> None:
+    """The hook's list covers every repository-location variable the installed git knows."""
+    printed = subprocess.run(
+        ["git", "rev-parse", "--local-env-vars"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert printed
+    assert set(printed) <= load_hook().GIT_LOCAL_ENV_VARS
+
+
+def test_git_env_keeps_other_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    """git_env() drops the location variables and keeps the rest, the config switches included."""
+    monkeypatch.setenv("GIT_DIR", "/nowhere")
+    monkeypatch.setenv("GIT_WORK_TREE", "/nowhere")
+    monkeypatch.setenv("GIT_COMMON_DIR", "/nowhere")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    env = load_hook().git_env()
+    assert "GIT_DIR" not in env
+    assert "GIT_WORK_TREE" not in env
+    assert "GIT_COMMON_DIR" not in env
+    assert env["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert env["GIT_CONFIG_NOSYSTEM"] == "1"

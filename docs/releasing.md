@@ -106,7 +106,9 @@ If so, it tags the commit `vX.Y.Z` and publishes the release through `release.ym
 releases nothing, and the `auto-release` run says why.
 
 Afterwards, check the `auto-release` runs for the merge commit. There are up to five, one per required
-workflow. Some show as cancelled, and the one that runs after the last workflow does the work. Then check:
+workflow. Some show as cancelled, and the one that runs after the last workflow does the work. When the
+last two workflows finish close together, two runs see them all green; they run one at a time, and the
+second finds the release made and ends in `decide`. Then check:
 - the tag;
 - the release, with the changelog section as its notes;
 - that HACS offers the version.

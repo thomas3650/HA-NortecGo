@@ -92,6 +92,17 @@ def test_auto_release_tag_step_fails_only_on_a_tag_elsewhere() -> None:
     assert '[ -n "$tagged" ] && [ "$tagged" != "$SHA" ]' in step["run"]
 
 
+def test_auto_release_skips_a_release_that_exists() -> None:
+    """A second run for the same merge ends in decide once the release exists, before release=true."""
+    steps = _load("auto-release.yml")["jobs"]["decide"]["steps"]
+    [step] = [s for s in steps if s.get("name") == "The tag"]
+    assert step["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert step["env"]["GH_REPO"] == "${{ github.repository }}"
+    run = step["run"]
+    assert 'gh release view "$TAG"' in run
+    assert run.index('gh release view "$TAG"') < run.index('echo "release=true"')
+
+
 def test_concurrency_group_per_event_and_commit() -> None:
     """One group per event and commit, at workflow level, never cancelling a running release."""
     concurrency = _load("auto-release.yml")["concurrency"]

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.sensor import (
+    ATTR_LAST_RESET,
     ATTR_STATE_CLASS,
     SensorDeviceClass,
     SensorStateClass,
@@ -38,9 +39,12 @@ from custom_components.nortec_go.charge_control import CHARGE_STATUS_OPTIONS
 from custom_components.nortec_go.const import DOMAIN, MISSING_SLOT_PRICE
 
 from .conftest import (
+    FAKE_CHARGE_ID,
     FAKE_CHARGER_ID,
+    FAKE_COMPLETED_AT,
     FAKE_LAST_SEEN,
     make_charger,
+    make_completed_charge,
     make_forecast,
     make_vehicle,
     setup_integration,
@@ -487,6 +491,273 @@ async def test_charge_energy_starts_a_new_cycle_per_charge(
         (STATE_UNKNOWN, "0.0", increasing),
         ("0.2", "3.6", increasing),
     ]
+
+
+COST = "sensor.garage_charger_cost_this_charge"
+LAST_COST = "sensor.garage_charger_last_charge_cost"
+
+
+async def test_cost_sensors(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    entity_registry: er.EntityRegistry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Cost this charge and Last charge cost: classes, unit, precision, charger device."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        charge_cost=12.34,
+        last_charge=make_completed_charge(),
+    )
+    await setup_integration(hass, mock_config_entry)
+    charger = _device(device_registry, mock_config_entry, str(FAKE_CHARGER_ID))
+    assert charger is not None
+
+    for entity_id, key, value, state_class, last_reset in (
+        (COST, "charge_cost", "12.34", None, None),
+        (
+            LAST_COST,
+            "last_charge_cost",
+            "42.5",
+            SensorStateClass.TOTAL,
+            FAKE_COMPLETED_AT.isoformat(),
+        ),
+    ):
+        state = hass.states.get(entity_id)
+        assert state is not None, entity_id
+        assert state.state == value
+        assert state.attributes[ATTR_DEVICE_CLASS] == SensorDeviceClass.MONETARY
+        assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == "DKK"
+        assert state.attributes.get(ATTR_STATE_CLASS) == state_class
+        assert state.attributes.get(ATTR_LAST_RESET) == last_reset
+        entry = entity_registry.async_get(entity_id)
+        assert entry is not None
+        assert entry.unique_id == f"{FAKE_CHARGER_ID}_{key}"
+        assert entry.device_id == charger.id
+        assert entry.entity_category is None
+        assert entry.disabled_by is None
+        assert entry.options["sensor"]["suggested_display_precision"] == 2
+
+
+@pytest.mark.parametrize(
+    ("charger", "cost", "last_cost"),
+    [
+        (
+            make_charger(is_connected=True, last_charge=make_completed_charge()),
+            STATE_UNKNOWN,
+            "42.5",
+        ),
+        (
+            make_charger(
+                is_connected=True,
+                charge_state=ChargeState.CHARGING,
+                charge_cost=12.34,
+                last_charge=make_completed_charge(),
+            ),
+            "12.34",
+            "42.5",
+        ),
+        (
+            make_charger(
+                is_connected=True,
+                charge_state=ChargeState.STOPPING,
+                charge_cost=12.34,
+                last_charge=make_completed_charge(charge_id=FAKE_CHARGE_ID, cost=13.07),
+            ),
+            "13.07",
+            "13.07",
+        ),
+        (
+            make_charger(
+                is_connected=True,
+                charge_state=ChargeState.CHARGING,
+                last_charge=make_completed_charge(),
+            ),
+            STATE_UNKNOWN,
+            "42.5",
+        ),
+        (
+            make_charger(
+                is_connected=True, charge_state=ChargeState.CHARGING, charge_cost=0.0
+            ),
+            "0.0",
+            STATE_UNKNOWN,
+        ),
+    ],
+    ids=[
+        "no_charge",
+        "open_charge",
+        "stopping_already_billed",
+        "open_charge_no_cost_reading",
+        "no_last_charge",
+    ],
+)
+async def test_cost_values(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    charger: Charger,
+    cost: str,
+    last_cost: str,
+) -> None:
+    """The rows of the spec's table (§3): what each sensor shows in each situation."""
+    mock_client.get_charger.return_value = charger
+    await setup_integration(hass, mock_config_entry)
+    assert _state(hass, COST) == cost
+    assert _state(hass, LAST_COST) == last_cost
+
+
+@pytest.mark.parametrize(
+    ("charger_currency", "forecast_currency", "unit"),
+    [("SEK", "DKK", "SEK"), (None, "DKK", "DKK"), (None, None, "EUR")],
+    ids=["the_chargers", "the_forecasts", "home_assistants"],
+)
+async def test_cost_unit(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    charger_currency: str | None,
+    forecast_currency: str | None,
+    unit: str,
+) -> None:
+    """The unit is the charger's currency, then the forecast's, then Home Assistant's."""
+    hass.config.currency = "EUR"
+    freezer.move_to(MIDNIGHT + timedelta(minutes=5))
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [1.0], currency=forecast_currency
+    )
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        charge_cost=12.34,
+        currency=charger_currency,
+        last_charge=make_completed_charge(),
+    )
+    await setup_integration(hass, mock_config_entry)
+
+    for entity_id in (COST, LAST_COST):
+        state = hass.states.get(entity_id)
+        assert state is not None, entity_id
+        assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == unit
+
+
+async def test_cost_unit_follows_a_currency_learned_later(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A charger that names its currency in a later read changes the unit at that read."""
+    hass.config.currency = "EUR"
+    freezer.move_to(MIDNIGHT + timedelta(minutes=5))
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [1.0], currency=None
+    )
+    mock_client.get_charger.return_value = make_charger(
+        currency=None, last_charge=make_completed_charge()
+    )
+    await setup_integration(hass, mock_config_entry)
+    state = hass.states.get(LAST_COST)
+    assert state is not None
+    assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == "EUR"
+
+    mock_client.get_charger.return_value = make_charger(
+        last_charge=make_completed_charge()
+    )
+    freezer.tick(timedelta(seconds=1))
+    await mock_config_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    state = hass.states.get(LAST_COST)
+    assert state is not None
+    assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == "DKK"
+
+
+def _cost_state(hass: HomeAssistant, entity_id: str) -> tuple[str, str | None]:
+    """A cost sensor's state and its last_reset attribute."""
+    state = hass.states.get(entity_id)
+    assert state is not None, entity_id
+    return state.state, state.attributes.get(ATTR_LAST_RESET)
+
+
+async def test_cost_sensors_unavailable_after_a_failed_read(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A failed charger read makes both unavailable; the same charge comes back with the same cycle."""
+    charger = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        charge_cost=12.34,
+        last_charge=make_completed_charge(),
+    )
+    mock_client.get_charger.return_value = charger
+    await setup_integration(hass, mock_config_entry)
+    before = _cost_state(hass, LAST_COST)
+    assert before == ("42.5", FAKE_COMPLETED_AT.isoformat())
+
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    await mock_config_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert _state(hass, COST) == STATE_UNAVAILABLE
+    assert _state(hass, LAST_COST) == STATE_UNAVAILABLE
+
+    mock_client.get_charger.side_effect = None
+    await mock_config_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert _state(hass, COST) == "12.34"
+    assert _cost_state(hass, LAST_COST) == before
+
+
+async def test_last_charge_cost_starts_a_new_cycle_per_completed_charge(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """Unknown and back keeps the cycle; a new charge with the same cost is a new cycle."""
+    first = make_completed_charge()
+    later = FAKE_COMPLETED_AT + timedelta(days=1)
+    second = make_completed_charge(charge_id="fake-newer-charge-id", completed_at=later)
+    later_reads = (
+        make_charger(is_connected=True),
+        make_charger(is_connected=True, last_charge=first),
+        make_charger(is_connected=True, last_charge=second),
+    )
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, last_charge=first
+    )
+    await setup_integration(hass, mock_config_entry)
+    seen = [_cost_state(hass, LAST_COST)]
+    for charger in later_reads:
+        mock_client.get_charger.return_value = charger
+        await mock_config_entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        seen.append(_cost_state(hass, LAST_COST))
+
+    assert seen == [
+        ("42.5", FAKE_COMPLETED_AT.isoformat()),
+        (STATE_UNKNOWN, None),
+        ("42.5", FAKE_COMPLETED_AT.isoformat()),
+        ("42.5", later.isoformat()),
+    ]
+    state = hass.states.get(LAST_COST)
+    assert state is not None
+    assert state.attributes[ATTR_STATE_CLASS] == SensorStateClass.TOTAL
+
+
+async def test_last_charge_cost_keeps_its_cycle_over_a_reload(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """After a reload the same charge has the same last_reset: nothing is stored, nothing counted twice."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, last_charge=make_completed_charge()
+    )
+    await setup_integration(hass, mock_config_entry)
+    before = _cost_state(hass, LAST_COST)
+
+    assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert _cost_state(hass, LAST_COST) == before
+    assert before == ("42.5", FAKE_COMPLETED_AT.isoformat())
 
 
 async def test_car_sensors(

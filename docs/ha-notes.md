@@ -139,13 +139,22 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   also removes its entities.
 - On the day the clocks go back, two local datetimes with the same time zone compare by wall-clock time and
   ignore `fold`, so the repeated hour sorts wrongly. Compare and sort in UTC.
-- When the unit of a sensor with `state_class` `measurement` changes while it has long-term statistics, HA
+- When the unit of a sensor with long-term statistics changes to one HA can't convert to the stored unit
+  (another currency, say), whatever its `state_class` (`measurement`, `total` or `total_increasing`), HA
   stops compiling its statistics and raises its own repair, where the user picks what to do with the old
-  statistics. Nothing in the integration has to handle it.
+  statistics. Nothing in the integration has to handle it. A change HA can convert (kWh to Wh) keeps the
+  statistics, in the stored unit.
 - For a sensor with `state_class` `total_increasing`, the recorder's statistics skip non-numeric states
   (unknown, unavailable) and start a new cycle only when the value drops below 90% of the previous one; a
   drop to 90% or more is logged as a dip, not a reset. So a per-charge counter may go unknown between
   charges, but a new cycle whose first value is at least 90% of the last one is missed.
+- For a sensor with `state_class` `total`, the recorder's statistics depend on `last_reset`. Without it, a
+  drop counts as a negative change, so a value that restarts per cycle gives a sum that is just the current
+  value. With it, a changed `last_reset` starts a new cycle and the new value is added in full, and the same
+  `last_reset` adds only the change in value. The first value ever recorded sets the zero point and isn't
+  added. So a per-cycle value needs `last_reset`, or no state class.
+- `device_class` `monetary` allows only the state class `total`, or none.
+- A sensor's display precision doesn't change its state string: the state is the native value as it is.
 
 ## Diagnostics
 

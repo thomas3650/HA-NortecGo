@@ -1,4 +1,4 @@
-"""Nortec Go sensors: the price for EV Smart Charging, the charge status, the open charge's energy and power, the last read and the car's values."""
+"""Nortec Go sensors: the price for EV Smart Charging, the charge status, the open charge's energy, power and cost, the last charge's cost, the last read and the car's values."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,6 +20,7 @@ from pynortecgo import Charger, Vehicle
 
 from .charge_control import CHARGE_STATUS_OPTIONS, charge_status
 from .coordinator import NortecGoCoordinator
+from .costs import charge_cost, last_charge_completed_at, last_charge_cost
 from .entity import NortecGoCarEntity, NortecGoChargerEntity
 from .entry import NortecGoConfigEntry
 from .prices import current_price, prices_today, prices_tomorrow
@@ -87,6 +88,34 @@ CHARGE_SENSORS: tuple[NortecGoChargeSensorDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class NortecGoCostSensorDescription(SensorEntityDescription):
+    """A cost sensor: how to read it from the charger, and when its cycle started, if it has cycles."""
+
+    value_fn: Callable[[Charger], float | None]
+    last_reset_fn: Callable[[Charger], datetime | None] | None = None
+
+
+# Cost this charge has no state class: a per-charge value without last_reset would give a
+# wrong statistics sum. Last charge cost starts a new cycle per completed charge (D42).
+COST_SENSORS: tuple[NortecGoCostSensorDescription, ...] = (
+    NortecGoCostSensorDescription(
+        key="charge_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        suggested_display_precision=2,
+        value_fn=charge_cost,
+    ),
+    NortecGoCostSensorDescription(
+        key="last_charge_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        value_fn=last_charge_cost,
+        last_reset_fn=last_charge_completed_at,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: NortecGoConfigEntry,
@@ -101,6 +130,9 @@ async def async_setup_entry(
     ]
     entities.extend(
         NortecGoChargeSensor(coordinator, description) for description in CHARGE_SENSORS
+    )
+    entities.extend(
+        NortecGoCostSensor(coordinator, description) for description in COST_SENSORS
     )
     if coordinator.has_car:
         entities.extend(
@@ -206,6 +238,43 @@ class NortecGoChargeSensor(NortecGoChargerEntity, SensorEntity):
         if charger.charge_id is None:
             return self.entity_description.no_charge_value
         return self.entity_description.value_fn(charger)
+
+
+class NortecGoCostSensor(NortecGoChargerEntity, SensorEntity):
+    """A cost the client reports, in the charger's currency (D42)."""
+
+    entity_description: NortecGoCostSensorDescription
+
+    def __init__(
+        self,
+        coordinator: NortecGoCoordinator,
+        description: NortecGoCostSensorDescription,
+    ) -> None:
+        """Set up the sensor from its description."""
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        """The charger's currency, then the forecast's, then Home Assistant's (D34, D42)."""
+        return (
+            self.coordinator.data.charger.currency
+            or self.coordinator.price_currency
+            or self.hass.config.currency
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """The cost, or None (unknown) when the client has none."""
+        return self.entity_description.value_fn(self.coordinator.data.charger)
+
+    @property
+    def last_reset(self) -> datetime | None:
+        """When the sensor's cycle started: the last charge's completion time, if it has cycles."""
+        last_reset_fn = self.entity_description.last_reset_fn
+        if last_reset_fn is None:
+            return None
+        return last_reset_fn(self.coordinator.data.charger)
 
 
 class NortecGoCarSensor(NortecGoCarEntity, SensorEntity):

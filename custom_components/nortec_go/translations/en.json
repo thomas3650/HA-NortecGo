@@ -98,6 +98,12 @@
       },
       "charging_power": {
         "name": "Charging power"
+      },
+      "charge_cost": {
+        "name": "Cost this charge"
+      },
+      "last_charge_cost": {
+        "name": "Last charge cost"
       }
     },
     "switch": {

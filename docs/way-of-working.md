@@ -17,7 +17,10 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
    parallel work (see [Parallel waves](#parallel-waves)). Then `full-reviewer` until Ready. In a plan, a
    fragment that isn't a whole statement (parametrize rows, say) goes in a `text` block, and so do class
    methods (indented `def`s): a pre-commit hook reformats Python blocks in Markdown
-   ([`ha-notes.md`](ha-notes.md#tooling)).
+   ([`ha-notes.md`](ha-notes.md#tooling)). A plan is a public file, so it names a worktree by a placeholder
+   (`<worktree>`, or `<HA-NortecGo-wt>/<topic>`, say) or a relative path, never by a local absolute path,
+   which can hold the local user name (hard rule 3); the dispatch gives the path
+   ([Parallel waves](#parallel-waves)).
 6. **Draft PR:** once the spec and plan are both Ready, commit them, push, and open a **draft** PR with
    `Closes #n` and links to the spec and plan. Its title follows [`releasing.md`](releasing.md#pr-titles).
    The owner reviews the spec and plan there.

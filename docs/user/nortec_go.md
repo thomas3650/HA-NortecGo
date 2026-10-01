@@ -129,8 +129,9 @@ start again, so planning one continuous session suits it best.
 
 ### The charger in the Energy dashboard
 
-In **Settings** > **Dashboards** > **Energy**, add an individual device with *Total energy* as its energy
-sensor and, if you like, *Charging power* as its power sensor.
+In **Settings** > **Dashboards** > **Energy**, under **Individual electrical devices**, select **Add
+device**. Pick *Total energy* as **Device energy consumption** and, if you like, *Charging power* as
+**Device power consumption**.
 
 Don't add *Energy this charge* as well: the charger would be counted twice. If you added it before *Total
 energy* existed, replace it.

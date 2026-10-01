@@ -27,8 +27,8 @@ Proposed by the team lead; the owner answered the two questions on #76 through t
 | Exact values | Both show the client's values. No cost is computed from energy and price |
 | *Cost this charge* | Monetary, no state class: history only, no long-term statistics. Unknown when no charge is open, as *Energy this charge* |
 | While stopping | When the last completed charge is the open charge (same ID), *Cost this charge* shows its billed total instead of the live value |
-| *Last charge cost* | Monetary, `total`, with `last_reset` = the charge's completion time. Each completed charge is a new cycle, so the long-term statistics sum is the money billed for the charges Home Assistant saw |
-| Unit | `Charger.currency`, then the price forecast's currency, then Home Assistant's (D34's order, with the charger's own first) |
+| *Last charge cost* | Monetary, `total`, with `last_reset` = the charge's completion time. Each completed charge is a new cycle, so the long-term statistics sum is the money billed for the charges completed after the sensor's first value |
+| Unit | `Charger.currency`, then the price forecast's currency, then Home Assistant's (D34's order, with the charger's own first). `sensor.py` reads the currency: it is a field of the charger, not of the open charge |
 | Polling | Unchanged (D29, D31). A charger read now costs one more request (§5) |
 | The start path | `UnknownChargerStateError` (new in the client) is a pre-check error: it shows the existing "charger state unknown" message (the owner's answer: yes, in this PR). Nothing else near start or stop changes |
 | Diagnostics | The new fields are shown, none redacted (D38: only the sign-in secrets). The pinned field sets grow, and the completed charge's fields are pinned too |
@@ -43,7 +43,7 @@ Facts used, public-safe:
     tariff. It can trail `charge_kwh` by a reading, and its last value before a charge closes was seen
     below the billed total. `None` when no charge is open, or when an open charge has no cost reading.
   - `Charger.currency`: the ISO 4217 code of the charger's prices, set with or without an open charge;
-    `None` when the charger gives none.
+    `None` when the charger gives none or not 3 letters.
   - `Charger.last_charge`: a `CompletedCharge` (`id`, `cost`, `kwh`, `completed_at` in UTC), the most recent
     completed charge on the charger, with its billed cost. During a charge it is the previous one; while
     stopping it can already be the open charge (`charge_id == last_charge.id`). `None` when none is among
@@ -76,6 +76,7 @@ Facts used, public-safe:
 | `custom_components/nortec_go/strings.json`, `translations/en.json` | The two names (§3) |
 | `docs/user/nortec_go.md` | §7 |
 | `docs/manual-testing.md` | §7 |
+| `docs/releasing.md` | §7 |
 | `CHANGELOG.md` | §8 |
 | `docs/decisions.md` | D42 (§9) |
 | `tests/conftest.py` | `make_charger` passes the new fields (§10) |
@@ -132,7 +133,8 @@ What the user sees:
 | The client gives no last charge (none among the newest, or its read failed) | As above | Unknown |
 
 A *Last charge cost* that turns unknown and comes back with the same charge has the same `last_reset`, so
-the statistics add nothing twice.
+the statistics add nothing twice. The design assumes that `last_charge` never goes back to an older charge;
+if it did, the changed `last_reset` would count that charge again. No guard is added for it.
 
 ## 4. The start path
 
@@ -150,7 +152,7 @@ intervals:
 | Charge status | Interval | Requests per read | Before |
 |---|---|---|---|
 | Charging | 5 min | 3 | 2 |
-| Starting or stopping | 30 s | 3 | 2 |
+| Starting or stopping | 30 s | 3 (2 while a start is pending and no charge is open yet) | 2 (1) |
 | Anything else | 60 min | 2 (3 while a paused charge is open) | 1 (2) |
 
 So an idle day goes from 24 to 48 requests, an hour of charging from 24 to 36, and the 30-second reads,
@@ -181,8 +183,8 @@ integration shows *Last charge cost* as unknown and logs nothing more.
 
 - *Supported functionality* → *Charger*, two rows after *Charging power*:
 
-  > | Cost this charge | Sensor | What the open charge costs so far, incl. VAT, fees and the grid tariff, in the charger's currency. Unknown when no charge is open. It can lag *Energy this charge* by a reading, and it ends a little below the billed total |
-  > | Last charge cost | Sensor | The billed total of the most recent completed charge on the charger. Its long-term statistics add up the charges Home Assistant has seen. Unknown if the charge isn't among the charger's newest |
+  > | Cost this charge | Sensor | What the open charge costs so far, incl. VAT, fees and the grid tariff, in the charger's currency. Unknown when no charge is open. It can lag *Energy this charge* by a reading, and its last value can be below the billed total; while a charge is stopping it can already show the billed total |
+  > | Last charge cost | Sensor | The billed total of the most recent completed charge on the charger. Its long-term statistics add up the charges completed after the sensor's first value. Unknown if the charge isn't among the charger's newest, or if it couldn't be read |
 
 - *Data updates*: the sentence on *Energy this charge* and *Charging power* also names *Cost this charge*,
   and one sentence is added:
@@ -194,9 +196,19 @@ integration shows *Last charge cost* as unknown and logs nothing more.
 
   > *Last charge cost* misses a charge when two charges end between two reads, or when a charge that ended
   > while Home Assistant was off is no longer the most recent one. Its statistics then lack that charge.
+  > They also lack the charge the sensor first showed: usually one from before you added the sensor, but
+  > the first one after it if the sensor was unknown until then.
+
+- *Diagnostics*: the sentence on what the file keeps also names the last completed charge:
+
+  > It keeps your charger's and car's names and IDs, and the last charge's ID, cost and time, …
 
 `docs/manual-testing.md` → *Entities*, under *Charger*: two lines, *Cost this charge* and *Last charge
-cost*. The owner compares the values with the app; an agent sees neither.
+cost*, in the form of the lines there. (That section's intro already says the owner checks the values and
+an agent sees none; nothing is added for it.)
+
+`docs/releasing.md` → *Bumping `pynortecgo`*: the checklist item on `test_client_model_fields_are_pinned`
+says "a changed `Charger`, `CompletedCharge` or `Vehicle` field".
 
 ## 8. Changelog
 
@@ -206,7 +218,7 @@ Under *Unreleased*:
 >
 > - *Cost this charge*: what the open charge costs so far.
 > - *Last charge cost*: the billed total of the most recent completed charge. Its long-term statistics add
->   up what the charges cost.
+>   up what the charges completed from then on cost.
 >
 > ### Changed
 >
@@ -221,7 +233,8 @@ Under *Unreleased*:
 - **Date:** 2026-10-01 · **Status:** active
 - **Decision:** *Cost this charge* shows the open charge's cost as `pynortecgo` reports it, with no state
   class; *Last charge cost* shows the last completed charge's billed total as `total`, with `last_reset` at
-  the charge's completion time. No cost is computed from energy and price.
+  the charge's completion time. No cost is computed from energy and price. The unit is the charger's
+  currency, then D34's order.
 - **Why:** The owner chose exact values over estimates (#75). A per-charge value without `last_reset` gives a
   wrong statistics sum, and the live value ends below the bill, so only the billed totals are summed.
 - **Source:** [session cost spec](superpowers/specs/2026-10-01-session-cost-design.md), Decisions and §3
@@ -231,11 +244,18 @@ Under *Unreleased*:
 
 `pynortecgo` is mocked in every test, and fixtures are built from its model objects (hard rule 7).
 
-`tests/conftest.py`: `make_charger` gets the keyword arguments `charge_cost: float | None = None`,
-`currency: str | None = "DKK"` and `last_charge: CompletedCharge | None = None`, and `charge_id: str | None
-= None`, which replaces the fake charge ID when a charge is open. A `make_completed_charge` helper returns
-a `CompletedCharge` with fake values. `make_charger` is the only place that builds a `Charger`, so the
-other tests keep passing unchanged.
+`tests/conftest.py`:
+
+- `make_charger` gets the keyword arguments `charge_cost: float | None = None`,
+  `currency: str | None = "DKK"` and `last_charge: CompletedCharge | None = None`, and passes them on. The
+  charge ID stays as it is: `FAKE_CHARGE_ID = "fake-charge-id"` (a new constant for today's literal) when a
+  charge is open, `None` otherwise.
+- `make_completed_charge(*, charge_id: str = "fake-last-charge-id", cost: float = 42.5, kwh: float = 18.4,
+  completed_at: datetime = FAKE_COMPLETED_AT) -> CompletedCharge`, with `FAKE_COMPLETED_AT =
+  datetime(2026, 9, 25, 6, 15, tzinfo=UTC)`. Its default ID differs from `FAKE_CHARGE_ID`, so an open-charge
+  test with a last charge doesn't trigger the swap by accident; the equal-ID case passes
+  `charge_id=FAKE_CHARGE_ID`.
+- `make_charger` is the only place that builds a `Charger`, so the other tests keep passing unchanged.
 
 `tests/test_costs.py`:
 

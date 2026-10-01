@@ -100,9 +100,10 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   `hass.async_block_till_done(wait_background_tasks=True)`. Home Assistant runs the retry as a background
   task (see the bullet on work that a timer starts), so with the default wait the entry can still be
   in `SETUP_IN_PROGRESS`.
-- A helper called in a `@pytest.mark.parametrize` list runs at import: if it raises, the whole file fails to
-  collect. So a stricter helper lands in the same commit as the cases it refuses. A removed case takes its
-  `ids=` entry with it; compare `pytest --collect-only -q` before and after, since a wrong id is no error.
+- A helper called in a `@pytest.mark.parametrize` list runs at import: if it raises, the file fails to
+  collect and pytest runs nothing. So a stricter helper lands in the same commit as the cases it refuses. A
+  removed case takes its `ids=` entry with it; compare `pytest --collect-only -q` before and after, since
+  removing the wrong id is no error.
 - `pytest.raises(match=...)` is a regex search, so a name that is a prefix of another matches the wrong
   message. Compare the whole `str(excinfo.value)` when the exact text matters.
 

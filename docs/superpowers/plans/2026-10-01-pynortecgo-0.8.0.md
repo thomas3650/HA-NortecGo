@@ -59,7 +59,7 @@ What the spec implies but no single test states, most likely first. Each line na
 ## Before wave 1 (the controller)
 
 - [x] Merge `origin/main` in (no rebase), `uv sync`, the gates, push. Done when this plan was written: the
-  branch holds `main` with #86 and #87. #86 changed `version` in `manifest.json`, next to the `requirements`
+  branch holds `main` with #86, #87 and #91. #86 changed `version` in `manifest.json`, next to the `requirements`
   line Task 1 changes, so the tasks start from a head that has it. If `main` moves again before the task
   worktrees are made, repeat this step first.
 

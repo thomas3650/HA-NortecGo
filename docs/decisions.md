@@ -295,7 +295,7 @@ superseded. How to add one:
 - **Source:** [pynortecgo 0.5.0 spec](superpowers/specs/2026-09-28-pynortecgo-0.5.0-design.md), Decisions
 
 ### D35: The PO flow
-- **Date:** 2026-09-28 · **Status:** active
+- **Date:** 2026-09-28 · **Status:** active; the owner merges superseded by D45
 - **Decision:** Besides the direct flow (way-of-working §1), the owner can start a PO session that runs up
   to 2 team leads (each with up to 3 workers). In that flow the PO answers brainstorm questions and approves
   specs and plans in the owner's place, escalating below 90% certainty and always for a fixed list; the owner
@@ -382,3 +382,13 @@ superseded. How to add one:
 - **Why:** a silent press during an outage lets the owner think the data is fresh, and the quality scale's
   `action-exceptions` rule asks actions to raise when they fail.
 - **Source:** [refresh feedback spec](superpowers/specs/2026-10-01-refresh-feedback-design.md), Decisions
+
+### D45: The PO merges ready PRs
+- **Date:** 2026-10-01 · **Status:** active
+- **Decision:** In the PO flow the PO squash-merges a PR it has made ready, releasing PRs included, once
+  the required checks are green on the head it checked, and then checks `main` and the release. PRs that
+  touch charge start or stop, auth, tokens or reauth, a hard rule, `.claude/`, `.pre-commit-config.yaml` or
+  `.github/workflows/` stay the owner's to merge, and nobody else merges.
+- **Why:** The owner's ruling (#84): a finished PR shouldn't wait for the owner to press merge, while the
+  changes that can cost money, lock the account or weaken the process keep the owner's eye.
+- **Source:** [PO merge spec](superpowers/specs/2026-10-01-po-merge-design.md), Decisions

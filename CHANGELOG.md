@@ -6,6 +6,19 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Changed
+
+- If the car can't be read when the integration starts, the start is tried again until the service answers,
+  instead of adding a car device that may not exist. All entities are unavailable until then.
+- A car that goes from the account while Home Assistant runs makes its entities unavailable and raises a
+  repair notice that offers to remove the car device. Before, the entities kept showing the last data.
+
+### Fixed
+
+- An account without a car no longer keeps an unavailable *Car* device after a failed first car read.
+- After a change of car, the car device no longer keeps the old car's brand and model.
+- A stop asked for before a restart is no longer lost when the car read is rejected at the start.
+
 ## [0.2.0] - 2026-10-01
 
 ### Added

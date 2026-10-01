@@ -382,3 +382,14 @@ superseded. How to add one:
 - **Why:** a silent press during an outage lets the owner think the data is fresh, and the quality scale's
   `action-exceptions` rule asks actions to raise when they fail.
 - **Source:** [refresh feedback spec](superpowers/specs/2026-10-01-refresh-feedback-design.md), Decisions
+
+### D44: The car device is decided at setup
+- **Date:** 2026-10-01 · **Status:** active
+- **Decision:** Car entities are added and removed only at setup (first setup, a reload, a restart), never
+  while running; a failed car read at setup retries setup rather than guessing. While running, a "no car"
+  answer makes the car entities unavailable and raises a repair issue whose fix reloads the entry, and a
+  different car updates the same device.
+- **Why:** The owner wants no entities to appear or disappear at random times, and a guessed car left
+  no-car accounts with a dead device (#41).
+- **Source:** [car device lifecycle spec](superpowers/specs/2026-10-01-car-device-lifecycle-design.md),
+  Decisions; owner answer on issue #42

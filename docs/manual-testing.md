@@ -121,7 +121,8 @@ Car:
 Reads and the device page:
 
 - [ ] **Owner** Press *Refresh*: *Last read* moves ([Data updates](user/nortec_go.md#data-updates)).
-  *Refresh* only reads.
+  *Refresh* only reads. A press whose read fails shows an error; the checklist has no step that makes one
+  fail.
 - [ ] The device page: both devices, their entities, and the diagnostic entities in the diagnostic group.
 
 ### EV Smart Charging (#8)

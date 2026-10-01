@@ -39,8 +39,8 @@ rules:
 
   # Silver
   action-exceptions:
-    status: todo
-    comment: "The Charge switch raises translated errors; the Refresh button's press raises nothing when its read fails (#40)."
+    status: done
+    comment: "The Charge switch and the Refresh button raise translated errors when their action fails."
   config-entry-unloading: done
   docs-configuration-parameters:
     status: exempt

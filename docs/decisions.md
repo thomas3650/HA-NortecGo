@@ -364,3 +364,11 @@ superseded. How to add one:
   commit that passes the hook can fail CI's `ruff format --check`. Letting Dependabot bump both would still
   bring them in separate PRs.
 - **Source:** [tooling hygiene spec](superpowers/specs/2026-09-30-tooling-hygiene-design.md), Decisions
+
+### D43: A Refresh press raises when its read fails
+- **Date:** 2026-10-01 · **Status:** active
+- **Decision:** A press on *Refresh* raises a translated error when its charger read or its price read
+  fails. The price read always runs, and the charger's error is the one raised when both fail.
+- **Why:** a silent press during an outage lets the owner think the data is fresh, and the quality scale's
+  `action-exceptions` rule asks actions to raise when they fail.
+- **Source:** [refresh feedback spec](superpowers/specs/2026-10-01-refresh-feedback-design.md), Decisions

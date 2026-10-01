@@ -116,6 +116,9 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   setup that fails or retries with any of the three stores the translation as the entry's
   `error_reason_translation_*`, which the frontend shows translated. So a translated `UpdateFailed` or
   `ConfigEntryError` also translates the setup error.
+- Outside setup, `async_refresh()` stores a read's error in `last_exception` instead of raising it,
+  including `ConfigEntryAuthFailed` and `ConfigEntryError`. A caller that must report a failed read looks at
+  the coordinator afterwards.
 - `DataUpdateCoordinator.last_exception` isn't cleared by a successful read. Show it as the current error
   only while `last_update_success` is false.
 

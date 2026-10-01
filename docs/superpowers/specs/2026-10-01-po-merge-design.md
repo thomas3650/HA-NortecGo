@@ -94,9 +94,9 @@ why).
 
 **What the PO records.** When it marks a PR ready, the PO writes to the PR's entry in
 `.git/po-sessions.json`: that it is ready, who merges it (`po` or `owner`), the head commit the smoke
-test ran on (the *checked head*), and the *cleared time* (§2). A later session reads it there. If the entry or the checked head is
-missing, or the PR's head is a different commit, the PR goes through *From branch ready to PR ready* again
-before any merge.
+test ran on (the *checked head*), and the *cleared time* (§2). A later session reads it there. If the entry
+or the checked head is missing, or the PR's head is a different commit, the PR goes through *From branch
+ready to PR ready* again before any merge.
 
 ### 2. The merge
 

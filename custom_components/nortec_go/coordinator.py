@@ -49,13 +49,21 @@ from .prices import KnownSlots, PriceStore, merge_forecast, next_price_read, pru
 
 _LOGGER = logging.getLogger(__name__)
 
+# The setup car read's errors by class, the first match wins; anything else is car_read_failed (D44).
+_SETUP_CAR_ERROR_KEYS: tuple[tuple[type[NortecGoError], str], ...] = (
+    (RateLimitError, "rate_limited"),
+    (NortecGoConnectionError, "cannot_connect"),
+    (ApiError, "api_error"),
+    (UnexpectedResponseError, "unexpected_response"),
+)
+
 
 @dataclass(frozen=True)
 class NortecGoData:
     """One read of the charger and the car, with the charge control's state.
 
-    vehicle is None until the car is read. read_at is when the charger was last read
-    successfully.
+    vehicle is None when the account has no single car. read_at is when the charger was
+    last read successfully.
     """
 
     charger: Charger
@@ -112,7 +120,6 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self.has_car = True
         self.known_prices: KnownSlots = {}
         self.price_currency: str | None = None
-        self._car_checked = False
         self._car_failing = False
         self._vehicle: Vehicle | None = None
         self._car_read_at: datetime | None = None
@@ -177,15 +184,22 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
                 translation_domain=DOMAIN, translation_key="read_failed"
             ) from err
 
+        read_at = dt_util.utcnow()
+        setup = self.data is None
+        if setup:
+            # The car first: a setup that fails on it must leave the charge control as loaded,
+            # or a stop asked for before the restart is sent and cancelled, or forgotten (D44).
+            self._car_read_at = read_at
+            vehicle = await self._async_read_setup_vehicle()
         self.charge_control.on_charger_read(charger, start_attempts)
         self._async_update_charger_device(charger)
-        read_at = dt_util.utcnow()
-        if self._car_due(read_at):
-            self._car_read_at = read_at
-            self._read_car_next = False
-            vehicle = await self._async_read_vehicle()
-        else:
-            vehicle = self._vehicle
+        if not setup:
+            if self._car_due(read_at):
+                self._car_read_at = read_at
+                self._read_car_next = False
+                vehicle = await self._async_read_vehicle()
+            else:
+                vehicle = self._vehicle
         control = self.charge_control.state
         self.update_interval = interval_for(charger, control, timedelta(0))
         return NortecGoData(
@@ -207,7 +221,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             raise
 
     def _car_due(self, now: datetime) -> bool:
-        """Read the car the first time, when asked, or when its last try is old enough (§3.2)."""
+        """Read the car when asked, or when its last try is old enough (§3.2); the setup read always reads it."""
         return (
             self._read_car_next
             or self._car_read_at is None
@@ -237,8 +251,36 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             self._read_car_next = True
         await self.async_refresh()
 
+    async def _async_read_setup_vehicle(self) -> Vehicle | None:
+        """The setup's car read decides has_car; a failed read fails setup rather than guessing (D44)."""
+        try:
+            vehicle = await self.client.get_vehicle()
+        except AuthError as err:
+            _LOGGER.debug("Reading the car was rejected: %s", err)
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN, translation_key="auth_failed"
+            ) from err
+        except (VehicleNotFoundError, MultipleVehiclesError) as err:
+            self.has_car = False
+            _LOGGER.info("No car entities: %s", err)
+            return None
+        except NortecGoError as err:
+            _LOGGER.debug("Reading the car failed: %s", err)
+            key = next(
+                (
+                    key
+                    for error_type, key in _SETUP_CAR_ERROR_KEYS
+                    if isinstance(err, error_type)
+                ),
+                "car_read_failed",
+            )
+            raise UpdateFailed(translation_domain=DOMAIN, translation_key=key) from err
+        self._vehicle = vehicle
+        self._async_update_car_device(vehicle)
+        return vehicle
+
     async def _async_read_vehicle(self) -> Vehicle | None:
-        """Read the car; a car error never fails the update (§4.2)."""
+        """Read the car while running; only a rejected read fails the update."""
         if not self.has_car:
             return None
         try:
@@ -248,20 +290,10 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN, translation_key="auth_failed"
             ) from err
-        except (VehicleNotFoundError, MultipleVehiclesError) as err:
-            if not self._car_checked:
-                self._car_checked = True
-                self.has_car = False
-                _LOGGER.info("No car entities: %s", err)
-                return None
-            self._log_car_error(err)
-            return self._vehicle
         except NortecGoError as err:
-            self._car_checked = True
             self._log_car_error(err)
             return self._vehicle
 
-        self._car_checked = True
         if self._car_failing:
             self._car_failing = False
             _LOGGER.info("Reading the car works again")

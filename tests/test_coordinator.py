@@ -2,7 +2,9 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+import json
 import logging
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -28,6 +30,7 @@ from pynortecgo import (
     NortecGoError,
     RateLimitError,
     UnexpectedResponseError,
+    Vehicle,
     VehicleNotFoundError,
 )
 import pytest
@@ -315,28 +318,138 @@ async def test_no_car(
     assert mock_client.get_vehicle.await_count == 1
 
 
-async def test_car_error_at_setup_continues(
+@pytest.mark.parametrize(
+    ("error", "key"),
+    [
+        (RateLimitError("too many requests", retry_after=30.0), "rate_limited"),
+        (NortecGoConnectionError("network down"), "cannot_connect"),
+        (ApiError("GET /example", 500), "api_error"),
+        (UnexpectedResponseError("GET /example", "bad shape"), "unexpected_response"),
+        (_UnknownClientError("something new"), "car_read_failed"),
+    ],
+)
+@pytest.mark.parametrize(
+    "answer", [None, VehicleNotFoundError("no car"), MultipleVehiclesError("two cars")]
+)
+async def test_car_error_at_setup_retries(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
     mock_client: AsyncMock,
-    freezer: FrozenDateTimeFactory,
+    device_registry: dr.DeviceRegistry,
     caplog: pytest.LogCaptureFixture,
+    error: Exception,
+    key: str,
+    answer: Exception | None,
 ) -> None:
-    """Another car error at setup: loaded, car expected but not read yet; a later read fills it in."""
-    mock_client.get_vehicle.side_effect = NortecGoConnectionError("network down")
+    """A failed car read at setup retries setup; the retry's answer decides the car device (#41)."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.nortec_go")
+    identifier = car_device_identifier(str(FAKE_CHARGER_ID))
+    mock_client.get_vehicle.side_effect = error
     await setup_integration(hass, mock_config_entry)
 
-    coordinator = _coordinator(mock_config_entry)
+    state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
+    assert state is ConfigEntryState.SETUP_RETRY
+    assert mock_config_entry.error_reason_translation_domain == DOMAIN
+    assert mock_config_entry.error_reason_translation_key == key
+    assert str(error) not in (mock_config_entry.reason or "")
+    assert f"Reading the car failed: {error}" in caplog.text
+    assert (
+        device_registry.async_get_device_by_identifier(
+            identifier, mock_config_entry.entry_id
+        )
+        is None
+    )
+
+    mock_client.get_vehicle.side_effect = answer
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10))
+    await hass.async_block_till_done(wait_background_tasks=True)
+
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    assert coordinator.has_car
-    assert coordinator.data.vehicle is None
-    assert caplog.text.count("Could not read the car") == 1
+    coordinator = _coordinator(mock_config_entry)
+    has_car = answer is None
+    assert coordinator.has_car is has_car
+    assert coordinator.data.vehicle == (make_vehicle() if has_car else None)
+    device = device_registry.async_get_device_by_identifier(
+        identifier, mock_config_entry.entry_id
+    )
+    assert (device is not None) is has_car
+
+
+def test_car_read_failed_text() -> None:
+    """The setup car read's own text is in the strings."""
+    strings = json.loads(
+        (
+            Path(__file__).parent.parent / "custom_components" / DOMAIN / "strings.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert strings["exceptions"]["car_read_failed"] == {
+        "message": "Reading the car failed. Home Assistant will try again."
+    }
+
+
+@pytest.mark.parametrize(
+    "error", [NortecGoConnectionError("network down"), AuthError("token rejected")]
+)
+async def test_failed_setup_car_read_keeps_a_stop_asked(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    error: Exception,
+) -> None:
+    """A setup that fails on the car read sends no stop and keeps the stored control (D44).
+
+    The setup that then works sends the stop the owner asked for, once.
+    """
+    key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    stored = {
+        "blocked_since": None,
+        "start_pending_since": dt_util.utcnow().isoformat(),
+        "stop_asked": True,
+    }
+    hass_storage[key] = {"version": 1, "key": key, "data": dict(stored)}
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING
+    )
+    mock_client.get_vehicle.side_effect = error
+    with patch.object(ConfigEntry, "async_start_reauth_if_available"):
+        await setup_integration(hass, mock_config_entry)
+
+    state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
+    assert state in (ConfigEntryState.SETUP_RETRY, ConfigEntryState.SETUP_ERROR)
+    mock_client.stop_charge.assert_not_awaited()
+    assert hass_storage[key]["data"] == stored
 
     mock_client.get_vehicle.side_effect = None
-    freezer.tick(INTERVAL_IDLE)
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    assert coordinator.data.vehicle == make_vehicle()
+    await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    # The stop is sent as a background task of the entry.
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    mock_client.stop_charge.assert_awaited_once()
+
+
+async def test_control_gets_the_charger_read_before_the_car_while_running(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """While running the order is as before: the charge control first, then the car."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    calls: list[str] = []
+
+    async def _get_vehicle() -> Vehicle:
+        calls.append("car")
+        return make_vehicle()
+
+    mock_client.get_vehicle.side_effect = _get_vehicle
+    with patch.object(
+        coordinator.charge_control,
+        "on_charger_read",
+        side_effect=lambda *args: calls.append("control"),
+    ):
+        await coordinator.async_read_now(with_car=True)
+
+    assert calls == ["control", "car"]
 
 
 async def test_later_charger_errors(

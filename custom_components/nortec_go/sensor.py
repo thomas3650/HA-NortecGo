@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
-from pynortecgo import Charger, Vehicle
+from pynortecgo import ActiveCharge, Charger, Vehicle
 
 from .charge_control import CHARGE_STATUS_OPTIONS, charge_status
 from .coordinator import NortecGoCoordinator
@@ -63,7 +63,7 @@ class NortecGoChargeSensorDescription(SensorEntityDescription):
     """A sensor for the open charge, its value when no charge is open, and how to read it."""
 
     no_charge_value: float | None
-    value_fn: Callable[[Charger], float | None]
+    value_fn: Callable[[ActiveCharge], float | None]
 
 
 CHARGE_SENSORS: tuple[NortecGoChargeSensorDescription, ...] = (
@@ -74,7 +74,7 @@ CHARGE_SENSORS: tuple[NortecGoChargeSensorDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=2,
         no_charge_value=None,
-        value_fn=lambda charger: charger.charge_kwh,
+        value_fn=lambda active: active.kwh,
     ),
     NortecGoChargeSensorDescription(
         key="charging_power",
@@ -83,7 +83,7 @@ CHARGE_SENSORS: tuple[NortecGoChargeSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         no_charge_value=0.0,
-        value_fn=lambda charger: charger.charge_kw,
+        value_fn=lambda active: active.kw,
     ),
 )
 
@@ -234,10 +234,10 @@ class NortecGoChargeSensor(NortecGoChargerEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """The charge's value, or the no-charge value when no charge is open."""
-        charger = self.coordinator.data.charger
-        if charger.charge_id is None:
+        active = self.coordinator.data.charger.active_charge
+        if active is None:
             return self.entity_description.no_charge_value
-        return self.entity_description.value_fn(charger)
+        return self.entity_description.value_fn(active)
 
 
 class NortecGoCostSensor(NortecGoChargerEntity, SensorEntity):

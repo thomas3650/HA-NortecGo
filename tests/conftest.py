@@ -63,7 +63,26 @@ def make_charger(
     last_charge: CompletedCharge | None = None,
     charge_id: str = FAKE_CHARGE_ID,
 ) -> Charger:
-    """Return a charger; idle and unplugged unless told otherwise."""
+    """Return a charger; idle and unplugged unless told otherwise.
+
+    A charge value (`charge_kwh`, `charge_kw`, `charge_cost`) needs a `charge_state`:
+    without one there is no open charge to hold it, so the call is refused.
+    """
+    if charge_state is None:
+        given = [
+            name
+            for name, value in (
+                ("charge_kwh", charge_kwh),
+                ("charge_kw", charge_kw),
+                ("charge_cost", charge_cost),
+            )
+            if value is not None
+        ]
+        if given:
+            raise ValueError(
+                f"{', '.join(given)} given without a charge_state: "
+                "there is no open charge"
+            )
     return Charger(
         id=charger_id,
         name=name,

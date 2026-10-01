@@ -16,7 +16,7 @@
 - Never start or stop a real charge (hard rule 2). Never auto-retry `start_charge` (hard rule 6). Only Task 3 touches the start path, and only the one line it names.
 - Nothing private (hard rule 3): no IDs, tokens, emails, captures, raw endpoints, response shapes, or links into the private client repo. Name only `pynortecgo`'s public API. Test values are plainly fake.
 - No cost is computed from energy and price. Both sensors show the client's values (D42).
-- Gates before every commit (`CLAUDE.md` → Commands): `uv run pytest -q`, then `uv run ruff check && uv run ruff format --check && uv run mypy`. The coverage gate (`uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95`) passes at the end of each task.
+- Gates before every commit: `uv run pytest -q`, then `uv run ruff check && uv run ruff format --check && uv run mypy` (the gates in `CLAUDE.md` → Commands without `actionlint` and `zizmor`: no task touches a workflow). The coverage gate (`uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95`) passes at the end of each task.
 - Subagents write commit messages with the Write tool to a file outside the repo, and commit with `git commit -F <file>` (no heredocs). End each message with the co-author trailer given in the dispatch.
 - Match the surrounding code: comment density, one-line docstrings ending in a period, names.
 - Client version: `pynortecgo==0.7.0`, in `manifest.json` and `pyproject.toml`, the lock updated with `uv lock --upgrade-package pynortecgo`.
@@ -37,7 +37,7 @@
 
 | Wave | Tasks | Notes |
 |---|---|---|
-| 1 | Task 1 (client bump and fixtures), Task 4 (docs) | Disjoint files, two worktrees off the feature branch. Task 4 is written against this plan's names and re-checked against the code that lands |
+| 1 | Task 1 (client bump and fixtures), Task 4 (docs) | Disjoint files, two worktrees off the feature branch. Task 4 is written against this plan's names. Its commit is held until Tasks 2 and 3 are on the feature branch, re-checked against that code, and picked then (*Starting ahead of inputs*) |
 | 2 | Task 2 (costs and sensors), Task 3 (start pre-check error) | Disjoint files, two worktrees. Both need Task 1 on the feature branch: the 0.7.0 models and exception, and the fixtures |
 
 No task has guarded files.
@@ -128,7 +128,7 @@ uv lock --upgrade-package pynortecgo
 uv sync
 ```
 
-Check with `git diff --stat uv.lock` that the lock changed only for `pynortecgo` (and anything 0.7.0 itself needs).
+Read `git diff uv.lock` and confirm that only the `pynortecgo` package entry (its version and files) and its `==0.7.0` specifier changed. 0.7.0 has the same requirements as 0.5.0, so nothing else moves; if something else did, stop and report it.
 
 - [ ] **Step 4: Run the tests to see the next failure**
 
@@ -198,7 +198,7 @@ def make_completed_charge(
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest -q`
-Expected: all pass. If another test in `tests/test_diagnostics.py` compares a whole `"charger"` dict, add `"charge_cost": None, "currency": "DKK", "last_charge": None` to it (those are `make_charger`'s defaults). No file under `custom_components/` other than `manifest.json` changes in this task.
+Expected: all pass. Only `test_diagnostics_output` compares a whole `"charger"` dict, so no other test changes. No file under `custom_components/` other than `manifest.json` changes in this task.
 
 - [ ] **Step 7: Run the gates**
 
@@ -789,7 +789,7 @@ Expected: all pass. Then `diff custom_components/nortec_go/strings.json custom_c
 - [ ] **Step 9: Run the gates**
 
 Run: `uv run pytest -q && uv run ruff check && uv run ruff format --check && uv run mypy && uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95 -q`
-Expected: all pass, with `costs.py` and the new sensor code fully covered. If another test fails because it lists or counts the charger's entities, add the two sensors to its expectation.
+Expected: all pass, with `costs.py` and the new sensor code fully covered. No other test lists or counts the charger's entities, so no test file outside this task's list changes.
 
 - [ ] **Step 10: Commit**
 
@@ -930,9 +930,8 @@ information, such as its version, your installed custom integrations and your ti
 becomes (re-wrap the paragraph)
 
 ```markdown
-It keeps your charger's and car's names and IDs, and the last charge's ID, cost and time, and Home
-Assistant adds its own information, such as its version, your installed custom integrations and your time
-zone.
+It keeps your charger's and car's names and IDs, and the last charge's ID, cost and time. Home Assistant
+adds its own information, such as its version, your installed custom integrations and your time zone.
 ```
 
 - [ ] **Step 5: `docs/manual-testing.md`**

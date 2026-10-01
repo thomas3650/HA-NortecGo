@@ -65,7 +65,8 @@ The integration has no options to change after setup.
 
 ## Supported functionality
 
-The integration adds two devices: the charger, and the car when the account has exactly one.
+The integration adds two devices: the charger, and the car when the account has exactly one car when the
+integration starts (see *Known limitations*).
 
 ### Charger
 

@@ -90,6 +90,11 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   a fresh token after the last clock move: create a refresh token for `hass_admin_user` with `CLIENT_ID`
   (from `pytest_homeassistant_custom_component.common`), make an access token from it with
   `hass.auth.async_create_access_token`, and pass that to `hass_client`.
+- To run the first retry of an entry in `SETUP_RETRY`, fire the time 10 s ahead
+  (`async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10))`) and wait with
+  `hass.async_block_till_done(wait_background_tasks=True)`. Home Assistant runs the retry as a background
+  task (see the bullet on work that a timer starts), so with the default wait the entry is still in
+  `SETUP_IN_PROGRESS`.
 
 ## Coordinators and actions
 
@@ -107,7 +112,10 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - A setup that fails for any reason (for example `ConfigEntryNotReady`, `ConfigEntryAuthFailed`,
   `ConfigEntryError`, an unexpected exception or a `False` return) never calls `async_unload_entry`, but Home
   Assistant still runs the entry's on-unload callbacks. Timers or tasks set up before the first refresh are
-  cleaned up with `entry.async_on_unload`.
+  cleaned up with `entry.async_on_unload`. Home Assistant also cancels the entry's background tasks
+  (`ConfigEntry.async_create_background_task`). So in the first refresh, whatever can still fail setup comes
+  before work that saves or queues something; otherwise a failed setup leaves that work half done (in this
+  integration: the car is read before the charge control gets the charger read, D44).
 - A coordinator schedules its next read at whole loop seconds plus a random 0.05–0.5 s, so a read can come
   up to about 1 s before one full interval has passed. A time threshold compared with the interval needs a
   margin, and a test that fires the timer ticks a second more than the interval.
@@ -116,6 +124,11 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   setup that fails or retries with any of the three stores the translation as the entry's
   `error_reason_translation_*`, which the frontend shows translated. So a translated `UpdateFailed` or
   `ConfigEntryError` also translates the setup error.
+- After `ConfigEntryNotReady`, Home Assistant sets the entry up again by itself: after about 5 s, then at
+  doubling gaps up to 10 minutes (`SETUP_RETRY_MAX_WAIT`). While Home Assistant is still starting, the first
+  retry waits for the started event instead of a timer. Each try runs `async_setup_entry` from the top.
+- The first refresh ignores `UpdateFailed.retry_after`, so a rate limit's own waiting time isn't used at
+  setup.
 - Outside setup, `async_refresh()` stores a read's error in `last_exception` instead of raising it,
   including `ConfigEntryAuthFailed` and `ConfigEntryError`. A caller that must report a failed read looks at
   the coordinator afterwards.
@@ -131,6 +144,8 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   `include_child_devices=False` to get a `DeviceEntry` for mypy.
 - `async_get_or_create` with a `translation_key` sets the translated name, also on an existing device, so it
   can rename a device back to its placeholder.
+- `async_get_or_create` takes `None` for `manufacturer` and `model`, which clears them on an existing
+  device; `UNDEFINED` leaves them as they are.
 - HA writes an entity's attributes only while it's available. An entity whose attributes must always be
   there (such as a price list) overrides `available`.
 - HA never removes the devices of a loaded entry, and a user can't delete one in the UI unless the
@@ -155,6 +170,20 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   added. So a per-cycle value needs `last_reset`, or no state class.
 - `device_class` `monetary` allows only the state class `total`, or none.
 - A sensor's display precision doesn't change its state string: the state is the native value as it is.
+
+## Repairs
+
+- A fix flow of the integration's own (a `RepairsFlow` subclass) doesn't get the issue's placeholders; it
+  passes `description_placeholders` to `async_show_form` itself. Home Assistant's `ConfirmRepairFlow` does
+  take them from the issue.
+- A fix flow that ends with `async_create_entry` deletes its issue; one that aborts leaves it.
+- An issue created with `is_persistent=False` isn't shown after a restart of Home Assistant, until the
+  integration creates it again: the registry keeps only its ID, its creation time and whether it was
+  ignored. Deleting an issue that doesn't exist does nothing.
+- `hass.config_entries.async_schedule_reload` raises `UnknownEntry` for an entry that no longer exists, so a
+  flow that reloads checks the entry first.
+- `async_create_fix_flow` gets every fixable issue of the integration; with more than one kind of issue it
+  picks the flow by the issue ID.
 
 ## Diagnostics
 

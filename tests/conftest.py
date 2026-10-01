@@ -70,8 +70,8 @@ def make_charger(
     """
     if charge_state is None:
         given = [
-            name
-            for name, value in (
+            arg
+            for arg, value in (
                 ("charge_kwh", charge_kwh),
                 ("charge_kw", charge_kw),
                 ("charge_cost", charge_cost),

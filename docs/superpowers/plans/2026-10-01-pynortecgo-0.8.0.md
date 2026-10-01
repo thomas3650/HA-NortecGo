@@ -46,9 +46,9 @@ What the spec implies but no single test states, most likely first. Each line na
    stop with a read charger and no open charge still sends the stop (every stop test reads a `CHARGING`
    charger first), and in `charge_status` the `UNKNOWN` check stays below the pending-start return. No test
    can be added in this work (the test files stay untouched), so the guard is the review: `task-reviewer`
-   confirms, from Task 1, Step 9's diff of `charge_control.py`, that the `async_stop` line is a literal name
-   swap and that the local in `charge_status` sits after the three early returns. Both cases go in the
-   follow-up issue.
+   confirms, from the review package's diff of `charge_control.py` (Task 1, Step 9 names what it must
+   hold), that the `async_stop` line is a literal name swap and that the local in `charge_status` sits
+   after the three early returns. Both cases go in the follow-up issue.
 6. **The lock moves more than the client.** Expected: `uv.lock` changes only the `pynortecgo` package entry
    (0.8.0 needs the same dependencies as 0.7.0). Pinned by Task 1, Step 2.
 
@@ -504,8 +504,10 @@ git commit -F /tmp/pynortecgo-080-task-2-msg.txt
 
 ## After the last task (the controller)
 
-- [ ] On the feature branch with both tasks picked: `uv sync`, the gates, and the three checks of Task 1,
-  Step 9, with the first one as the spec writes it: `git diff --name-only origin/main...HEAD -- tests`.
+- [ ] On the feature branch with both tasks picked: `uv sync`, the gates, and the four checks of Task 1,
+  Step 9, with the three diffs against the merge base instead of `HEAD` (the tasks are committed by then):
+  `git diff --name-only origin/main...HEAD -- tests`, and `git diff origin/main...HEAD --` for
+  `manifest.json` and for `charge_control.py`. The expected output is Step 9's.
 - [ ] Task 2 started from names this plan fixes: re-check `docs/releasing.md`'s `ActiveCharge` against the
   code that landed (`grep -n "ACTIVE_CHARGE_FIELDS" tests/test_diagnostics.py`).
 - [ ] File the follow-up issue (label `v3`), and name it in the PR description. It holds:

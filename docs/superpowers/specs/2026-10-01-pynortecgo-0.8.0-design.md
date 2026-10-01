@@ -23,7 +23,7 @@ Date: 2026-10-01 · Branch: `chore/pynortecgo-0.8.0` · Issue: #81
 
 ## Decisions
 
-Answered by the PO (issue #81, 2026-10-01).
+Answered by the PO (2026-10-01); the PO records its approval of this spec on issue #81.
 
 | Topic | Decision |
 |---|---|
@@ -32,6 +32,7 @@ Answered by the PO (issue #81, 2026-10-01).
 | How the reads move | One helper for the charge's state, so every condition in the charge control keeps its shape (§2) |
 | The test fixture | `make_charger` keeps its keyword arguments (§5) |
 | Decision log | No entry: nothing here sets a lasting rule |
+| Who reviews and merges | The owner: the spec and the plan go to the owner through the PO, and the PR edits `charge_control.py`, so it is the owner's to merge (D45) |
 
 The release level follows `docs/releasing.md` (*Bumping `pynortecgo`*): a client bump is titled by what it
 changes for users, and this one changes nothing they see. Users get 0.8.0 with the next releasing PR.
@@ -59,8 +60,9 @@ From `pynortecgo` 0.8.0's public models and their docstrings:
   fails it the same way in 0.8.0.
 - `currency`, `is_connected`, `last_charge`, `CompletedCharge`, `Vehicle`, the `Charge` a start or a stop
   returns, the client's methods and its exceptions don't change.
-- Three of the client's own log texts name the new fields. No test here matches on them, so nothing follows
-  from that.
+- Three of the client's own warning texts name the new fields instead of the old ones. They are rare
+  warnings from the `pynortecgo` logger that can show in the Home Assistant log. The user docs quote none of
+  them and no test here matches on them, and the PO ruled that their wording isn't a user-visible change.
 
 ## 2. The charge's state: one helper
 
@@ -73,12 +75,28 @@ def charge_state(charger: Charger) -> ChargeState | None:
     return None if active is None else active.state
 ```
 
-Every read of `charger.charge_state` becomes `charge_state(charger)`, and nothing else in its expression
-changes. The helper returns exactly what the old field held (§1), so each condition means what it meant.
+Every read of `charger.charge_state` becomes a read of the helper's result, and nothing else in its
+expression changes. The helper returns exactly what the old field held (§1), so each condition means what
+it meant.
+
+- **Six reads are plain swaps:** `charger.charge_state` becomes `charge_state(charger)`.
+- **`charge_status` binds the result to one local** and uses it at its three sites:
+
+  ```python
+  state = charge_state(charger)
+  if charger.state is ChargerState.UNKNOWN or state is ChargeState.UNKNOWN:
+      return None
+  if state in _STATUS_FROM_CHARGE:
+      return state.value
+  ```
+
+  Its last read takes `.value` of the state after an `in` check. mypy narrows an attribute or a local after
+  that check, but not a function call, so a bare swap there fails `mypy --strict`. The local goes right
+  above the `UNKNOWN` check, after the three early returns, which don't read it.
 
 | File | Reads | Where |
 |---|---|---|
-| `charge_control.py` | 7 | `charge_is_open`, `is_charge_on`, `charge_status` (3), `async_stop`, `on_charger_read` |
+| `charge_control.py` | 7 | `charge_is_open`, `is_charge_on`, `charge_status` (3, through the local), `async_stop`, `on_charger_read` |
 | `coordinator.py` | 1 | `interval_for` |
 | `binary_sensor.py` | 1 | the *Charging* description's `value_fn` |
 
@@ -88,7 +106,8 @@ changes. The helper returns exactly what the old field held (§1), so each condi
   `charger.charge_state in _CHARGE_ON` would become
   `charger.active_charge is not None and charger.active_charge.state in _CHARGE_ON`. That rewrites the
   logic next to start and stop, and each rewrite would need its own argument that it means the same. With
-  the helper, the review of the charge control is a check that seven names were swapped.
+  the helper, the review of the charge control is a check of six swapped names and one local in
+  `charge_status`.
 - The integration doesn't read `can_stop` today (only the client does, inside its stop), and still doesn't.
   `switch.py` reads no `Charger` field and doesn't change.
 
@@ -133,14 +152,28 @@ description of the behaviour, and the proof is that it passes without being edit
    fixture's fields are in the client's order: `id`, `name`, `max_kw`, `state`, `state_raw`, `is_connected`,
    `currency`, `active_charge`, `last_charge`. A `charge_kwh`, `charge_kw` or `charge_cost` given without a
    `charge_state` is dropped: no charge is open, which is what such a test means today (the cost tests use
-   it for "a stale cost with no open charge").
+   it for "a stale cost with no open charge"). Two cases build that state (`no_charge_ignores_cost` in
+   `test_costs.py` and `no_charge_ignores_fields` in `test_sensor.py`). The new model can't hold it, so they
+   now build the same charger as their plain no-charge neighbours and still pass. Removing them, and making
+   `make_charger` refuse values it would drop, would edit those test files, so it is a follow-up issue and
+   not part of this work.
 2. **Acceptance check: the diff under `tests/` touches only `conftest.py` and `test_diagnostics.py`.** Every
    other test file, including all of `test_charge_control.py`, `test_switch.py`, `test_coordinator.py`,
    `test_sensor.py`, `test_binary_sensor.py` and `test_costs.py`, is byte-identical to `origin/main` and
    passes. Those tests state what the charge control, the switch, the polling and the entities do for each
-   charger; the same assertions on the same chargers pass on the new client.
+   charger; the same assertions on the same chargers (but for the two cases in item 1) pass on the new
+   client. The check, which prints exactly those two paths:
+
+   ```bash
+   git diff --name-only origin/main...HEAD -- tests
+   ```
 3. **mypy finds every read.** The project runs `mypy --strict` over the integration and the tests. A read of
-   a removed field is a type error, so a clean mypy run on 0.8.0 means no read was missed.
+   a removed field is a type error, so a clean mypy run on 0.8.0 means no read was missed. mypy can't see
+   a read through `Any` (there are none today), so a search backs it up and prints nothing after the move:
+
+   ```bash
+   grep -rnE '\.(charge_id|charge_state|charge_state_raw|can_stop|charge_kwh|charge_kw|charge_cost)\b' custom_components tests
+   ```
 4. **The coverage gate (95%) holds**, and the helper's two branches are both run by the existing tests (a
    charger with and without an open charge).
 5. **In `test_diagnostics.py`** only the pins and the expected `charger` block change (§4).
@@ -167,6 +200,9 @@ integration code, never in that test.
 
 ## 7. Other branches
 
-`feat/car-device-lifecycle` (#86) changes `coordinator.py` and may land first. This branch then merges
-`origin/main` in (no rebase). If #86 adds a `Charger` built outside `make_charger`, or a read of an old
-field, mypy on the merged branch fails and it is moved here the same way.
+`feat/car-device-lifecycle` (#86) may land first. It changes `coordinator.py`, `binary_sensor.py`,
+`diagnostics.py` and `tests/test_diagnostics.py`, the last in the same whole-output expectation whose
+`charger` block §4 changes. This branch then merges `origin/main` in (no rebase), and that test file gets a
+look in the merge. If #86 adds a `Charger` built outside `make_charger`, or a read of an old field, mypy on
+the merged branch fails and it is moved here the same way. The check in §5 item 2 compares with the merge
+base, so #86's own test changes don't show in it.

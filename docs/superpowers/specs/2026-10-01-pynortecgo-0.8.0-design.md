@@ -146,8 +146,9 @@ it meant.
 
 ## 5. Tests, and how the plan proves the behaviour is unchanged
 
-This is a move with no behaviour change, so it adds no behaviour tests. The existing suite is the
-description of the behaviour, and the proof is that it passes without being edited:
+This is a move with no behaviour change. The existing suite is the description of the behaviour, and the
+proof is that it passes with no existing test case edited. Two cases are added first, on the old client, for
+two things in the charge control that no test pinned (item 6):
 
 1. **`make_charger` keeps its keyword arguments.** In `tests/conftest.py` only its body changes: with a
    `charge_state` it builds an `ActiveCharge` (`id` the fake charge ID, `state_raw` the state's value,
@@ -160,15 +161,18 @@ description of the behaviour, and the proof is that it passes without being edit
    now build the same charger as their plain no-charge neighbours and still pass. Removing them, and making
    `make_charger` refuse values it would drop, would edit those test files, so it is a follow-up issue and
    not part of this work. The issue is filed during the work and named in the PR description.
-2. **Acceptance check: the diff under `tests/` touches only `conftest.py` and `test_diagnostics.py`.** Every
-   other test file, including all of `test_charge_control.py`, `test_switch.py`, `test_coordinator.py`,
-   `test_sensor.py`, `test_binary_sensor.py` and `test_costs.py`, is byte-identical to `origin/main` and
-   passes. Those tests state what the charge control, the switch, the polling and the entities do for each
-   charger; the same assertions on the same chargers (but for the two cases in item 1) pass on the new
-   client. The check, which prints exactly those two paths:
+2. **Acceptance check: no existing test case is edited.** Under `tests/`, the diff touches `conftest.py`
+   and `test_diagnostics.py` (items 1 and 5) and `test_charge_control.py`, where it only adds lines (item
+   6). Every other test file, including `test_switch.py`, `test_coordinator.py`, `test_sensor.py`,
+   `test_binary_sensor.py` and `test_costs.py`, is byte-identical to `origin/main` and passes. Those tests
+   state what the charge control, the switch, the polling and the entities do for each charger; the same
+   assertions on the same chargers (but for the two cases in item 1) pass on the new client. The checks:
+   the first prints exactly those three paths, and the second prints nothing (no line of
+   `test_charge_control.py` is removed or changed):
 
    ```bash
    git diff --name-only origin/main...HEAD -- tests
+   git diff origin/main...HEAD -- tests/test_charge_control.py | grep '^-' | grep -v '^---'
    ```
 3. **mypy finds every read.** The project runs `mypy --strict` over the integration and the tests. A read of
    a removed field is a type error, so a clean mypy run on 0.8.0 means no read was missed. mypy can't see
@@ -180,8 +184,16 @@ description of the behaviour, and the proof is that it passes without being edit
 4. **The coverage gate (95%) holds**, and the helper's two branches are both run by the existing tests (a
    charger with and without an open charge).
 5. **In `test_diagnostics.py`** only the pins and the expected `charger` block change (§4).
+6. **Two new cases in `test_charge_control.py`** (the owner's ruling on the plan, #81). Mutating the moved
+   reads showed two things next to charge stop that no existing test pinned. Each gets a new test, written
+   and committed before the bump, so it passes on the old client and pins today's behaviour:
+   - a stop with a read charger and no open charge still sends the stop (every existing stop test reads a
+     charging charger first);
+   - in `charge_status`, a pending start with no charge seen shows as `starting` (or `stopping` when a stop
+     was asked) also when the charger's state is unknown: the unknown-state check stays below the
+     pending-start return.
 
-If one of the untouched tests fails on the new client, the move changed behaviour: the fix is in the
+If one of the existing tests fails on the new client, the move changed behaviour: the fix is in the
 integration code, never in that test.
 
 ## 6. The bump

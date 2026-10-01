@@ -5,7 +5,7 @@
 **Goal:** the integration runs on `pynortecgo` 0.8.0, reading the open charge from `Charger.active_charge`, with no change in behaviour (#81).
 
 **Architecture:**
-- Task 1 is the whole code move in one commit: both pins and the lock, one helper `charge_state(charger)` in `charge_control.py`, every read of the removed fields, the test fixture `make_charger`, and the diagnostics field pins. It can't be split: the bump breaks mypy and the tests until every read has moved, and every commit passes the gates.
+- Task 1 first adds two tests to `tests/test_charge_control.py`, on the old client, in a commit of their own. Then comes the whole code move in one commit: both pins and the lock, one helper `charge_state(charger)` in `charge_control.py`, every read of the removed fields, the test fixture `make_charger`, and the diagnostics field pins. It can't be split: the bump breaks mypy and the tests until every read has moved, and every commit passes the gates.
 - Task 2 is the docs: D46 in `docs/decisions.md` and two passages in `docs/releasing.md`. It shares no file with Task 1, so both run in wave 1.
 
 **Tech Stack:** Python 3.14, Home Assistant, `pynortecgo` 0.8.0, pytest with `pytest-homeassistant-custom-component`, mypy `--strict`, ruff, uv.
@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **Behaviour is unchanged.** No entity, state, name, unit, attribute, error text or log line of the integration changes. Nothing changes in when a charge is started or stopped.
-- **Test files.** Under `tests/`, only `tests/conftest.py` and `tests/test_diagnostics.py` change. Every other test file stays byte-identical. If one of them fails on the new client, the fix is in the integration code, never in that test: stop and report it.
+- **Test files: no existing test case is edited.** Under `tests/`, `tests/conftest.py` and `tests/test_diagnostics.py` change, and `tests/test_charge_control.py` only gains the two tests of Task 1, Step 1 (no line of it is removed or changed). Every other test file stays byte-identical. If an existing test fails on the new client, the fix is in the integration code, never in that test: stop and report it.
 - **`make_charger` keeps its keyword arguments**, names and defaults. Only its body changes.
 - **Never start or stop a real charge** (hard rule 2). Tests mock `pynortecgo`; nothing here runs Home Assistant.
 - **Nothing private (hard rule 3):** only `pynortecgo`'s public names appear in code, tests, docs and commit messages. No endpoints, headers or response shapes, also not when reporting what the client's source holds.
@@ -31,9 +31,10 @@
 What the spec implies but no single test states, most likely first. Each line names what pins it.
 
 1. **A read of a removed field that mypy can't see** (through `Any`). Expected: none is left. Pinned by
-   Task 1, Step 9's grep, which prints nothing.
+   Task 1, Step 10's grep, which prints nothing.
 2. **A test edited to make it pass.** Expected: the existing tests pass untouched; that is the proof that
-   behaviour is unchanged. Pinned by Task 1, Step 9's `git diff --name-only`, which prints exactly two paths.
+   behaviour is unchanged. Pinned by Task 1, Step 10's two test-diff checks: three paths, and no removed or
+   changed line in `tests/test_charge_control.py`.
 3. **An open charge with no energy, power or cost reading** (`kwh`, `kw` or `cost` is `None` on the
    `ActiveCharge`). Expected: the sensor is unknown, as today, not 0 and not the no-charge value. Pinned by
    two existing cases, untouched: `test_charge_energy_and_power_values[open_charge_no_readings]` in
@@ -42,15 +43,16 @@ What the spec implies but no single test states, most likely first. Each line na
    the charger's state alone, the switch is off unless a start is pending, and the status falls through to
    `not_released`, `unplugged` or `idle`. Pinned by the existing cases in `tests/test_charge_control.py`,
    untouched.
-5. **Two things in the charge control that no existing test pins**, found by mutating the moved reads: a
-   stop with a read charger and no open charge still sends the stop (every stop test reads a `CHARGING`
-   charger first), and in `charge_status` the `UNKNOWN` check stays below the pending-start return. No test
-   can be added in this work (the test files stay untouched), so the guard is the review: `task-reviewer`
-   confirms, from the review package's diff of `charge_control.py` (Task 1, Step 9 names what it must
-   hold), that the `async_stop` line is a literal name swap and that the local in `charge_status` sits
-   after the three early returns. Both cases go in the follow-up issue.
+5. **Two things in the charge control that no existing test pinned**, found by mutating the moved reads: a
+   stop with a read charger and no open charge still sends the stop (every existing stop test reads a
+   `CHARGING` charger first), and in `charge_status` the `UNKNOWN` check stays below the pending-start
+   return. Pinned by the two tests of Task 1, Step 1, written and committed before the bump so they pin
+   today's behaviour, and each seen to fail against its mutant. `task-reviewer` also confirms, from the
+   review package's diff of `charge_control.py` (Task 1, Step 10 names what it must hold), that the
+   `async_stop` line is a literal name swap and that the local in `charge_status` sits after the three
+   early returns.
 6. **The lock moves more than the client.** Expected: `uv.lock` changes only the `pynortecgo` package entry
-   (0.8.0 needs the same dependencies as 0.7.0). Pinned by Task 1, Step 2.
+   (0.8.0 needs the same dependencies as 0.7.0). Pinned by Task 1, Step 3.
 
 ---
 
@@ -77,6 +79,7 @@ What the spec implies but no single test states, most likely first. Each line na
 - Modify: `custom_components/nortec_go/binary_sensor.py`
 - Modify: `custom_components/nortec_go/sensor.py`
 - Modify: `custom_components/nortec_go/costs.py`
+- Modify: `tests/test_charge_control.py` (two new tests at the end; nothing else)
 - Modify: `tests/conftest.py` (`make_charger`)
 - Modify: `tests/test_diagnostics.py` (the pins and the expected `charger` block)
 
@@ -90,12 +93,71 @@ What the spec implies but no single test states, most likely first. Each line na
   `coordinator.py` and `binary_sensor.py`. `NortecGoChargeSensorDescription.value_fn` becomes
   `Callable[[ActiveCharge], float | None]`.
 
-- [ ] **Step 1: Bump both pins**
+- [ ] **Step 1: Two tests for today's behaviour, before anything else**
+
+On the old client, with no other change, append these two tests at the end of
+`tests/test_charge_control.py`. Every name they use is already imported or defined in that file. Change no
+existing line of it.
+
+```python
+async def test_stop_without_an_open_charge_calls_stop_charge(
+    control: ChargeControl, client: AsyncMock
+) -> None:
+    """A read charger with no open charge: the stop is still sent; the client decides."""
+    control.on_charger_read(CONNECTED, control.start_attempts)
+    await control.async_stop()
+    client.stop_charge.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("control", "expected"), [(PENDING, "starting"), (STOP_ASKED, "stopping")]
+)
+def test_charge_status_pending_start_before_unknown_charger_state(
+    control: ChargeControlState, expected: str
+) -> None:
+    """A pending start with no charge seen shows before the charger's unknown state."""
+    charger = make_charger(is_connected=True, state=ChargerState.UNKNOWN)
+    assert charge_status(charger, control) == expected
+```
+
+Run them: `uv run pytest -q tests/test_charge_control.py -k "without_an_open_charge or before_unknown_charger_state"`.
+Expected: 3 passed (they pin what the code does today).
+
+Then see each fail against the mutant it is there for. Make each edit to
+`custom_components/nortec_go/charge_control.py` with the Edit tool, run the command above, and undo the edit
+with the Edit tool before the next one:
+
+```text
+Mutant A, in async_stop:
+    if charger is not None and charger.charge_state is ChargeState.STOPPING:
+->  if charger is not None and charger.charge_state in (None, ChargeState.STOPPING):
+Expected: test_stop_without_an_open_charge_calls_stop_charge FAILS (stop_charge not awaited).
+
+Mutant B, in charge_status: move the whole `if (charger.state is ChargerState.UNKNOWN or … ): return None`
+block up, to right above `if control.start_pending and not charge_is_open(charger):`.
+Expected: both cases of test_charge_status_pending_start_before_unknown_charger_state FAIL (None).
+```
+
+After undoing both, `git diff -- custom_components` prints nothing. Run the gates (Global Constraints), then
+commit only the test file. Write `/tmp/pynortecgo-080-task-1a-msg.txt` with the Write tool:
+
+```text
+test: pin a stop with no open charge, and the pending start before an unknown state (#81)
+
+<the co-author trailer from the dispatch>
+```
+
+```bash
+git add tests/test_charge_control.py
+git commit -F /tmp/pynortecgo-080-task-1a-msg.txt
+```
+
+- [ ] **Step 2: Bump both pins**
 
 In `pyproject.toml` and in `custom_components/nortec_go/manifest.json`, change `pynortecgo==0.7.0` to
 `pynortecgo==0.8.0`. Nothing else in either file changes; `version` in `manifest.json` stays.
 
-- [ ] **Step 2: Update the lock and the environment**
+- [ ] **Step 3: Update the lock and the environment**
 
 ```bash
 uv lock --upgrade-package pynortecgo && uv sync
@@ -108,7 +170,7 @@ changed line pairs, all for `pynortecgo`: the specifier where the lock repeats t
 requirement, the package's version, its sdist and its wheel. If `uv lock` names any other package, stop and
 report it.
 
-- [ ] **Step 3: See it fail (the red state)**
+- [ ] **Step 4: See it fail (the red state)**
 
 ```bash
 uv run mypy
@@ -120,7 +182,7 @@ keyword argument for `Charger`; a line with such an error can carry a second one
 `no-any-return`, in `costs.py` and in `charge_status`). Keep the list: every line in it is a read this task
 moves. An error in any other file means the spec's inventory is wrong: stop and report it.
 
-- [ ] **Step 4: The fixture, `tests/conftest.py`**
+- [ ] **Step 5: The fixture, `tests/conftest.py`**
 
 Add `ActiveCharge` to the `from pynortecgo import (…)` block (it sorts first). Keep `make_charger`'s
 signature and docstring exactly as they are, and replace only the `return Charger(…)` statement:
@@ -152,7 +214,7 @@ signature and docstring exactly as they are, and replace only the `return Charge
 Without a `charge_state`, a given `charge_kwh`, `charge_kw` or `charge_cost` is dropped: no charge is open.
 That is what the two tests that do this mean (spec §5 item 1). Let `ruff format` settle the layout.
 
-- [ ] **Step 5: The charge control, `custom_components/nortec_go/charge_control.py`**
+- [ ] **Step 6: The charge control, `custom_components/nortec_go/charge_control.py`**
 
 Add the helper right above `charge_is_open`:
 
@@ -206,7 +268,7 @@ above the `UNKNOWN` check. The function's end becomes:
 Nothing else in this file changes: not the order of the checks, not `_CHARGE_ON` or `_STATUS_FROM_CHARGE`,
 not the start path, the stop path or the timers. Don't read `can_stop`.
 
-- [ ] **Step 6: The other reads**
+- [ ] **Step 7: The other reads**
 
 `custom_components/nortec_go/coordinator.py`: add `charge_state` to the existing import, and swap the one
 read in `interval_for`:
@@ -283,7 +345,7 @@ def charge_cost(charger: Charger) -> float | None:
 
 `last_charge_cost` and `last_charge_completed_at` don't change.
 
-- [ ] **Step 7: The diagnostics pins, `tests/test_diagnostics.py`**
+- [ ] **Step 8: The diagnostics pins, `tests/test_diagnostics.py`**
 
 Add `ActiveCharge` to the `from pynortecgo import (…)` block. Replace `CHARGER_FIELDS` and add the new pin
 right below it:
@@ -332,7 +394,7 @@ The `make_charger(…)` call in that test doesn't change, and nothing else in th
 for the seven fields: the download showed the same values before under other keys, none is a sign-in secret,
 and IDs stay, so `TO_REDACT` and `diagnostics.py` don't change.
 
-- [ ] **Step 8: The gates**
+- [ ] **Step 9: The gates**
 
 ```bash
 uv run pytest -q
@@ -344,25 +406,28 @@ Expected: all pass. In the coverage report, `charge_control.py`, `costs.py`, `se
 and `coordinator.py` show no missing line that this task wrote or changed (compare the *Missing* column with
 the lines you edited; `binary_sensor.py` has one uncovered line today, in the car sensor, which isn't
 yours). If `ruff format --check` fails, run `uv run ruff format` and rerun. A failing test in
-a file other than `conftest.py` or `test_diagnostics.py` is a behaviour change: fix the integration code,
-never that test.
+a file other than `conftest.py` or `test_diagnostics.py` (Step 1's two tests included) is a behaviour
+change: fix the integration code, never that test.
 
-- [ ] **Step 9: The acceptance checks (spec §5)**
+- [ ] **Step 10: The acceptance checks (spec §5)**
 
 ```bash
-git diff --name-only HEAD -- tests
+git diff --name-only HEAD~1 -- tests
+git diff HEAD~1 -- tests/test_charge_control.py | grep '^-' | grep -v '^---'
 grep -rnE '\.(charge_id|charge_state|charge_state_raw|can_stop|charge_kwh|charge_kw|charge_cost)\b' custom_components tests
 git diff HEAD -- custom_components/nortec_go/manifest.json
 git diff HEAD -- custom_components/nortec_go/charge_control.py
 ```
 
-Expected: the first prints exactly `tests/conftest.py` and `tests/test_diagnostics.py`; the grep prints
-nothing (exit status 1); the manifest diff is the one `requirements` line. The `charge_control.py` diff is
+`HEAD` here is Step 1's tests commit, and `HEAD~1` the commit before it; the move isn't committed yet.
+Expected: the first prints exactly `tests/conftest.py`, `tests/test_charge_control.py` and
+`tests/test_diagnostics.py`; the second prints nothing (no line of `test_charge_control.py` is removed or
+changed); the `grep -rnE` prints nothing (exit status 1); the manifest diff is the one `requirements` line. The `charge_control.py` diff is
 the new helper, four one-line swaps (`charge_is_open`, `is_charge_on`, `async_stop`, `on_charger_read`) and
 the `charge_status` block (one added line for the local, and the `UNKNOWN` condition and the two lines
 below it reading the local), and nothing else. Put that diff in the report.
 
-- [ ] **Step 10: The bump checklist (`docs/releasing.md`, *Bumping `pynortecgo`*)**
+- [ ] **Step 11: The bump checklist (`docs/releasing.md`, *Bumping `pynortecgo`*)**
 
 Work through its four items against the installed 0.8.0 (`.venv/lib/python3.14/site-packages/pynortecgo/`)
 and put the result of each in the report, in the integration's own words (public names only, no endpoints,
@@ -370,14 +435,14 @@ headers or response shapes):
 
 1. Exception messages, including errors wrapped from lower layers: read `exceptions.py` and the places that
    raise, and confirm no message holds an email, a password, a token, the device ID or a request body.
-2. The diagnostics field pins: done in Step 7; say which fields were judged and that none is a secret.
+2. The diagnostics field pins: done in Step 8; say which fields were judged and that none is a secret.
 3. New exception classes the charger, car, price, start and stop calls can raise: compare the names
    `pynortecgo/__init__.py` exports with the ones the integration handles (`grep -rn "Error" custom_components/nortec_go/*.py`).
    Expected: none is new.
 4. Breaking changes to the models the entities use: the one this task moves; `ActiveCharge` is the only new
    public name.
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 12: Commit**
 
 Write `/tmp/pynortecgo-080-task-1-msg.txt` with the Write tool:
 
@@ -385,8 +450,8 @@ Write `/tmp/pynortecgo-080-task-1-msg.txt` with the Write tool:
 chore(deps): move to pynortecgo 0.8.0 (#81)
 
 The open charge is read from Charger.active_charge. Behaviour is unchanged:
-under tests/ only the make_charger fixture and the diagnostics field pins
-change.
+no existing test case is edited; only the make_charger fixture and the
+diagnostics field pins change.
 
 <the co-author trailer from the dispatch>
 ```
@@ -397,7 +462,7 @@ git commit -F /tmp/pynortecgo-080-task-1-msg.txt
 git status --short
 ```
 
-Expected: one commit, and a clean tree.
+Expected: two commits in this task (the tests, then the move), and a clean tree.
 
 ---
 
@@ -504,18 +569,18 @@ git commit -F /tmp/pynortecgo-080-task-2-msg.txt
 
 ## After the last task (the controller)
 
-- [ ] On the feature branch with both tasks picked: `uv sync`, the gates, and the four checks of Task 1,
-  Step 9, with the three diffs against the merge base instead of `HEAD` (the tasks are committed by then):
-  `git diff --name-only origin/main...HEAD -- tests`, and `git diff origin/main...HEAD --` for
-  `manifest.json` and for `charge_control.py`. The expected output is Step 9's.
+- [ ] On the feature branch with both tasks picked: `uv sync`, the gates, and the five checks of Task 1,
+  Step 10, with the four diffs against the merge base instead of `HEAD` or `HEAD~1` (the tasks are committed
+  by then): `git diff --name-only origin/main...HEAD -- tests`, and `git diff origin/main...HEAD --` for
+  `tests/test_charge_control.py` (piped through the two greps), `manifest.json` and `charge_control.py`. The
+  expected output is Step 10's.
 - [ ] Task 2 started from names this plan fixes: re-check `docs/releasing.md`'s `ActiveCharge` against the
   code that landed (`grep -n "ACTIVE_CHARGE_FIELDS" tests/test_diagnostics.py`).
-- [ ] File the follow-up issue (label `v3`), and name it in the PR description. It holds:
-  - the two test cases that became duplicates (`no_charge_ignores_cost`, `no_charge_ignores_fields`), and
-    `make_charger` dropping charge values given without a state;
-  - two missing tests in the charge control (Review Focus 5): a stop with a read charger and no open charge
-    sends the stop, and `charge_status` with a pending start and an unknown charger state.
+- [ ] File the follow-up issue (label `v3`), and name it in the PR description: the two test cases that
+  became duplicates (`no_charge_ignores_cost`, `no_charge_ignores_fields`), and `make_charger` dropping
+  charge values given without a state.
 - [ ] If `main` moved again: merge `origin/main` in (no rebase), and rerun the gates and the checks.
-- [ ] The PR description: the bump checklist's four results (Task 1, Step 10), the rulings (the release
-  level; the client's changed warning wording isn't user-visible; D46), the learnings or that there are none,
+- [ ] The PR description: the bump checklist's four results (Task 1, Step 11), the rulings (the release
+  level; the client's changed warning wording isn't user-visible; D46; the two tests added on the owner's
+  word), the learnings or that there are none,
   the follow-up issue, and that the PR is the owner's to merge (D45).

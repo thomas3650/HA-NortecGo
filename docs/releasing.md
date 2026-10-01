@@ -180,8 +180,8 @@ checklist before merging:
   they hold no email, password, tokens, device ID or request bodies. The integration passes them into its
   logs (`CLAUDE.md`, hard rule 5).
 - [ ] If `test_client_model_fields_are_pinned` in `tests/test_diagnostics.py` fails, the diagnostics show
-  a changed `Charger` or `Vehicle` field: decide for each new field whether it is a secret, add it to
-  `TO_REDACT` in `diagnostics.py` if so, and update the pinned sets (D38).
+  a changed `Charger`, `CompletedCharge` or `Vehicle` field: decide for each new field whether it is a
+  secret, add it to `TO_REDACT` in `diagnostics.py` if so, and update the pinned sets (D38).
 - [ ] Look for new exception classes the charger, car, price, start and stop calls can raise, and give each
   the right handling. The charger read's catch-all only keeps an unknown error from crashing the read.
 - [ ] Read the client's changelog for breaking changes to the models the entities use.

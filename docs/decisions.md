@@ -364,3 +364,13 @@ superseded. How to add one:
   commit that passes the hook can fail CI's `ruff format --check`. Letting Dependabot bump both would still
   bring them in separate PRs.
 - **Source:** [tooling hygiene spec](superpowers/specs/2026-09-30-tooling-hygiene-design.md), Decisions
+
+### D42: Charge costs are the client's exact values
+- **Date:** 2026-10-01 · **Status:** active
+- **Decision:** *Cost this charge* shows the open charge's cost as `pynortecgo` reports it, with no state
+  class; *Last charge cost* shows the last completed charge's billed total as `total`, with `last_reset` at
+  the charge's completion time. No cost is computed from energy and price, and the unit is the charger's
+  currency, then D34's order.
+- **Why:** The owner chose exact values over estimates (#75). A per-charge value without `last_reset` gives a
+  wrong statistics sum, and the live value ends below the bill, so only the billed totals are summed.
+- **Source:** [session cost spec](superpowers/specs/2026-10-01-session-cost-design.md), Decisions and §3

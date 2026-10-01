@@ -78,6 +78,8 @@ The integration adds two devices: the charger, and the car when the account has 
 | Charge status | Sensor | Start blocked, Starting, Charging, Paused, Stopping, Waiting for replug, Unplugged or Idle |
 | Energy this charge | Sensor | The energy the open charge has delivered so far, in kWh. Unknown when no charge is open. It can be added to the Energy dashboard as an individual device; each charge counts as a new cycle |
 | Charging power | Sensor | The charge's latest measured power, in kW. 0 when no charge is open, and unknown if the power couldn't be read |
+| Cost this charge | Sensor | What the open charge costs so far, incl. VAT, fees and the grid tariff, in the charger's currency. Unknown when no charge is open. It can lag *Energy this charge* by a reading, and its last value can be below the billed total; while a charge is stopping it can already show the billed total |
+| Last charge cost | Sensor | The billed total of the most recent completed charge on the charger. Its long-term statistics add up the charges completed after the sensor's first value. Unknown if the charge isn't among the charger's newest, or if it couldn't be read |
 | Refresh | Button | Reads the charger, the car and the prices now |
 | Last read | Sensor (diagnostic) | When the charger was last read. Shows how old the other values are, also after a failed read |
 
@@ -191,8 +193,9 @@ one of these times fails, the integration tries once more 15 minutes later (or l
 service asks it to wait), unless the next read time comes first. The current price moves to the next 15
 minutes by itself, without a read.
 
-*Energy this charge* and *Charging power* come from the last charger read, so while charging they can be up
-to 5 minutes old.
+*Energy this charge*, *Charging power* and *Cost this charge* come from the last charger read, so while
+charging they can be up to 5 minutes old. *Last charge cost* follows at the first read after a charge ends,
+or the one after it (up to 60 minutes later); press *Refresh* to read it sooner.
 
 Turning *Charge* on or off reads the charger right away. To read the charger, the car and the prices now,
 press the *Refresh* button. From an automation, the `homeassistant.update_entity` action on any Nortec Go
@@ -228,6 +231,10 @@ entity reads the charger, and the car if it wasn't read in the last few minutes,
 - EV Smart Charging logs the integration's start errors as its own failed action.
 - *Charging power* has read 0 kW for about the first 30 seconds after a start, for up to about 2 minutes
   after a resume, and while stopping.
+- *Last charge cost* misses a charge when two charges end between two reads, or when a charge that ended
+  while Home Assistant was off is no longer the most recent one. Its statistics then lack that charge.
+  They also lack the charge the sensor first showed: usually one from before you added the sensor, but
+  the first one after it if the sensor was unknown until then.
 
 ## Troubleshooting
 
@@ -278,9 +285,9 @@ are going. To download it, go to **Settings** > **Devices & services** > **Norte
 menu (⋮) and select **Download diagnostics**.
 
 The file leaves out your email, the session tokens and the device ID the integration signs in with; your
-password is never stored. It keeps your charger's and car's names and IDs, and Home Assistant adds its own
-information, such as its version, your installed custom integrations and your time zone. Check the file
-before you share it, and remove what you don't want public.
+password is never stored. It keeps your charger's and car's names and IDs, and the last charge's ID, cost and
+time. Home Assistant adds its own information, such as its version, your installed custom integrations and
+your time zone. Check the file before you share it, and remove what you don't want public.
 
 ### Reporting a problem
 

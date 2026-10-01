@@ -452,8 +452,8 @@ merges):
 ### After ready, the loop, and failures
 
 - A ready PR takes no slot. The PO re-creates the issue worktree at the same path, runs `uv sync` in it, and
-  resumes the team lead (`claude --bg --permission-mode auto --resume <session-id>`, run in the re-created
-  issue worktree) when a slot is free, for:
+  resumes the team lead (`claude --bg --permission-mode auto --resume <session-id> -n tl-<topic>`, run in the
+  re-created issue worktree) when a slot is free, for:
   - changes requested (a comment that asks for a change), or a failed required check; the merge then follows
     *Merging*, step 3 or step 2;
   - a branch that `origin/main` isn't merged into, which includes a merge conflict and a stale bump (a
@@ -462,7 +462,9 @@ merges):
     owner-merge PR once the owner says they are about to merge it (*Merging*, **The queue**).
 
   Conflicts are fixed by merging `origin/main` in, never by a force-push. A resumed team lead starts without
-  its old SDD ledger.
+  its old SDD ledger. The `-n` keeps its name: without it the resumed session gets a generated `ListAgents`
+  name, and messages to `tl-<topic>` no longer reach it. Every resume in this section uses this resume
+  command, run in the team lead's issue worktree.
 - The PO's `/loop` (every 10 to 20 minutes) checks GitHub for merged PRs (*After a merge*), ready PRs the PO
   may merge that aren't merged yet (*Merging*: checks still running when a session ended, an escalation since
   answered, a PR waiting for its turn), answers to open `PO question`s, and review comments or conflicts on
@@ -473,6 +475,11 @@ merges):
   and background; `ListAgents` the names to message.
 - A team lead that is gone is resumed once; if that fails, the PO escalates and leaves the issue `active`.
   One with nothing new in `claude logs <id>` for 2 loops is asked for its status, then escalated.
+- A background team lead that is idle while it waits for the PO's reply to one of its messages can exit
+  (`claude agents --json` no longer shows it). Nothing is lost: its issue worktree is still in place. When
+  the reply is there and a slot is free, the PO resumes it with the resume command, the reply as the prompt
+  after the options. This is not the one resume of a team lead that is gone: that one is still there if the
+  team lead fails later.
 - If the PO session ends, team leads keep running. A `SendMessage` to a PO that is down fails at once; it
   isn't queued. The team lead keeps every message whose `SendMessage` to `po` failed, and waits (it doesn't
   poll for the PO). The next `scripts/po` rebuilds its state from the above, sends `hello` to every team lead

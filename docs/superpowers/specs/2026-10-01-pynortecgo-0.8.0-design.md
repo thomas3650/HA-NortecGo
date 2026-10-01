@@ -18,20 +18,22 @@ Date: 2026-10-01 · Branch: `chore/pynortecgo-0.8.0` · Issue: #81
   - Any change to the start path, the stop path, the pending start, the pending stop or the polling
     intervals.
   - `CHANGELOG.md` and `version` in `manifest.json` (see *Decisions*, the release level).
-- **Done when:** both pins and `uv.lock` say 0.8.0, the gates pass, the checks in §5 hold, and the bump
-  checklist in `docs/releasing.md` is worked through with its results in the PR description (§6).
+- **Done when:** both pins and `uv.lock` say 0.8.0, the gates pass, the checks in §5 hold, the bump
+  checklist in `docs/releasing.md` is worked through with its results in the PR description (§6), and D46
+  is in `decisions.md` and `docs/releasing.md` (§7).
 
 ## Decisions
 
-Answered by the PO (2026-10-01); the PO records its approval of this spec on issue #81.
+Answered by the PO, and for D46 by the owner through the PO (2026-10-01); the PO records its approval of
+this spec on issue #81.
 
 | Topic | Decision |
 |---|---|
 | Release level | Not releasing. The title is `chore(deps): move to pynortecgo 0.8.0 (#81)`: no changelog entry, no bump step |
-| The diagnostics download | Its `charger` block changes shape (§4). That isn't a user-visible change: the user docs don't describe the block's keys, and it is a support file |
+| The diagnostics download | Its `charger` block changes shape (§4). That isn't a user-visible change: the user docs don't describe the block's keys, and it is a support file. The owner made this a lasting rule (D46, §7) |
 | How the reads move | One helper for the charge's state, so every condition in the charge control keeps its shape (§2) |
 | The test fixture | `make_charger` keeps its keyword arguments (§5) |
-| Decision log | No entry: nothing here sets a lasting rule |
+| Decision log | D46 (§7) |
 | Who reviews and merges | The owner: the spec and the plan go to the owner through the PO, and the PR edits `charge_control.py`, so it is the owner's to merge (D45) |
 
 The release level follows `docs/releasing.md` (*Bumping `pynortecgo`*): a client bump is titled by what it
@@ -139,7 +141,8 @@ it meant.
   `Charger`, a new `ACTIVE_CHARGE_FIELDS` pins `ActiveCharge`'s seven, and
   `test_client_model_fields_are_pinned` checks both. The whole-output test, the one test that looks at the
   `charger` block, expects the nested block.
-- `docs/releasing.md`'s bump checklist names the models whose fields are pinned. It gets `ActiveCharge`.
+- `docs/releasing.md`'s bump checklist names the models whose fields are pinned. It gets `ActiveCharge`,
+  and the rule in §7.
 
 ## 5. Tests, and how the plan proves the behaviour is unchanged
 
@@ -187,7 +190,7 @@ integration code, never in that test.
   `uv lock --upgrade-package pynortecgo`, which leaves the other pins alone.
 - The bump breaks mypy and the tests until every read has moved, and every commit passes the gates. So the
   pins, the lock, the reads, the fixture and the diagnostics pins are **one task and one commit**. The
-  `docs/releasing.md` line is a second task.
+  docs (`docs/releasing.md` and `docs/decisions.md`, §4 and §7) are a second task.
 - The checklist in `docs/releasing.md` (*Bumping `pynortecgo`*), with what was found when this spec was
   written. The task re-checks each against the installed 0.8.0, and the PR description carries the results:
 
@@ -198,7 +201,25 @@ integration code, never in that test.
 | New exception classes | None. The charger, car, price, start and stop calls raise what they raised |
 | Breaking changes to the models | The one in §1. `ActiveCharge` is the only new public name |
 
-## 7. Other branches
+## 7. Decision log
+
+`docs/decisions.md` gets this entry. #86 carries D44 and isn't merged yet; whichever of the two PRs merges
+second keeps D44 before D46 in the file.
+
+### D46: The shape of the diagnostics download isn't user-visible
+- **Date:** 2026-10-01 · **Status:** active
+- **Decision:** A change that only moves, renames, adds or removes keys in the diagnostics download isn't a
+  user-visible change: it needs no changelog entry and doesn't make a PR releasing. D38 still decides what
+  the download may show.
+- **Why:** The download is a support file. The user docs don't describe its keys, and nothing is meant to
+  be built on them. Without the rule, every client release that changes a model would force a release of
+  the integration.
+- **Source:** this spec, *Decisions* and §4.
+
+`docs/releasing.md`, *Bumping `pynortecgo`*, gets one sentence after "Title such a PR by what it changes for
+users": a change only in the shape of the diagnostics download isn't something users see (D46).
+
+## 8. Other branches
 
 `feat/car-device-lifecycle` (#86) may land first. It changes `coordinator.py`, `binary_sensor.py`,
 `diagnostics.py` and `tests/test_diagnostics.py`, the last in the same whole-output expectation whose

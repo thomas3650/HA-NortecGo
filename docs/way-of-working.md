@@ -359,7 +359,7 @@ Dependabot's, the owner's own and trivial ones (§4).
 
 **Owner-merge PRs.** A PR is owner-merge when its diff touches something *Escalation* always escalates for
 (the part of that list a diff can touch): charge start or stop (the code that calls them, or what decides
-when they are called); auth, tokens or reauth; a hard rule; or one of the paths that list names. A new
+when they are called); auth, tokens or reauth; a hard rule; or one of the paths *Escalation* names. A new
 decision alone doesn't make a PR owner-merge: the owner approved it in the spec. The PO decides from the
 changed files (`gh pr diff <n> --name-only`) and the spec; a plan task tagged `Model: opus` for charge or
 auth (§5) is a sign. Below 90% sure, the PR is owner-merge.
@@ -410,16 +410,18 @@ head, and not a team lead's fix alone.
 releasing PR runs the bump step again ([`releasing.md`](releasing.md#two-releasing-prs-at-once)), pushes, and
 reports `branch ready`. The PO repeats *From branch ready to PR ready* on the new head, with these
 differences: the visual check only if `main` brought a visible change; the acceptance check only for the
-title, the bump and the PR description; no `gh pr ready`. The clean-up in its step 6 runs again. The PO
-records the new checked head and starts the merge again with the `git fetch` and step 1.
+title, the bump and the PR description; no `gh pr ready`. The clean-up in step 6 of *From branch ready to PR
+ready* runs again. The PO records the new checked head and starts the merge again with the `git fetch` and
+step 1.
 
 **The queue.** The PRs the PO may merge form a queue, in the order they became ready. The PO merges one at a
 time: the first, then *After a merge* including its release check, and only then the next. Only the next PR
 in the queue is brought up to date; the ones behind it wait, since the next merge would leave them behind
 again. A PR that waits for the owner's answer or for a team lead's fix steps out of the queue, and rejoins it
-at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in step 4), or once the fix for a
-failed check (step 2) has been through *From branch ready to PR ready* again. A resume for a PR that is
-first in the queue, or has stepped out of it, takes a free team-lead slot before a new issue is picked.
+at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4), or once the fix
+for a failed required check (step 2 of the merge) has been through *From branch ready to PR ready* again. A
+resume for a PR that is first in the queue, or has stepped out of it, takes a free team-lead slot before a
+new issue is picked.
 
 Owner-merge PRs are not in the queue and block nothing. One that falls behind `main` stays as it is until
 the owner says they are about to merge it; the PO then brings it up to date (**Behind `main`**, without the

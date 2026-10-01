@@ -13,7 +13,7 @@ STATUSES = {"done", "todo", "exempt"}
 
 
 def test_quality_scale_statuses() -> None:
-    """Every rule has a known status, and every exemption says why."""
+    """Every rule has a known status, and every rule written as a mapping says why."""
     rules = load_yaml_dict(QUALITY_SCALE)["rules"]
     assert rules
     for name, value in rules.items():
@@ -22,14 +22,50 @@ def test_quality_scale_statuses() -> None:
             assert value != "exempt", f"{name}: exempt needs a comment"
         else:
             assert value["status"] in STATUSES, name
-            if value["status"] == "exempt":
-                assert value.get("comment"), name
+            assert value.get("comment"), name
 
 
 def test_dependency_transparency_comment() -> None:
     """The comment isn't cut short by a YAML '#' comment marker."""
     rule = load_yaml_dict(QUALITY_SCALE)["rules"]["dependency-transparency"]
     assert rule["comment"].endswith("(issue #34).")
+
+
+CHECKED_STATUSES = {
+    "action-setup": "exempt",
+    "docs-actions": "exempt",
+    "docs-conditions": "exempt",
+    "docs-triggers": "exempt",
+    "action-exceptions": "todo",
+    "test-coverage": "done",
+    "discovery": "exempt",
+    "discovery-update-info": "exempt",
+    "entity-disabled-by-default": "done",
+    "strict-typing": "done",
+    "dynamic-devices": "todo",
+    "stale-devices": "todo",
+    "icon-translations": "todo",
+    "reconfiguration-flow": "todo",
+}
+
+
+def _status(value: str | dict[str, str]) -> str:
+    """A rule's status, from either form."""
+    return value if isinstance(value, str) else value["status"]
+
+
+def test_checked_statuses() -> None:
+    """The statuses checked against the rule texts and the code (issue #36)."""
+    rules = load_yaml_dict(QUALITY_SCALE)["rules"]
+    for name, status in CHECKED_STATUSES.items():
+        assert _status(rules[name]) == status, name
+        assert rules[name]["comment"], name
+
+
+def test_action_exceptions_comment() -> None:
+    """The comment isn't cut short by a YAML '#' comment marker."""
+    rule = load_yaml_dict(QUALITY_SCALE)["rules"]["action-exceptions"]
+    assert rule["comment"].endswith("(#40).")
 
 
 def test_rule_count() -> None:

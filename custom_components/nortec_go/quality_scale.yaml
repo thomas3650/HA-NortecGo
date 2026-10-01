@@ -1,6 +1,8 @@
 rules:
   # Bronze
-  action-setup: todo
+  action-setup:
+    status: exempt
+    comment: "The integration registers no service actions."
   appropriate-polling:
     status: done
     comment: "30 s only while a charge is starting or stopping, bounded while reads fail (10 min after a start, 2 min after a stop or the last good read); 5 min while charging, 60 min otherwise (D29, D31)."
@@ -13,12 +15,18 @@ rules:
   dependency-transparency:
     status: todo
     comment: "The pynortecgo source repo is private; the rule needs an open repo, tags and a public publishing pipeline. Tracked in the pynortecgo repo (issue #34)."
-  docs-actions: todo
-  docs-conditions: todo
+  docs-actions:
+    status: exempt
+    comment: "The integration registers no service actions."
+  docs-conditions:
+    status: exempt
+    comment: "The integration provides no conditions."
   docs-high-level-description: done
   docs-installation-instructions: done
   docs-removal-instructions: done
-  docs-triggers: todo
+  docs-triggers:
+    status: exempt
+    comment: "The integration provides no triggers."
   entity-event-setup:
     status: exempt
     comment: "Entities subscribe to no events; the coordinator owns the timers."
@@ -30,7 +38,9 @@ rules:
   unique-config-entry: done
 
   # Silver
-  action-exceptions: done
+  action-exceptions:
+    status: todo
+    comment: "The Charge switch raises translated errors; the Refresh button's press raises nothing when its read fails (#40)."
   config-entry-unloading: done
   docs-configuration-parameters:
     status: exempt
@@ -43,13 +53,19 @@ rules:
   log-when-unavailable: done
   parallel-updates: done
   reauthentication-flow: done
-  test-coverage: todo
+  test-coverage:
+    status: done
+    comment: "CI fails below 95% in total; every module is above it."
 
   # Gold
   devices: done
   diagnostics: done
-  discovery: todo
-  discovery-update-info: todo
+  discovery:
+    status: exempt
+    comment: "Cloud only (cloud_polling): the integration reaches the charger only through the Nortec Go account, never on the local network."
+  discovery-update-info:
+    status: exempt
+    comment: "No discovery: the integration reaches the charger only through the cloud account and stores no network address."
   docs-data-update: done
   docs-examples: done
   docs-known-limitations: done
@@ -57,18 +73,30 @@ rules:
   docs-supported-functions: done
   docs-troubleshooting: done
   docs-use-cases: done
-  dynamic-devices: todo
+  dynamic-devices:
+    status: todo
+    comment: "Whether the account has a car is fixed at setup; a car added later shows up only after a reload."
   entity-category: done
   entity-device-class: done
-  entity-disabled-by-default: todo
+  entity-disabled-by-default:
+    status: done
+    comment: "Every entity is enabled: Last read and Last seen are the only signs of how old the charger and car data are, and they change only once per read (D29)."
   entity-translations: done
   exception-translations: done
-  icon-translations: todo
-  reconfiguration-flow: todo
+  icon-translations:
+    status: todo
+    comment: "No icons.json yet; the Charge switch, the Refresh button and the Current price, Charge status and Charge limit sensors have no icon of their own."
+  reconfiguration-flow:
+    status: todo
+    comment: "No reconfigure step; the config flow has only the user and reauth steps."
   repair-issues: done
-  stale-devices: todo
+  stale-devices:
+    status: todo
+    comment: "A car removed while running keeps its last data until a reload, which removes its device; no async_remove_config_entry_device."
 
   # Platinum
   async-dependency: done
   inject-websession: done
-  strict-typing: todo
+  strict-typing:
+    status: done
+    comment: "mypy runs strict on the integration and its tests in CI; pynortecgo ships py.typed; NortecGoConfigEntry is used throughout."

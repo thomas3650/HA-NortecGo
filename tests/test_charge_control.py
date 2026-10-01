@@ -32,6 +32,7 @@ from pynortecgo import (
     PaymentSourceNotFoundError,
     RateLimitError,
     UnexpectedResponseError,
+    UnknownChargerStateError,
     VehicleNotFoundError,
 )
 import pytest
@@ -294,6 +295,7 @@ async def test_start_noop_while_busy_non_charging(
     [
         (CableNotConnectedError("x"), "cable_not_connected"),
         (ChargerNotReleasedError("x"), "charger_not_released"),
+        (UnknownChargerStateError("mystery"), "charger_state_unknown"),
         (PaymentSourceNotFoundError("x"), "no_payment_source"),
         (MultiplePaymentSourcesError("x"), "multiple_payment_sources"),
         (VehicleNotFoundError("x"), "no_vehicle"),

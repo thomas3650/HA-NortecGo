@@ -31,6 +31,9 @@ Run `git push` as its own command.
 
 The ruff-format pre-commit hook also formats Python code blocks inside `.md` files, such as specs and plans.
 A commit of a plan can fail once with "files were modified by this hook"; re-stage and commit again.
+The hook formats those blocks but doesn't lint them, so a plan's test code can hold a `ruff check` finding
+(for example D403, a lowercase first word in a docstring) that only shows once the code lands in a `.py` file.
+Found in #45.
 
 ## 2026-09-28: EV Smart Charging doesn't re-send *off*
 
@@ -77,3 +80,8 @@ Found in #64.
 
 The Bash tool's shell is zsh, where `"$r:path"` applies a `:` modifier to `$r` (`"$r:custom…"` is `$r` with
 `:c` applied). Write `"${r}:path"`, for example `git show "${rev}:CHANGELOG.md"`. Found in #64.
+
+## 2026-09-30: `pre-commit validate-config` needs the file name
+
+Without a file name, `pre-commit validate-config` checks nothing and exits 0. Name the file:
+`uv run pre-commit validate-config .pre-commit-config.yaml`. Found in #45.

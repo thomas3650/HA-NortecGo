@@ -15,12 +15,22 @@ repos:
       - id: detect-private-key
       - id: check-added-large-files
         exclude: ^uv\.lock$
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.9
+  # ruff runs through uv, so its version is the one in uv.lock, as in CI (D41).
+  - repo: local
     hooks:
       - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude
         args: [--fix]
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
       - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter, markdown]
+        require_serial: true
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:

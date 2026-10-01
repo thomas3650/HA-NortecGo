@@ -166,6 +166,10 @@ before it is opened.
   - The guard refuses a bare heredoc (`<<`) in Bash as unparseable. Subagents write scripts and commit messages
     with the Write tool, to a uniquely named file outside the repo (after the topic and task, for example
     `/tmp/<topic>-task-<n>-msg.txt`, or from `mktemp`), and commit with `git commit -F <file>`.
+  - A task that edits the guard hook runs in a task worktree, even alone in its wave: the checkout the session
+    started in holds the live hook for every subagent. After the pick, and before the next wave or the push,
+    check the live hook: its tests, one subagent payload it must refuse with the Guarded-files message (not
+    `guard error`), and one that goes through its git lookups and must pass.
   - The controller is not restricted by it.
 
 ## 6. Conventions
@@ -183,8 +187,9 @@ before it is opened.
   (§8) the team lead pushes and the PO marks ready.
 - **Git guards:** run `uv run pre-commit install` once per clone. The hooks refuse commits on `main` and pushes
   to `main`, and `.claude/settings.json` denies pushes to `main` and `--no-verify`. `main` is also protected
-  server-side, with the required checks. Some hooks run a dev tool with `uv run` (`actionlint`, `zizmor`), so
-  after a merge that adds such a tool, every checkout and worktree runs `uv sync` before its next commit.
+  server-side, with the required checks. Some hooks run a dev tool with `uv run` (ruff, `actionlint`,
+  `zizmor`), so after a merge that adds such a tool, every checkout and worktree runs `uv sync` before its
+  next commit.
 - **Questions to the owner:** plain terminal text, one at a time. In the PO flow, the PO also posts them on the
   issue (§8).
 - **Delegated plan approval:** the owner may let the controller approve a plan once `full-reviewer` rates it

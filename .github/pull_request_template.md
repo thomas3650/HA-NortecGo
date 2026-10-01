@@ -6,7 +6,7 @@ Closes #
 
 ## Checklist
 
-- [ ] Gates pass (ruff, ruff format, mypy, pytest with coverage ≥ 95%)
+- [ ] Gates pass (`CLAUDE.md` → *Commands*: the tests, the coverage gate and the lint line)
 - [ ] Title type per `docs/releasing.md` (user-visible → `feat`, `fix` or `perf`, with a `CHANGELOG.md` entry)
 - [ ] Releasing title → the bump step run last (`docs/releasing.md`)
 - [ ] `custom_components/nortec_go/quality_scale.yaml` updated (rules completed or changed)

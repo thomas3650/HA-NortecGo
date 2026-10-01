@@ -10,6 +10,7 @@ from pynortecgo import (
     Charger,
     ChargerState,
     ChargeState,
+    CompletedCharge,
     NortecGoClient,
     PriceForecast,
     PriceSlot,
@@ -31,6 +32,9 @@ OTHER_CHARGER_ID = 564738291
 FAKE_CHARGER_NAME = "Garage charger"
 FAKE_VEHICLE_NAME = "Family car"
 FAKE_LAST_SEEN = datetime(2026, 9, 26, 8, 30, tzinfo=UTC)
+FAKE_CHARGE_ID = "fake-charge-id"  # make_charger's charge ID while a charge is open
+FAKE_LAST_CHARGE_ID = "fake-last-charge-id"  # differs, so no swap by accident
+FAKE_COMPLETED_AT = datetime(2026, 9, 25, 6, 15, tzinfo=UTC)
 DEFAULT_FORECAST_START = datetime(2026, 9, 26, 22, 0, tzinfo=UTC)
 FAKE_TOKENS = Tokens(
     access_token="fake-access-token",
@@ -53,6 +57,9 @@ def make_charger(
     state: ChargerState = ChargerState.AVAILABLE,
     charge_kwh: float | None = None,
     charge_kw: float | None = None,
+    charge_cost: float | None = None,
+    currency: str | None = "DKK",
+    last_charge: CompletedCharge | None = None,
 ) -> Charger:
     """Return a charger; idle and unplugged unless told otherwise."""
     return Charger(
@@ -64,11 +71,25 @@ def make_charger(
         is_connected=is_connected,
         charge_state=charge_state,
         charge_state_raw=None if charge_state is None else charge_state.value,
-        charge_id=None if charge_state is None else "fake-charge-id",
+        charge_id=None if charge_state is None else FAKE_CHARGE_ID,
         can_stop=None if charge_state is None else True,
         charge_kwh=charge_kwh,
         charge_kw=charge_kw,
+        charge_cost=charge_cost,
+        currency=currency,
+        last_charge=last_charge,
     )
+
+
+def make_completed_charge(
+    *,
+    charge_id: str = FAKE_LAST_CHARGE_ID,
+    cost: float = 42.5,
+    kwh: float = 18.4,
+    completed_at: datetime = FAKE_COMPLETED_AT,
+) -> CompletedCharge:
+    """Return a completed charge with fake values; its ID differs from an open charge's."""
+    return CompletedCharge(id=charge_id, cost=cost, kwh=kwh, completed_at=completed_at)
 
 
 def make_vehicle(

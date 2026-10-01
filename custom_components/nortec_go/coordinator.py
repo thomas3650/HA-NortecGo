@@ -5,7 +5,11 @@ from datetime import datetime, timedelta
 import logging
 
 from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryError,
+    HomeAssistantError,
+)
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.typing import UNDEFINED
@@ -315,11 +319,16 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self.price_currency = stored.currency
 
     async def async_read_prices(
-        self, *, during_setup: bool = False, retry_on_failure: bool = False
+        self,
+        *,
+        during_setup: bool = False,
+        retry_on_failure: bool = False,
+        raise_on_failure: bool = False,
     ) -> None:
         """Read the forecast, merge, prune and save it with its currency; keep the known slots on failure (§4.3).
 
-        A failed read asked to retry on failure is read once more later (D37).
+        A failed read asked to retry on failure is read once more later (D37). One asked to raise
+        on failure then raises a translated error, for the Refresh button (D43).
         """
         try:
             forecast = await self.client.get_price_forecast()
@@ -331,11 +340,19 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
                     translation_domain=DOMAIN, translation_key="auth_failed"
                 ) from err
             self.config_entry.async_start_reauth(self.hass)
+            if raise_on_failure:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="auth_failed"
+                ) from err
             return
         except NortecGoError as err:
             self._log_price_error(err)
             if retry_on_failure:
                 self._async_schedule_price_retry(err)
+            if raise_on_failure:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="price_read_failed"
+                ) from err
             return
         self._async_cancel_price_retry()
         if self._prices_failing:

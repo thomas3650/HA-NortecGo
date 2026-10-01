@@ -4,7 +4,7 @@
 
 **Goal:** Whether the entry has a *Car* device is decided by the setup read alone: a failed car read at setup retries setup instead of guessing (#41), a car that goes while running makes its entities unavailable and raises a repair issue whose fix reloads, and a change of car updates the same device (#42, D44).
 
-**Architecture:** Three tasks. Task 1 (wave 1) is the setup read in `coordinator.py`: its own car read with the retry rows, and the car read moved before the charge control gets the charger read, so a failed setup can't lose a stop. Task 2 (wave 2, same file) is the running side: the gone state, its repair issue and fix flow, the device's brand and model, and diagnostics. Task 3 (wave 1) is the docs, D44, the CHANGELOG entry and the quality scale comments, written against the names this plan fixes.
+**Architecture:** Three tasks. Task 1 (wave 1) is the setup read in `coordinator.py`: its own car read with the retry rows, and the car read moved before the charge control gets the charger read, so a failed setup can't lose a stop. Task 2 (wave 2, same file) is the running side: the gone state, its repair issue and fix flow, the device's brand and model, and diagnostics. Task 3 (wave 1) is the docs, D44, the CHANGELOG entry and the quality scale comments, written against the names this plan fixes and held until Tasks 1 and 2 are on the feature branch.
 
 **Tech Stack:** Python 3.14, Home Assistant 2026.9 custom integration, pytest with `pytest-homeassistant-custom-component`, mypy strict, ruff, uv.
 
@@ -14,7 +14,7 @@
 
 - TDD: write the failing test, see it fail, then change the code.
 - "No car" means `VehicleNotFoundError` or `MultipleVehiclesError`, treated alike everywhere.
-- Car entities and the car device are added and removed only at setup. Nothing in this plan adds or removes an entity or a device while the entry is loaded (D44). `sensor.py`, `binary_sensor.py` and `__init__.py` are not edited.
+- Car entities and the car device are added and removed only at setup. Nothing in this plan adds or removes an entity or a device while the entry is loaded (D44). `sensor.py`, `binary_sensor.py`, `entity.py` and `__init__.py` get no behaviour change; the only edits there are the docstrings Task 2 names.
 - `has_car` is set by the setup read and never changes afterwards.
 - Charge start and stop: `charge_control.py` and `switch.py` are not edited. The only change next to them is where `_async_update_data` calls `charge_control.on_charger_read`: at setup after the car read, while running before it, as today (spec §1, *Order*). The call's arguments don't change.
 - Auth path: a rejected car read (`AuthError`) raises `ConfigEntryAuthFailed` with `auth_failed`, at setup and while running, with the debug line `Reading the car was rejected: %s`, as today. Nothing logs in again or retries a login (hard rule 6).
@@ -52,7 +52,7 @@
 
 **Files:**
 - Modify: `tests/test_coordinator.py`
-- Modify: `tests/test_sensor.py` (remove one test)
+- Modify: `tests/test_sensor.py` (replace one test)
 - Modify: `custom_components/nortec_go/coordinator.py` (`_async_update_data` after the charger read's `try`, `_async_read_vehicle`, a new `_async_read_setup_vehicle`, the `_car_checked` flag, the `NortecGoData` docstring)
 - Modify: `custom_components/nortec_go/strings.json`
 - Modify: `custom_components/nortec_go/translations/en.json`
@@ -177,7 +177,8 @@ async def test_failed_setup_car_read_keeps_a_stop_asked(
 
     mock_client.get_vehicle.side_effect = None
     await hass.config_entries.async_reload(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
+    # The stop is sent as a background task of the entry.
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
     mock_client.stop_charge.assert_awaited_once()
@@ -210,7 +211,7 @@ async def test_control_gets_the_charger_read_before_the_car_while_running(
 
 Run: `uv run pytest tests/test_coordinator.py -q -k "test_car_error_at_setup_retries or test_car_read_failed_text or test_failed_setup_car_read_keeps_a_stop_asked or test_control_gets_the_charger_read_before_the_car_while_running"`
 
-Expected: `test_car_error_at_setup_retries` fails on `state is ConfigEntryState.SETUP_RETRY` (the entry is `LOADED` today); `test_car_read_failed_text` fails with `KeyError: 'car_read_failed'`; `test_failed_setup_car_read_keeps_a_stop_asked` fails on `stop_charge.assert_not_awaited()` (today the control gets the charger read first and sends the stop); `test_control_gets_the_charger_read_before_the_car_while_running` passes already (it pins today's order).
+Expected: `test_car_error_at_setup_retries` fails on `state is ConfigEntryState.SETUP_RETRY` (the entry is `LOADED` today); `test_car_read_failed_text` fails with `KeyError: 'car_read_failed'`; `test_failed_setup_car_read_keeps_a_stop_asked` fails in both cases: with `NortecGoConnectionError` on `assert state in (…)` (the entry is `LOADED` today), with `AuthError` on `stop_charge.assert_not_awaited()` (today the control gets the charger read first and sends the stop); `test_control_gets_the_charger_read_before_the_car_while_running` passes already (it pins today's order).
 
 - [ ] **Step 3: Add the text**
 
@@ -246,6 +247,8 @@ Change the `NortecGoData` docstring's second paragraph to:
 ```
 
 In `__init__`, delete the line `self._car_checked = False`.
+
+Change `_car_due`'s docstring to `"""Read the car when asked, or when its last try is old enough (§3.2); the setup read always reads it."""`.
 
 In `_async_update_data`, replace everything from `self.charge_control.on_charger_read(charger, start_attempts)` to the end of the method with:
 
@@ -335,9 +338,31 @@ Run: `uv run pytest tests/test_coordinator.py -q -k "test_car_error_at_setup_ret
 
 Expected: all pass (15 + 1 + 2 + 1 = 19 tests).
 
-- [ ] **Step 6: Remove the test of the state that no longer exists**
+- [ ] **Step 6: Replace the test of the state that no longer exists**
 
-In `tests/test_sensor.py`, delete the whole of `test_car_placeholder_until_first_read`: it loads the entry with a failing car read at setup, which is now a retry. The empty-name fallback to *Car* stays covered by the test right above it. Remove any import that only it used (ruff reports them).
+In `tests/test_sensor.py`, replace the whole of `test_car_placeholder_until_first_read` with the test below. The old test loads the entry with a failing car read at setup, which is now a retry. It was also the only test where the entities are created without a car name (the `translation_key` branch in `entity.py`); the test above it reaches only the coordinator's fallback on a later read. Remove any import that only the old test used (ruff reports them).
+
+```python
+async def test_car_without_a_name_at_setup(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """A car without a name at setup: the device is called Car, and so are its entity IDs."""
+    mock_client.get_vehicle.return_value = make_vehicle(name="")
+    await setup_integration(hass, mock_config_entry)
+    car = _device(device_registry, mock_config_entry, f"{FAKE_CHARGER_ID}_car")
+    assert car is not None
+    assert car.name == "Car"
+    state = hass.states.get("sensor.car_battery")
+    assert state is not None
+    assert state.state == "55.0"
+```
+
+Run: `uv run pytest tests/test_sensor.py -q -k test_car_without_a_name_at_setup`
+
+Expected: passes (it pins behaviour that exists; it replaces the coverage the old test gave `entity.py`).
 
 - [ ] **Step 7: Run the whole suite**
 
@@ -383,6 +408,7 @@ git commit -F /tmp/car-device-lifecycle-task-1-msg.txt
 - Modify: `custom_components/nortec_go/repairs.py`
 - Modify: `custom_components/nortec_go/diagnostics.py`
 - Modify: `custom_components/nortec_go/entity.py` (docstrings only)
+- Modify: `custom_components/nortec_go/binary_sensor.py` (one docstring only)
 - Modify: `custom_components/nortec_go/strings.json`
 - Modify: `custom_components/nortec_go/translations/en.json`
 
@@ -611,7 +637,7 @@ async def test_car_gone_makes_the_car_entities_unavailable(
     assert battery.state == "55.0"
 ```
 
-In `tests/test_repairs.py`, extend the imports to:
+In `tests/test_repairs.py`, keep the standard-library imports (`HTTPStatus`, `Any`, `cast`, `AsyncMock`); the third-party and local imports become:
 
 ```python
 from homeassistant.config_entries import ConfigEntryState
@@ -940,6 +966,8 @@ In `custom_components/nortec_go/entity.py`, change three docstrings and nothing 
 - its `__init__`: `"""Attach the entity to the car device, named "Car" when the car has no name."""`
 - its `available`: `"""Available when the last update worked and the account has its car."""`
 
+In `custom_components/nortec_go/binary_sensor.py`, change one docstring and nothing else: `NortecGoCarBinarySensor.is_on`'s `"""The value from the charger and the car, or None before the car is read."""` becomes `"""The value from the charger and the car, or None while the car is gone."""`.
+
 - [ ] **Step 7: The fix flow in `repairs.py`**
 
 Change the module docstring to `"""The Nortec Go repair fix flows: allow charge starts again (§3.5), and remove a car that is gone (D44)."""`, add `from .const import CAR_GONE_ISSUE_ID` above the `.entry` import, add this class after `StartBlockedRepairFlow`:
@@ -1014,7 +1042,7 @@ brand and model, also when it has none. Diagnostics show car_gone.
 ```
 
 ```bash
-git add tests/test_coordinator.py tests/test_init.py tests/test_repairs.py tests/test_diagnostics.py custom_components/nortec_go/const.py custom_components/nortec_go/coordinator.py custom_components/nortec_go/repairs.py custom_components/nortec_go/diagnostics.py custom_components/nortec_go/entity.py custom_components/nortec_go/strings.json custom_components/nortec_go/translations/en.json
+git add tests/test_coordinator.py tests/test_init.py tests/test_repairs.py tests/test_diagnostics.py custom_components/nortec_go/const.py custom_components/nortec_go/coordinator.py custom_components/nortec_go/repairs.py custom_components/nortec_go/diagnostics.py custom_components/nortec_go/entity.py custom_components/nortec_go/binary_sensor.py custom_components/nortec_go/strings.json custom_components/nortec_go/translations/en.json
 git commit -F /tmp/car-device-lifecycle-task-2-msg.txt
 ```
 
@@ -1023,7 +1051,7 @@ git commit -F /tmp/car-device-lifecycle-task-2-msg.txt
 ### Task 3: User docs, D44, the CHANGELOG entry and the quality scale comments
 
 **Model:** opus — a docs task (D33).
-**Wave:** 1 (written against the names this plan fixes; re-checked against the code that lands)
+**Wave:** 1 (started ahead of its inputs, Tasks 1 and 2; held until both are on the feature branch, then re-checked against that code and only then picked: `docs/way-of-working.md` §1, *Starting ahead of inputs*)
 
 **Files:**
 - Modify: `docs/user/nortec_go.md`
@@ -1032,7 +1060,7 @@ git commit -F /tmp/car-device-lifecycle-task-2-msg.txt
 - Modify: `custom_components/nortec_go/quality_scale.yaml`
 
 **Interfaces:**
-- Consumes: the names in *Global Constraints* (the issue's title text, D44). No code.
+- Consumes: the behaviour of Tasks 1 and 2, through the names in *Global Constraints* (the issue's title text, `car_read_failed`'s text, D44). It edits no code and can be written before they land, but it isn't picked onto the feature branch before they are.
 - Produces: nothing other tasks use.
 
 `tests/test_quality_scale.py` doesn't change: both rules stay `todo`.
@@ -1086,8 +1114,10 @@ integration reloads. Reloading the integration yourself, or restarting Home Assi
 
 When the integration starts, it reads the charger and then the car. If the car can't be read then (the
 service can't be reached, limits requests or returns an error), Home Assistant tries the start again by
-itself: first after a few seconds, then at longer gaps of up to 10 minutes. Until a try works, all the
-integration's entities are unavailable, *Charge* included. The integration's entry shows the reason.
+itself: first after a few seconds (or, while Home Assistant itself is starting, when it has started), then
+at longer gaps of up to 10 minutes. Until a try works, all the integration's entities are unavailable,
+*Charge* included. The integration's entry shows the reason, which can also be one of the texts for a
+service that can't be reached, limits requests or returns an error.
 ```
 
 - [ ] **Step 5: `CHANGELOG.md`**
@@ -1171,5 +1201,5 @@ git commit -F /tmp/car-device-lifecycle-task-3-msg.txt
 
 ## After the tasks (the controller)
 
-- Re-check Task 3's names against the code that landed: the issue's title text, `car_read_failed`'s text, D44.
+- Task 3 is held, not picked, until Tasks 1 and 2 are on the feature branch. Then re-review it against that head (the issue's title text, `car_read_failed`'s text, the behaviour its texts describe, D44) and pick it.
 - Learnings (way-of-working §1 step 8), the branch review, then the bump step (`docs/releasing.md`) as the last step before `branch ready`. The PR title is `feat: …`, and its body has a separate `Closes #41` and `Closes #42`.

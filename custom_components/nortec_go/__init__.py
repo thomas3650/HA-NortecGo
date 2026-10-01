@@ -9,6 +9,7 @@ from pynortecgo import Tokens
 from .charge_control import async_remove_charge_control
 from .const import DOMAIN
 from .coordinator import NortecGoCoordinator, car_device_identifier
+from .energy import EnergyStore
 from .entry import NortecGoConfigEntry, create_client, tokens_from_data, tokens_to_data
 from .prices import PriceStore
 
@@ -49,6 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
     coordinator = NortecGoCoordinator(hass, entry, client)
     await coordinator.charge_control.async_load()
     await coordinator.async_load_prices()
+    await coordinator.async_load_energy()
     await coordinator.async_config_entry_first_refresh()
     if not coordinator.has_car:
         # No car now: remove the car device (and so its entities) from an earlier setup.
@@ -67,8 +69,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> None:
-    """Delete the entry's stored prices and charge control, and its repair issue."""
+    """Delete the entry's stored prices, energy ledger and charge control, and its repair issue."""
     await PriceStore(hass, entry.entry_id).async_remove()
+    await EnergyStore(hass, entry.entry_id).async_remove()
     await async_remove_charge_control(hass, entry.entry_id)
 
 

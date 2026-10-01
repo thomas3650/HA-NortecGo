@@ -1,4 +1,4 @@
-"""Nortec Go sensors: the price for EV Smart Charging, the charge status, the open charge's energy, power and cost, the last charge's cost, the last read and the car's values."""
+"""Nortec Go sensors: the price for EV Smart Charging, the charge status, the open charge's energy, power and cost, the total energy, the last charge's cost, the last read and the car's values."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -127,6 +127,7 @@ async def async_setup_entry(
         NortecGoPriceSensor(coordinator),
         NortecGoChargeStatusSensor(coordinator),
         NortecGoLastReadSensor(coordinator),
+        NortecGoTotalEnergySensor(coordinator),
     ]
     entities.extend(
         NortecGoChargeSensor(coordinator, description) for description in CHARGE_SENSORS
@@ -238,6 +239,25 @@ class NortecGoChargeSensor(NortecGoChargerEntity, SensorEntity):
         if active is None:
             return self.entity_description.no_charge_value
         return self.entity_description.value_fn(active)
+
+
+class NortecGoTotalEnergySensor(NortecGoChargerEntity, SensorEntity):
+    """The energy delivered since the sensor was added, summed per charge (D47)."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    # total_increasing: a restart from 0 (a lost store, a re-added entry) is a new cycle.
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator: NortecGoCoordinator) -> None:
+        """Name the sensor Total energy."""
+        super().__init__(coordinator, "total_energy")
+
+    @property
+    def native_value(self) -> float:
+        """The ledger's total, rounded so the state carries no noise from adding floats."""
+        return round(self.coordinator.data.total_energy_kwh, 3)
 
 
 class NortecGoCostSensor(NortecGoChargerEntity, SensorEntity):

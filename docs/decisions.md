@@ -414,3 +414,14 @@ superseded. How to add one:
   force a release of the integration.
 - **Source:** [pynortecgo 0.8.0 spec](superpowers/specs/2026-10-01-pynortecgo-0.8.0-design.md), Decisions
   and §4
+
+### D47: Total energy is summed in the integration
+- **Date:** 2026-10-01 · **Status:** active
+- **Decision:** *Total energy* is summed by the integration from the per-charge energy `pynortecgo`
+  reports, in a stored ledger that starts at 0: each completed charge once, by its charge ID, at its final
+  energy, and the open charge at its live reading. It is `total_increasing` and never goes down: a charge
+  whose final record never arrives, or is lower, keeps its highest live reading.
+- **Why:** The client can't expose a lifetime meter (the owner, #75), and *Energy this charge* restarts
+  with every charge, so the Energy dashboard can miss charges. This replaces the owner's earlier answer on
+  #75 to wait for the client.
+- **Source:** [total energy spec](superpowers/specs/2026-10-01-total-energy-design.md), Decisions and §2

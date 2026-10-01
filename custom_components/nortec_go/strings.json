@@ -96,6 +96,9 @@
       "charge_energy": {
         "name": "Energy this charge"
       },
+      "total_energy": {
+        "name": "Total energy"
+      },
       "charging_power": {
         "name": "Charging power"
       },

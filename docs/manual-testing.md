@@ -42,7 +42,8 @@ integration's own checks pass, it sends a real start request. The rule is
 
 - Sign-ins are rate-limited. A restart or a reload reuses the stored session and needs none. Don't delete
   and re-add the entry to "try again": that costs a sign-in, and deleting it also drops the stored start
-  guard and any start-block repair, which are there to prevent a second card hold.
+  guard and any start-block repair, which are there to prevent a second card hold. Deleting the entry also
+  restarts *Total energy* at 0.
 - `config/` is shared by every branch: data a newer branch stored can break an older one. If a branch
   fails to load after a switch, suspect this first and tell the owner (fixing it means touching
   `config/`).
@@ -105,6 +106,7 @@ Charger:
 - [ ] *Charge*: its state only.
 - [ ] *Charge status*.
 - [ ] *Energy this charge*.
+- [ ] *Total energy*.
 - [ ] *Charging power*.
 - [ ] *Cost this charge*.
 - [ ] *Last charge cost*.

@@ -1,6 +1,6 @@
 """The cost of the open charge and of the last completed one, as pynortecgo reports them (D42).
 
-The one place that reads ActiveCharge.cost and Charger.last_charge.
+The one place that reads the charges' costs: ActiveCharge.cost and CompletedCharge.cost.
 """
 
 from datetime import datetime

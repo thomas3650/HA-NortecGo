@@ -1,6 +1,7 @@
 """Tests for the Nortec Go coordinator: polling, errors, prices and timers."""
 
 import asyncio
+import copy
 from datetime import UTC, datetime, timedelta
 import json
 import logging
@@ -22,6 +23,7 @@ from homeassistant.util import dt as dt_util
 from pynortecgo import (
     ApiError,
     AuthError,
+    Charger,
     ChargerNotFoundError,
     ChargerState,
     ChargeState,
@@ -55,8 +57,10 @@ from custom_components.nortec_go.coordinator import (
     car_device_identifier,
     interval_for,
 )
+from custom_components.nortec_go.energy import EnergyLedger, EnergyStore
 
 from .conftest import (
+    FAKE_CHARGE_ID,
     FAKE_CHARGER_ID,
     make_charger,
     make_forecast,
@@ -67,6 +71,7 @@ from .conftest import (
 # 2026-09-27 00:00 local (CEST) is 2026-09-26 22:00 UTC.
 MIDNIGHT = datetime(2026, 9, 26, 22, 0, tzinfo=UTC)
 STORE_KEY = "nortec_go.{}.prices"
+ENERGY_STORE_KEY = "nortec_go.{}.energy"
 
 
 @pytest.fixture(autouse=True)
@@ -1879,3 +1884,186 @@ async def test_rate_limit_retry_after_beats_the_fast_interval(
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert mock_client.get_charger.await_count == reads + 1
+
+
+def _charging(kwh: float) -> Charger:
+    """A charger with a charge open at the given energy."""
+    return make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING, charge_kwh=kwh
+    )
+
+
+async def test_first_setup_creates_and_saves_the_energy_ledger(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """With no stored ledger, setup makes one that starts now and saves it before any charge."""
+    freezer.move_to(MIDNIGHT)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    key = ENERGY_STORE_KEY.format(mock_config_entry.entry_id)
+    assert hass_storage[key]["version"] == 1
+    assert hass_storage[key]["data"] == {
+        "since": "2026-09-26T22:00:00+00:00",
+        "settled_kwh": 0.0,
+        "settled_id": None,
+        "settled_at": None,
+        "provisional": [],
+    }
+    assert coordinator.energy_ledger.since == MIDNIGHT
+    assert coordinator.data.total_energy_kwh == 0.0
+
+
+async def test_stored_energy_ledger_loaded_at_setup(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A stored ledger is loaded, and a charge open across the restart carries on from it."""
+    freezer.move_to(MIDNIGHT)
+    key = ENERGY_STORE_KEY.format(mock_config_entry.entry_id)
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": key,
+        "data": {
+            "since": "2026-09-20T08:00:00+00:00",
+            "settled_kwh": 40.0,
+            "settled_id": "fake-earlier-charge-id",
+            "settled_at": "2026-09-25T06:15:00+00:00",
+            "provisional": [
+                {
+                    "id": FAKE_CHARGE_ID,
+                    "kwh": 2.0,
+                    "seen_at": "2026-09-26T21:55:00+00:00",
+                }
+            ],
+        },
+    }
+    mock_client.get_charger.return_value = _charging(3.5)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.data.total_energy_kwh == 43.5
+    assert coordinator.energy_ledger.since == datetime(2026, 9, 20, 8, 0, tzinfo=UTC)
+    assert hass_storage[key]["data"]["provisional"] == [
+        {"id": FAKE_CHARGE_ID, "kwh": 3.5, "seen_at": "2026-09-26T22:00:00+00:00"}
+    ]
+
+
+async def test_energy_ledger_saved_only_when_it_changes(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A read that changes nothing doesn't save; a read with an open charge does."""
+    freezer.move_to(MIDNIGHT)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    with patch.object(EnergyStore, "async_save", autospec=True) as save:
+        freezer.tick(INTERVAL_IDLE)
+        await coordinator.async_refresh()
+        save.assert_not_awaited()
+        assert coordinator.data.total_energy_kwh == 0.0
+
+        mock_client.get_charger.return_value = _charging(1.0)
+        freezer.tick(INTERVAL_IDLE)
+        await coordinator.async_refresh()
+        save.assert_awaited_once()
+        assert coordinator.data.total_energy_kwh == 1.0
+
+
+async def test_failed_reads_leave_the_energy_ledger(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A failed charger read, and a read whose car read is rejected, move nothing."""
+    freezer.move_to(MIDNIGHT)
+    mock_client.get_charger.return_value = _charging(1.0)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    key = ENERGY_STORE_KEY.format(mock_config_entry.entry_id)
+    ledger = coordinator.energy_ledger
+    stored = copy.deepcopy(hass_storage[key]["data"])
+
+    freezer.tick(INTERVAL_CHARGING)
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert coordinator.energy_ledger is ledger
+    assert hass_storage[key]["data"] == stored
+
+    mock_client.get_charger.side_effect = None
+    mock_client.get_charger.return_value = _charging(2.0)
+    mock_client.get_vehicle.side_effect = AuthError("token rejected")
+    freezer.tick(INTERVAL_CHARGING)
+    with patch.object(ConfigEntry, "async_start_reauth"):
+        await coordinator.async_read_now(with_car=True)
+    assert coordinator.energy_ledger is ledger
+    assert hass_storage[key]["data"] == stored
+    assert coordinator.data.total_energy_kwh == 1.0
+
+
+async def test_wrong_shaped_energy_store_starts_a_new_ledger(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A stored ledger of the wrong shape is replaced by a new one that starts at 0."""
+    freezer.move_to(MIDNIGHT)
+    key = ENERGY_STORE_KEY.format(mock_config_entry.entry_id)
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": key,
+        "data": {"since": "nonsense"},
+    }
+    await setup_integration(hass, mock_config_entry)
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert _coordinator(mock_config_entry).data.total_energy_kwh == 0.0
+    assert hass_storage[key]["data"]["since"] == "2026-09-26T22:00:00+00:00"
+    assert "Ignoring the stored energy total" in caplog.text
+
+
+async def test_control_change_during_the_energy_save_is_kept(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A stop that returns while the ledger is saved is in the data the read returns."""
+    freezer.move_to(MIDNIGHT)
+    mock_client.get_charger.return_value = _charging(1.0)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    control = coordinator.charge_control
+    assert _switch(hass) == "on"
+
+    async def _save(store: EnergyStore, ledger: EnergyLedger) -> None:
+        # The stop returns while the ledger is written. The read it asks for fails, so only
+        # the read under test can carry the change.
+        await control.async_stop()
+        mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+
+    freezer.tick(INTERVAL_CHARGING)
+    mock_client.get_charger.return_value = _charging(2.0)
+    with patch.object(EnergyStore, "async_save", _save):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    mock_client.stop_charge.assert_awaited_once()
+    assert control.state.stop_pending
+    assert coordinator.data.control == control.state
+    assert _switch(hass) == "off"

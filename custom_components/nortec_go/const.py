@@ -33,6 +33,10 @@ MISSING_SLOT_PRICE: Final = 10.0
 PRICE_STORE_VERSION: Final = 2
 PRICE_STORE_KEY: Final = "nortec_go.{entry_id}.prices"
 
+# The Total energy ledger (D47).
+ENERGY_STORE_VERSION: Final = 1
+ENERGY_STORE_KEY: Final = "nortec_go.{entry_id}.energy"
+
 # The charge switch's start guard (D26).
 START_CONFIRM_TIMEOUT: Final = timedelta(minutes=10)
 # How long the switch shows off after a stop while the charger still reports the charge (D29).

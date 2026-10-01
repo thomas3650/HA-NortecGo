@@ -139,6 +139,10 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   the coordinator afterwards.
 - `DataUpdateCoordinator.last_exception` isn't cleared by a successful read. Show it as the current error
   only while `last_update_success` is false.
+- In `_async_update_data`, don't await between taking a snapshot of state that a callback can change (the
+  charge control's state, here) and returning the data. A change made during the await updates the
+  coordinator's data, and is then overwritten by the older snapshot when the read returns. Take the snapshot
+  after the last await.
 
 ## Devices and entities
 
@@ -165,9 +169,16 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   statistics. Nothing in the integration has to handle it. A change HA can convert (kWh to Wh) keeps the
   statistics, in the stored unit.
 - For a sensor with `state_class` `total_increasing`, the recorder's statistics skip non-numeric states
-  (unknown, unavailable) and start a new cycle only when the value drops below 90% of the previous one; a
-  drop to 90% or more is logged as a dip, not a reset. So a per-charge counter may go unknown between
-  charges, but a new cycle whose first value is at least 90% of the last one is missed.
+  (unknown, unavailable) and start a new cycle only when the value drops below 90% of the previous one: the
+  sum carries on, and the new value is added in full. The test is against the sensor's whole value, so on a
+  small total a small drop is a new cycle too. A drop to 90% or more is a dip: its negative change is added
+  to the sum, and from an entity's second dip after a start Home Assistant logs a warning, once per run,
+  that asks the user to report it to the integration. So a per-charge counter may go unknown between
+  charges, but a new cycle whose first value is at least 90% of the last one is missed, and a
+  `total_increasing` value should never go down by itself.
+- A value that can restart from 0 outside the integration's control (a lost store, an entry removed and
+  added again) is `total_increasing`, not plain `total` (see the next item for what `total` does with a
+  drop).
 - For a sensor with `state_class` `total`, the recorder's statistics depend on `last_reset`. Without it, a
   drop counts as a negative change, so a value that restarts per cycle gives a sum that is just the current
   value. With it, a changed `last_reset` starts a new cycle and the new value is added in full, and the same

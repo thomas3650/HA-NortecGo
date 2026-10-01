@@ -233,7 +233,7 @@ Under *Unreleased*:
 - **Date:** 2026-10-01 · **Status:** active
 - **Decision:** *Cost this charge* shows the open charge's cost as `pynortecgo` reports it, with no state
   class; *Last charge cost* shows the last completed charge's billed total as `total`, with `last_reset` at
-  the charge's completion time. No cost is computed from energy and price. The unit is the charger's
+  the charge's completion time. No cost is computed from energy and price, and the unit is the charger's
   currency, then D34's order.
 - **Why:** The owner chose exact values over estimates (#75). A per-charge value without `last_reset` gives a
   wrong statistics sum, and the live value ends below the bill, so only the billed totals are summed.
@@ -249,7 +249,7 @@ Under *Unreleased*:
 - `make_charger` gets the keyword arguments `charge_cost: float | None = None`,
   `currency: str | None = "DKK"` and `last_charge: CompletedCharge | None = None`, and passes them on. The
   charge ID stays as it is: `FAKE_CHARGE_ID = "fake-charge-id"` (a new constant for today's literal) when a
-  charge is open, `None` otherwise.
+  charge is open, `None` otherwise. `tests/test_diagnostics.py` imports it and drops its own copy.
 - `make_completed_charge(*, charge_id: str = "fake-last-charge-id", cost: float = 42.5, kwh: float = 18.4,
   completed_at: datetime = FAKE_COMPLETED_AT) -> CompletedCharge`, with `FAKE_COMPLETED_AT =
   datetime(2026, 9, 25, 6, 15, tzinfo=UTC)`. Its default ID differs from `FAKE_CHARGE_ID`, so an open-charge

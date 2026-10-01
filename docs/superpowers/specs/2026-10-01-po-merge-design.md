@@ -32,6 +32,7 @@ Proposed by the team lead and ruled by the owner through the PO (issue #84, 2026
 | When | Right away, once the PR is ready and the required checks are green on the head commit the PO checked |
 | How | `gh pr merge <n> --squash --match-head-commit <sha>`; never `--admin`, never `--auto`. An open review thread, a changes-requested review or a comment made after ready goes to the owner; the PO resolves no thread to get a merge through |
 | A PR behind `main` | The resumed team lead updates it (merging `origin/main` in, and for a releasing PR the bump step again). The PO then re-runs `scripts/smoke` on the new head before it merges |
+| Proposed, for the owner to confirm with the spec | A PR comment or review made after ready stops the PO's merge until the owner answers (stricter than the ruling, which named an open thread and changes requested). An owner-merge PR that is behind `main` is brought up to date only when the owner says they are about to merge it |
 | Hard rule 1 | It names who merges |
 | Decision log | D45: *The PO merges ready PRs*. D35's status becomes `active; the owner merges superseded by D45` |
 | Title | `process: the PO merges ready PRs (#84)`; non-releasing, so no `CHANGELOG.md` entry and no bump |
@@ -72,7 +73,7 @@ rule. Other places point to it.
 The PO merges a PR when all of these hold:
 - the PO took it through *From branch ready to PR ready* in this or an earlier session, and marked it ready;
 - it is not an owner-merge PR;
-- nothing on the PR waits for the owner (§2, step 2).
+- nothing on the PR waits for the owner (§2, step 3).
 
 A PR is **owner-merge** when its diff touches something §8 *Escalation* always escalates for and a diff can
 touch. *Merging* points at that list rather than repeating it, and names the one exception:
@@ -92,29 +93,42 @@ merge and why, and goes on. The PR description gets one line saying who merges i
 why).
 
 **What the PO records.** When it marks a PR ready, the PO writes to the PR's entry in
-`.git/po-sessions.json`: that it is ready, who merges it (`po` or `owner`), and the head commit the smoke
-test ran on (the *checked head*). A later session reads it there. If the entry or the checked head is
+`.git/po-sessions.json`: that it is ready, who merges it (`po` or `owner`), the head commit the smoke test
+ran on (the *checked head*), and the *cleared time* (§2). A later session reads it there. If the entry or the checked head is
 missing, or the PR's head is a different commit, the PR goes through *From branch ready to PR ready* again
 before any merge.
 
 ### 2. The merge
 
-After `gh pr ready` (§8 *From branch ready to PR ready*, step 6), for a PR the PO may merge:
+After `gh pr ready` (§8 *From branch ready to PR ready*, step 6), for a PR the PO may merge, after a
+`git fetch`:
 
-1. **The required checks have run and passed on the checked head.**
-   `gh pr checks <n> --required --json name,bucket` shows all six in bucket `pass`; the PO waits while any
-   is `pending`. `version-check` must be `pass`, not `skipping`: on a draft it is skipped, a skipped check
-   counts as green for GitHub, and its real run starts only after `gh pr ready`. A failed check goes back to
-   the team lead with the finding (resumed, as in *After ready*).
-2. **Nothing waits for the owner.** `gh pr view <n> --json reviewDecision,mergeStateStatus,headRefOid,comments`
-   and the PR's review threads show: no changes-requested review, no unresolved review thread, no PR comment
-   or review made after the PR was marked ready, and the head is still the checked head. Otherwise the PO
-   escalates to the owner and doesn't merge. It resolves no thread and dismisses no review. (PRs in the PO
-   flow are opened under the owner's account, so the owner can't request changes on them; a comment is the
-   owner's way to stop a merge. The PO itself writes nothing on a PR after ready except its description.)
-3. **Up to date.** If `mergeStateStatus` is `BEHIND`, go to *Behind `main`* below.
+1. **Up to date.** `origin/main` is merged into the PR's head
+   (`git merge-base --is-ancestor origin/main origin/<branch>`). If not, go to *Behind `main`* below; that
+   covers a branch with a merge conflict too.
+2. **The required checks have run and passed on the checked head.**
+   `gh pr checks <n> --required --json name,bucket` shows all six in bucket `pass`. The PO waits while any is
+   `pending`, and while `version-check` is `skipping`: on a draft it is skipped, a skipped check counts as
+   green for GitHub, and its real run starts only after `gh pr ready`. A failed check goes back to the team
+   lead with the finding (resumed, as in *After ready*).
+3. **Nothing waits for the owner.** All of these hold:
+   - the head is still the checked head, and no review has the state `CHANGES_REQUESTED`
+     (`gh pr view <n> --json headRefOid,reviews,comments`);
+   - no review thread is unresolved (`gh api graphql`, the PR's `reviewThreads { isResolved }`; threads from
+     the owner's review of the spec and plan on the draft count too);
+   - no review or PR comment is newer than the PR's *cleared time* (below).
+
+   Otherwise the PO escalates to the owner and doesn't merge. It resolves no thread and dismisses no review.
+   (PRs in the PO flow are opened under the owner's account, so the owner can't request changes on them; a
+   comment is the owner's way to stop a merge. The PO itself writes nothing on a PR after ready except its
+   description.)
 4. **Merge the checked head:** `gh pr merge <n> --squash --match-head-commit <checked head>`. Never `--admin`
-   and never `--auto`. If GitHub still refuses, the PO escalates.
+   and never `--auto`. If GitHub refuses, the PO escalates.
+
+**The cleared time** is part of what the PO records (§1): first the time it marked the PR ready. When the
+owner answers an escalation from step 3 with a go-ahead, the PO sets it to the time of that answer, so the
+comments the owner has dealt with no longer stop the merge; an unresolved thread still does, until the owner
+resolves it. A new checked head (after *Behind `main`*) doesn't change it.
 
 **Behind `main`.** The PO resumes the team lead (*After ready*: the issue worktree is re-created). The team
 lead merges `origin/main` in, for a releasing PR runs the bump step again (`releasing.md` → *Two releasing
@@ -124,15 +138,19 @@ check only for the title, the bump and the PR description; no `gh pr ready` (it 
 clean-up runs again: the team lead is stopped and its worktrees and `wt/` branches are removed. The PO
 records the new checked head and starts again at step 1.
 
-To save a wasted smoke run, step 1 of *From branch ready to PR ready* gains a check: a branch that
+To save a wasted smoke run, step 1 of *From branch ready to PR ready* gains the same test: a branch that
 `origin/main` isn't merged into goes back to the team lead before the smoke test.
 
 **One merge at a time, in order.** The PRs the PO may merge form a queue, in the order they became ready.
 The PO merges the first, finishes §3 including the release check, and only then turns to the next. Only the
 next PR in the queue is brought up to date; the ones behind it wait, since the next merge would leave them
-behind again. Owner-merge PRs are not in the queue and block nothing. When the queue is empty, the PO brings
-each owner-merge PR that is behind `main` up to date the same way (*Behind `main`*, without the merge) and
-tells the owner, so that it is mergeable when the owner comes to it.
+behind again. A PR that waits for the owner's answer (step 3, or a refusal in step 4) steps out of the queue
+until the answer comes, and then rejoins it at the front.
+
+**Owner-merge PRs** are not in the queue and block nothing. One that falls behind `main` stays as it is
+until the owner says they are about to merge it; the PO then brings it up to date (*Behind `main`*, without
+the merge) and tells the owner. Updating it after every PO merge would cost a team-lead resume and a smoke
+run each time.
 
 The loop also picks up a ready PR the PO may merge that isn't merged yet (checks still running when a session
 ended, an escalation since answered, a PR waiting for its turn), and carries on here.
@@ -154,7 +172,8 @@ or the owner merged it (the loop finds the owner's merges, as today).
    (§6 *Git guards*). Delete the merged local branch (`git branch -D <type>/<topic>`; its worktrees went at
    ready). Mark the PR's entry in `.git/po-sessions.json` as merged; its D-numbers stay recorded.
 6. **Tell the owner** in the terminal: which PR merged, and the version it released, if any.
-7. **The next PR in the queue** (§2), if there is one; it is now behind `main`.
+7. **The next PR in the queue** (§2), if there is one; it is now behind `main`. Owner-merge PRs that are
+   behind stay as they are (§2, *Owner-merge PRs*).
 8. **Pick the next issue** (*Picking and starting an issue*).
 
 ### 4. Where the rule changes
@@ -178,10 +197,10 @@ The decision-log entry:
 ```markdown
 ### D45: The PO merges ready PRs
 - **Date:** 2026-10-01 · **Status:** active
-- **Decision:** In the PO flow the PO squash-merges a PR it has made ready, once the required checks are
-  green on the head it checked, releasing PRs included, and then checks `main` and the release. PRs that
+- **Decision:** In the PO flow the PO squash-merges a PR it has made ready, releasing PRs included, once
+  the required checks are green on the head it checked, and then checks `main` and the release. PRs that
   touch charge start or stop, auth, tokens or reauth, a hard rule, `.claude/`, `.pre-commit-config.yaml` or
-  `.github/workflows/` stay the owner's to merge. Nobody else merges.
+  `.github/workflows/` stay the owner's to merge, and nobody else merges.
 - **Why:** The owner's ruling (#84): a finished PR shouldn't wait for the owner to press merge, while the
   changes that can cost money, lock the account or weaken the process keep the owner's eye.
 - **Source:** [PO merge spec](superpowers/specs/2026-10-01-po-merge-design.md), Decisions

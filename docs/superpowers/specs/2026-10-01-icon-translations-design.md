@@ -28,7 +28,7 @@ The PO stood in for the owner in the brainstorm (2026-10-01, PO flow) and approv
 | *Last read* and *Last seen* | No icon of their own. The issue lists *Last read* "where the device class gives none"; the timestamp device class gives a clock, so it is left out |
 | The cost sensors, *Total energy*, the car entities | Added since the issue was written. Only *Charge limit* has no device class and gets an icon; the others keep their device-class icon |
 | The *Charge* switch | A charger icon when off, a charging icon when on. The switch is also on while a charge is starting or paused; the charging icon shows then too, and *Charge status* carries the detail |
-| The car-gone repair (the owner's comment on #43) | No icon: a repair issue has no icon of its own, and `icons.json` has no section for one |
+| The car-gone repair (the owner's comment on #43) | No icon: a repair issue shows no icon of its own (the `issues` section of `icons.json` is for the sections of a fix flow's forms, and this fix flow has none) |
 | *Charge status* | A default icon, also shown while the status is unknown, and one icon for each of the eight states |
 | User docs | `docs/user/nortec_go.md` is unchanged: it describes no icons |
 | Decision log | No entry |

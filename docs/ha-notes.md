@@ -55,9 +55,11 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   `docs/core/integration-quality-scale/rules/`. Most say "There are no exceptions to this rule", yet core
   marks a rule `exempt`, with a comment, when what it governs doesn't exist (`action-setup` for an
   integration without service actions).
-- hassfest's `icons.json` check runs in CI only, also on a draft PR. `tests/test_icons.py` mirrors what is
-  known of it: only the `entity` section, a `default` in every entry, and no state icon equal to its
-  default.
+- hassfest's `icons.json` check (core's `script/hassfest/icons.py`) runs on a draft PR too. In the `entity`
+  section it wants every icon to start with `mdi:`, allows only the keys `default`, `state`, `range` and
+  `state_attributes` in an entry, and refuses a state icon equal to its entry's `default`.
+  `tests/test_icons.py` checks the same and is stricter by choice: only the `entity` section, and a
+  `default` in every entry.
 
 ## Testing
 

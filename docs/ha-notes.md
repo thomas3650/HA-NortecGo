@@ -143,6 +143,13 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   (unknown, unavailable) and start a new cycle only when the value drops below 90% of the previous one; a
   drop to 90% or more is logged as a dip, not a reset. So a per-charge counter may go unknown between
   charges, but a new cycle whose first value is at least 90% of the last one is missed.
+- For a sensor with `state_class` `total`, the recorder's statistics depend on `last_reset`. Without it, a
+  drop counts as a negative change, so a value that restarts per cycle gives a sum that is just the current
+  value. With it, a changed `last_reset` starts a new cycle and the new value is added in full, and the same
+  `last_reset` adds only the change in value. The first value ever recorded sets the zero point and isn't
+  added. So a per-cycle value needs `last_reset`, or no state class.
+- `device_class` `monetary` allows only the state class `total`, or none.
+- A sensor's display precision doesn't change its state string: the state is the native value as it is.
 
 ## Diagnostics
 

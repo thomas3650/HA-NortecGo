@@ -96,3 +96,27 @@ frontmatter, say) to the controller. Found in #84.
 
 A gate piped through `tail` or `grep` ends with that command's exit code, so a failing gate can look green.
 Run the gates unpiped, or read the gate's own status (in zsh, `${pipestatus[1]}`). Found in #40.
+
+## 2026-10-01: A dry run of a breaking `pynortecgo` release
+
+Before the pins change, unpack the new client outside the repo and type-check against it:
+
+`uv pip install --no-deps --target /tmp/<dir> pynortecgo==X.Y.Z`, then `MYPYPATH=/tmp/<dir> uv run mypy`
+
+The errors list every read and every fixture that has to move, so a spec can count them before any code
+changes. The environment stays on the old version. Found in #81.
+
+## 2026-10-01: mypy doesn't narrow a function call
+
+After `x in (A, B)` or `x is A`, mypy narrows `x` when it is an attribute or a local variable, but not when
+it is the result of a function call: `if f(c) in STATES: return f(c).value` fails with `union-attr` when
+`f` can return `None`. When a field read moves behind a helper function and the code uses the narrowed
+value, bind the helper's result to a local first. Found in #81.
+
+## 2026-10-01: Mutate the moved lines to test "behaviour unchanged"
+
+A change that claims "behaviour is unchanged, and the untouched tests prove it" is only as good as those
+tests. To check them, change each moved line in a way that alters behaviour (a mutant) and run the suite. A
+mutant that survives is a behaviour no test pins. Add that test before the change, on the old code, so it
+pins today's behaviour, and see it fail against the mutant. In #81, 2 of 15 mutants survived, both in the
+charge control.

@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from pynortecgo import Charger, ChargeState, Vehicle
 
+from .charge_control import charge_state
 from .coordinator import NortecGoCoordinator
 from .entity import NortecGoCarEntity, NortecGoChargerEntity
 from .entry import NortecGoConfigEntry
@@ -49,7 +50,7 @@ CHARGER_BINARY_SENSORS: tuple[NortecGoChargerBinarySensorDescription, ...] = (
     NortecGoChargerBinarySensorDescription(
         key="charging",
         device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
-        value_fn=lambda charger: charger.charge_state is ChargeState.CHARGING,
+        value_fn=lambda charger: charge_state(charger) is ChargeState.CHARGING,
     ),
 )
 

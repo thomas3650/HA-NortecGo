@@ -1426,3 +1426,23 @@ async def test_clear_block_when_not_blocked(
     control.clear_block()
     assert control.state == IDLE
     on_change.assert_not_called()
+
+
+async def test_stop_without_an_open_charge_calls_stop_charge(
+    control: ChargeControl, client: AsyncMock
+) -> None:
+    """A read charger with no open charge: the stop is still sent; the client decides."""
+    control.on_charger_read(CONNECTED, control.start_attempts)
+    await control.async_stop()
+    client.stop_charge.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("control", "expected"), [(PENDING, "starting"), (STOP_ASKED, "stopping")]
+)
+def test_charge_status_pending_start_before_unknown_charger_state(
+    control: ChargeControlState, expected: str
+) -> None:
+    """A pending start with no charge seen shows before the charger's unknown state."""
+    charger = make_charger(is_connected=True, state=ChargerState.UNKNOWN)
+    assert charge_status(charger, control) == expected

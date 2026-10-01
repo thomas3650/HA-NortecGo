@@ -184,14 +184,19 @@ version needs), runs the usual gates, and works through this checklist before me
   they hold no email, password, tokens, device ID or request bodies. The integration passes them into its
   logs (`CLAUDE.md`, hard rule 5).
 - [ ] If `test_client_model_fields_are_pinned` in `tests/test_diagnostics.py` fails, the diagnostics show
-  a changed `Charger`, `CompletedCharge` or `Vehicle` field: decide for each new field whether it is a
-  secret, add it to `TO_REDACT` in `diagnostics.py` if so, and update the pinned sets (D38).
+  a changed `Charger`, `ActiveCharge`, `CompletedCharge` or `Vehicle` field: decide for each new field
+  whether it is a secret, add it to `TO_REDACT` in `diagnostics.py` if so, and update the pinned sets (D38).
 - [ ] Look for new exception classes the charger, car, price, start and stop calls can raise, and give each
   the right handling. The charger read's catch-all only keeps an unknown error from crashing the read.
 - [ ] Read the client's changelog for breaking changes to the models the entities use.
 
 Title such a PR by what it changes for users (*PR titles*). If users see a difference, it's a `feat` or
-`fix` with a changelog entry and the bump step. If they don't, it's `chore(deps): …`.
+`fix` with a changelog entry and the bump step. If they don't, it's `chore(deps): …`. A change only in the
+shape of the diagnostics download isn't something users see, as long as what the user docs say the file
+keeps and leaves out stays true (D46).
+
+For a release that breaks the models, [`notes.md`](notes.md) has a dry run that lists what has to move
+before the pins change.
 
 ## Bumping Home Assistant
 

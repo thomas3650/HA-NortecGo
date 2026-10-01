@@ -12,6 +12,7 @@ from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from pynortecgo import (
+    ActiveCharge,
     Charger,
     ChargerNotFoundError,
     ChargerState,
@@ -90,16 +91,11 @@ CHARGER_FIELDS = {
     "state",
     "state_raw",
     "is_connected",
-    "charge_state",
-    "charge_state_raw",
-    "charge_id",
-    "can_stop",
-    "charge_kwh",
-    "charge_kw",
-    "charge_cost",
     "currency",
+    "active_charge",
     "last_charge",
 }
+ACTIVE_CHARGE_FIELDS = {"id", "state", "state_raw", "can_stop", "kwh", "kw", "cost"}
 COMPLETED_CHARGE_FIELDS = {"id", "cost", "kwh", "completed_at"}
 VEHICLE_FIELDS = {
     "id",
@@ -212,14 +208,16 @@ async def test_diagnostics_output(
                 "state": "busy-charging",
                 "state_raw": "busy-charging",
                 "is_connected": True,
-                "charge_state": "charging",
-                "charge_state_raw": "charging",
-                "charge_id": FAKE_CHARGE_ID,
-                "can_stop": True,
-                "charge_kwh": 4.2,
-                "charge_kw": 7.1,
-                "charge_cost": 9.87,
                 "currency": "DKK",
+                "active_charge": {
+                    "id": FAKE_CHARGE_ID,
+                    "state": "charging",
+                    "state_raw": "charging",
+                    "can_stop": True,
+                    "kwh": 4.2,
+                    "kw": 7.1,
+                    "cost": 9.87,
+                },
                 "last_charge": {
                     "id": FAKE_LAST_CHARGE_ID,
                     "cost": 42.5,
@@ -432,5 +430,6 @@ async def test_unloaded_entry(
 def test_client_model_fields_are_pinned() -> None:
     """A pynortecgo bump that changes these fields fails here: judge each new one (D38)."""
     assert {f.name for f in fields(Charger)} == CHARGER_FIELDS
+    assert {f.name for f in fields(ActiveCharge)} == ACTIVE_CHARGE_FIELDS
     assert {f.name for f in fields(CompletedCharge)} == COMPLETED_CHARGE_FIELDS
     assert {f.name for f in fields(Vehicle)} == VEHICLE_FIELDS

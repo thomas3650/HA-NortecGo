@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL
 from homeassistant.core import HomeAssistant
 from pynortecgo import (
+    ActiveCharge,
     Charger,
     ChargerState,
     ChargeState,
@@ -69,14 +70,18 @@ def make_charger(
         state=state,
         state_raw=state.value,
         is_connected=is_connected,
-        charge_state=charge_state,
-        charge_state_raw=None if charge_state is None else charge_state.value,
-        charge_id=None if charge_state is None else FAKE_CHARGE_ID,
-        can_stop=None if charge_state is None else True,
-        charge_kwh=charge_kwh,
-        charge_kw=charge_kw,
-        charge_cost=charge_cost,
         currency=currency,
+        active_charge=None
+        if charge_state is None
+        else ActiveCharge(
+            id=FAKE_CHARGE_ID,
+            state=charge_state,
+            state_raw=charge_state.value,
+            can_stop=True,
+            kwh=charge_kwh,
+            kw=charge_kw,
+            cost=charge_cost,
+        ),
         last_charge=last_charge,
     )
 

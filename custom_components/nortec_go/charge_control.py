@@ -86,9 +86,15 @@ class ChargeControlState:
     stop_pending: bool = False
 
 
+def charge_state(charger: Charger) -> ChargeState | None:
+    """The open charge's state, or None when no charge is open."""
+    active = charger.active_charge
+    return None if active is None else active.state
+
+
 def charge_is_open(charger: Charger) -> bool:
     """A charge is open: the same test pynortecgo uses for ChargeAlreadyActiveError."""
-    return charger.charge_state is not None or charger.state in (
+    return charge_state(charger) is not None or charger.state in (
         ChargerState.BUSY,
         ChargerState.BUSY_CHARGING,
         ChargerState.BUSY_NON_CHARGING,
@@ -104,7 +110,7 @@ def is_charge_on(charger: Charger, control: ChargeControlState) -> bool:
     """The Charge switch's state (§2.1; the pending stop, D29)."""
     if control.stop_pending or control.stop_asked:
         return False
-    return control.start_pending or charger.charge_state in _CHARGE_ON
+    return control.start_pending or charge_state(charger) in _CHARGE_ON
 
 
 def charge_status(charger: Charger, control: ChargeControlState) -> str | None:
@@ -115,13 +121,11 @@ def charge_status(charger: Charger, control: ChargeControlState) -> str | None:
         return "stopping"
     if control.start_pending and not charge_is_open(charger):
         return "stopping" if control.stop_asked else "starting"
-    if (
-        charger.state is ChargerState.UNKNOWN
-        or charger.charge_state is ChargeState.UNKNOWN
-    ):
+    of_charge = charge_state(charger)
+    if charger.state is ChargerState.UNKNOWN or of_charge is ChargeState.UNKNOWN:
         return None
-    if charger.charge_state in _STATUS_FROM_CHARGE:
-        return charger.charge_state.value
+    if of_charge in _STATUS_FROM_CHARGE:
+        return of_charge.value
     if charger.state is ChargerState.BUSY_NON_RELEASED:
         return "not_released"
     if not charger.is_connected:
@@ -319,7 +323,7 @@ class ChargeControl:
                     self._changed()
                 self._request_read()
                 return
-            if charger is not None and charger.charge_state is ChargeState.STOPPING:
+            if charger is not None and charge_state(charger) is ChargeState.STOPPING:
                 return
             await self._async_send_stop()
 
@@ -389,7 +393,7 @@ class ChargeControl:
         # Only a read with evidence ends it here; the stop timer owns the time limit (D31).
         if (
             self._stop_pending_since is not None
-            and charger.charge_state not in _CHARGE_ON
+            and charge_state(charger) not in _CHARGE_ON
         ):
             self._end_stop_pending()
         if start_attempts != self.start_attempts:

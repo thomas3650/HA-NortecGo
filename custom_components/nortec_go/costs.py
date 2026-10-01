@@ -1,6 +1,6 @@
 """The cost of the open charge and of the last completed one, as pynortecgo reports them (D42).
 
-The one place that reads Charger.charge_cost and Charger.last_charge.
+The one place that reads ActiveCharge.cost and Charger.last_charge.
 """
 
 from datetime import datetime
@@ -10,12 +10,13 @@ from pynortecgo import Charger
 
 def charge_cost(charger: Charger) -> float | None:
     """The open charge's cost so far, or its billed total once it is the last completed charge."""
-    if charger.charge_id is None:
+    active = charger.active_charge
+    if active is None:
         return None
     last = charger.last_charge
-    if last is not None and last.id == charger.charge_id:
+    if last is not None and last.id == active.id:
         return last.cost
-    return charger.charge_cost
+    return active.cost
 
 
 def last_charge_cost(charger: Charger) -> float | None:

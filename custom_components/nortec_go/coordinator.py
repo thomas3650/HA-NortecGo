@@ -31,7 +31,12 @@ from pynortecgo import (
     VehicleNotFoundError,
 )
 
-from .charge_control import ChargeControl, ChargeControlState, charge_status
+from .charge_control import (
+    ChargeControl,
+    ChargeControlState,
+    charge_state,
+    charge_status,
+)
 from .const import (
     CAR_GONE_ISSUE_ID,
     CAR_READ_MIN_AGE,
@@ -81,7 +86,7 @@ def interval_for(
         if control.start_pending or control.stop_pending or age < FAST_READ_MAX_AGE:
             return INTERVAL_CHANGING
         return INTERVAL_CHARGING  # the charger's own state, not seen for a while: a charge is open
-    if charger.charge_state is ChargeState.CHARGING:
+    if charge_state(charger) is ChargeState.CHARGING:
         return INTERVAL_CHARGING
     return INTERVAL_IDLE
 

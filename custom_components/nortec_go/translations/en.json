@@ -175,6 +175,9 @@
     },
     "read_failed": {
       "message": "Reading the charger failed. Home Assistant will try again."
+    },
+    "price_read_failed": {
+      "message": "Reading the prices failed. The known prices are kept. Check the Home Assistant logs."
     }
   },
   "issues": {

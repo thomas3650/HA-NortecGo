@@ -18,6 +18,13 @@ All notable changes to this project are documented in this file. The format is b
 - A start refused because the charger reports an unknown state says so, instead of showing a general
   failure.
 
+## [0.1.2] - 2026-10-01
+
+### Fixed
+
+- The *Refresh* button shows an error when its charger read or its price read fails, instead of succeeding
+  silently. A `button.press` step in a script or an automation fails then too.
+
 ## [0.1.1] - 2026-09-29
 
 ### Fixed

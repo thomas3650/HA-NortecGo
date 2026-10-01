@@ -374,3 +374,11 @@ superseded. How to add one:
 - **Why:** The owner chose exact values over estimates (#75). A per-charge value without `last_reset` gives a
   wrong statistics sum, and the live value ends below the bill, so only the billed totals are summed.
 - **Source:** [session cost spec](superpowers/specs/2026-10-01-session-cost-design.md), Decisions and §3
+
+### D43: A Refresh press raises when its read fails
+- **Date:** 2026-10-01 · **Status:** active
+- **Decision:** A press on *Refresh* raises a translated error when its charger read or its price read
+  fails. The price read always runs, and the charger's error is the one raised when both fail.
+- **Why:** a silent press during an outage lets the owner think the data is fresh, and the quality scale's
+  `action-exceptions` rule asks actions to raise when they fail.
+- **Source:** [refresh feedback spec](superpowers/specs/2026-10-01-refresh-feedback-design.md), Decisions

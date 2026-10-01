@@ -829,6 +829,71 @@ async def test_later_price_auth_error_starts_reauth(
     mock_client.login.assert_not_awaited()
 
 
+async def test_price_read_raises_when_asked(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A failed price read asked to raise raises our text, after marking the reads as failing."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    error = NortecGoConnectionError("network down")
+    mock_client.get_price_forecast.side_effect = error
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await coordinator.async_read_prices(raise_on_failure=True)
+
+    raised = exc_info.value
+    assert type(raised) is HomeAssistantError
+    assert raised.translation_domain == DOMAIN
+    assert raised.translation_key == "price_read_failed"
+    assert raised.__cause__ is error
+    assert coordinator.price_read_failing is True
+
+
+async def test_price_read_auth_error_raises_when_asked(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A rejected price read asked to raise starts reauth first, then raises auth_failed."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    error = AuthError("token rejected")
+    mock_client.get_price_forecast.side_effect = error
+    with (
+        patch.object(ConfigEntry, "async_start_reauth") as start_reauth,
+        pytest.raises(HomeAssistantError) as exc_info,
+    ):
+        await coordinator.async_read_prices(raise_on_failure=True)
+
+    raised = exc_info.value
+    assert type(raised) is HomeAssistantError
+    assert raised.translation_domain == DOMAIN
+    assert raised.translation_key == "auth_failed"
+    assert raised.__cause__ is error
+    start_reauth.assert_called_once()
+    mock_client.login.assert_not_awaited()
+
+
+@pytest.mark.parametrize("retry_on_failure", [False, True])
+async def test_price_read_raises_nothing_by_default(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    retry_on_failure: bool,
+) -> None:
+    """A failed price read that isn't asked to raise raises nothing, as before."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await coordinator.async_read_prices(retry_on_failure=retry_on_failure)
+    assert coordinator.price_read_failing is True
+
+    mock_client.get_price_forecast.side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth") as start_reauth:
+        await coordinator.async_read_prices(retry_on_failure=retry_on_failure)
+    start_reauth.assert_called_once()
+
+
 async def _at(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, when: datetime
 ) -> None:

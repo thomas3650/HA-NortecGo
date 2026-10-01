@@ -36,7 +36,7 @@ CHECKED_STATUSES = {
     "docs-actions": "exempt",
     "docs-conditions": "exempt",
     "docs-triggers": "exempt",
-    "action-exceptions": "todo",
+    "action-exceptions": "done",
     "test-coverage": "done",
     "discovery": "exempt",
     "discovery-update-info": "exempt",
@@ -60,12 +60,6 @@ def test_checked_statuses() -> None:
     for name, status in CHECKED_STATUSES.items():
         assert _status(rules[name]) == status, name
         assert rules[name]["comment"], name
-
-
-def test_action_exceptions_comment() -> None:
-    """The comment isn't cut short by a YAML '#' comment marker."""
-    rule = load_yaml_dict(QUALITY_SCALE)["rules"]["action-exceptions"]
-    assert rule["comment"].endswith("(#40).")
 
 
 def test_rule_count() -> None:

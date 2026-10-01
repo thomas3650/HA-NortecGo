@@ -139,6 +139,10 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   the coordinator afterwards.
 - `DataUpdateCoordinator.last_exception` isn't cleared by a successful read. Show it as the current error
   only while `last_update_success` is false.
+- In `_async_update_data`, don't await between taking a snapshot of state that a callback can change (the
+  charge control's state, here) and returning the data. A change made during the await updates the
+  coordinator's data, and is then overwritten by the older snapshot when the read returns. Take the snapshot
+  after the last await.
 
 ## Devices and entities
 
@@ -173,7 +177,8 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   charges, but a new cycle whose first value is at least 90% of the last one is missed, and a
   `total_increasing` value should never go down by itself.
 - A value that can restart from 0 outside the integration's control (a lost store, an entry removed and
-  added again) is `total_increasing`: plain `total` would count the restart as a negative change.
+  added again) is `total_increasing`, not plain `total` (see the next item for what `total` does with a
+  drop).
 - For a sensor with `state_class` `total`, the recorder's statistics depend on `last_reset`. Without it, a
   drop counts as a negative change, so a value that restarts per cycle gives a sum that is just the current
   value. With it, a changed `last_reset` starts a new cycle and the new value is added in full, and the same

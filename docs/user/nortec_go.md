@@ -78,7 +78,7 @@ integration starts (see *Known limitations*).
 | Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it; off right after a stop until the charger shows it |
 | Charge status | Sensor | Start blocked, Starting, Charging, Paused, Stopping, Waiting for replug, Unplugged or Idle |
 | Energy this charge | Sensor | The energy the open charge has delivered so far, in kWh. Unknown when no charge is open. For the Energy dashboard, use *Total energy* |
-| Total energy | Sensor | The energy the charger has delivered since you added the integration, in kWh, kept across restarts. Use it for the Energy dashboard (see *Use cases*) |
+| Total energy | Sensor | The energy the charger has delivered since the sensor was added, in kWh, kept across restarts. Use it for the Energy dashboard (see *Use cases*) |
 | Charging power | Sensor | The charge's latest measured power, in kW. 0 when no charge is open, and unknown if the power couldn't be read |
 | Cost this charge | Sensor | What the open charge costs so far, incl. VAT, fees and the grid tariff, in the charger's currency. Unknown when no charge is open. It can lag *Energy this charge* by a reading, and its last value can be below the billed total; while a charge is stopping it can already show the billed total |
 | Last charge cost | Sensor | The billed total of the most recent completed charge on the charger. Its long-term statistics add up the charges completed after the sensor's first value. Unknown if the charge isn't among the charger's newest, or if it couldn't be read |
@@ -248,8 +248,9 @@ step on *Refresh* fails then too.
 - A charge that the integration never read while it was open (it started and ended between two reads, which
   are up to 60 minutes apart, or while Home Assistant was off) is counted only if it is still the charger's
   most recent completed charge at the next read.
-- *Total energy* starts at 0 when you add the integration, and again if you remove the integration and add
-  it back. The Energy dashboard keeps its history.
+- *Total energy* starts at 0 when the sensor is added: with the update that brings it, or when you add the
+  integration. It starts at 0 again if you remove the integration and add it back, or if its stored data
+  can't be read. The Energy dashboard keeps its history.
 - *Total energy* never goes down. In the rare case that a charge's final energy is below a reading taken
   while it ran, the reading counts.
 - *Energy this charge* restarts with every charge, so it isn't meant for the Energy dashboard: a charge that

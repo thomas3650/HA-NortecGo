@@ -8,9 +8,9 @@ All notable changes to this project are documented in this file. The format is b
 
 ### Added
 
-- *Total energy*: the energy the charger has delivered since you added the integration, kept across
-  restarts. Use it as the charger's individual device in the Energy dashboard, instead of *Energy this
-  charge*.
+- *Total energy*: the energy the charger has delivered since the sensor was added, kept across restarts. It
+  starts at 0 with this update. Use it as the charger's individual device in the Energy dashboard, instead
+  of *Energy this charge*.
 
 ## [0.3.0] - 2026-10-01
 

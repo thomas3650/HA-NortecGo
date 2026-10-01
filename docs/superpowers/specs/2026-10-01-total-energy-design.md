@@ -29,7 +29,7 @@ reviews the final PR.
 
 | Topic | Decision |
 |---|---|
-| Where the total comes from | The integration sums it from the per-charge energy. The client can't expose a lifetime meter (the owner's answer), so this replaces the owner's earlier answer on #75 to wait for one. thomas3650/nortecgo#79 can be closed; the owner closes it |
+| Where the total comes from | The integration sums it from the per-charge energy. The client can't expose a lifetime meter (the owner's answer), so this replaces the owner's earlier answer on #75 to wait for one. NortecGo#79 can be closed; the owner closes it |
 | Where it starts | At 0. A charge completed before the ledger was created is never counted at its final energy. A charge open at the first read counts in full |
 | The total never goes down | The controller's choice after the spec review: an open charge keeps the highest reading seen, and a completed charge counts at the higher of its final energy and that reading (§2). In the brainstorm the owner was told the total could step down slightly; this removes that case, and the PR description says so |
 | A charge whose final record never arrives | It keeps its last live reading (the owner's answer). The total never drops because a record is missing |

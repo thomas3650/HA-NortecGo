@@ -853,27 +853,21 @@ async def test_device_name_fallbacks(
     assert car.name == "Car"
 
 
-async def test_car_placeholder_until_first_read(
+async def test_car_without_a_name_at_setup(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
     mock_client: AsyncMock,
     device_registry: dr.DeviceRegistry,
 ) -> None:
-    """A car read failing at setup: device "Car", entities unavailable; a good read fixes both."""
-    mock_client.get_vehicle.side_effect = NortecGoConnectionError("network down")
+    """A car without a name at setup: the device is called Car, and so are its entity IDs."""
+    mock_client.get_vehicle.return_value = make_vehicle(name="")
     await setup_integration(hass, mock_config_entry)
     car = _device(device_registry, mock_config_entry, f"{FAKE_CHARGER_ID}_car")
     assert car is not None
     assert car.name == "Car"
-    assert hass.states.get("sensor.car_battery").state == STATE_UNAVAILABLE  # type: ignore[union-attr]
-
-    mock_client.get_vehicle.side_effect = None
-    await mock_config_entry.runtime_data.async_read_now(with_car=True)
-    await hass.async_block_till_done()
-    updated = device_registry.async_get(car.id, include_child_devices=False)
-    assert updated is not None
-    assert updated.name == "Family car"
-    assert hass.states.get("sensor.car_battery").state == "55.0"  # type: ignore[union-attr]
+    state = hass.states.get("sensor.car_battery")
+    assert state is not None
+    assert state.state == "55.0"
 
 
 async def test_no_car_no_car_entities(

@@ -199,6 +199,7 @@ async def test_diagnostics_output(
             "update_interval_seconds": 300.0,
             "has_car": True,
             "car_read_failing": False,
+            "car_gone": False,
             "price_read_failing": False,
             "price_retry_pending": False,
         },
@@ -324,6 +325,25 @@ async def test_no_car_and_no_prices(
         "first_slot_start": None,
         "last_slot_start": None,
     }
+
+
+async def test_car_gone_is_in_the_download(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_admin_user: MockUser,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+) -> None:
+    """A car that went while running: car_gone is true, has_car stays true, and there is no car data."""
+    await setup_integration(hass, mock_config_entry)
+    mock_client.get_vehicle.side_effect = VehicleNotFoundError("fake no car")
+    await mock_config_entry.runtime_data.async_read_now(with_car=True)
+
+    data = await _download(hass, hass_client, hass_admin_user, mock_config_entry)
+    assert data["coordinator"]["has_car"] is True
+    assert data["coordinator"]["car_gone"] is True
+    assert data["coordinator"]["car_read_failing"] is True
+    assert data["data"]["vehicle"] is None
 
 
 async def test_failing_reads(

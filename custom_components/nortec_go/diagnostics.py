@@ -67,6 +67,7 @@ async def async_get_config_entry_diagnostics(
                 ),
                 "has_car": coordinator.has_car,
                 "car_read_failing": coordinator.car_read_failing,
+                "car_gone": coordinator.car_gone,
                 "price_read_failing": coordinator.price_read_failing,
                 "price_retry_pending": coordinator.price_retry_pending,
             },

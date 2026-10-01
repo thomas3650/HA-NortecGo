@@ -176,6 +176,9 @@
     "read_failed": {
       "message": "Reading the charger failed. Home Assistant will try again."
     },
+    "car_read_failed": {
+      "message": "Reading the car failed. Home Assistant will try again."
+    },
     "price_read_failed": {
       "message": "Reading the prices failed. The known prices are kept. Check the Home Assistant logs."
     }
@@ -206,6 +209,20 @@
         },
         "abort": {
           "not_loaded": "The Nortec Go integration isn't loaded. Reload it and try again."
+        }
+      }
+    },
+    "car_gone": {
+      "title": "The Nortec Go account of {name} no longer has exactly one car",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Remove the car device of {name}",
+            "description": "The Nortec Go account no longer has exactly one car, so the car's entities are unavailable.\n\nIf the car comes back on the account, they work again by themselves and this notice goes away. To remove the car device and its entities now, select **Submit**: the integration reloads. A restart of Home Assistant removes them too, if the account still doesn't have exactly one car."
+          }
+        },
+        "abort": {
+          "entry_not_found": "The Nortec Go entry no longer exists."
         }
       }
     }

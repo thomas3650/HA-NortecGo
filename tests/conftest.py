@@ -61,6 +61,7 @@ def make_charger(
     charge_cost: float | None = None,
     currency: str | None = "DKK",
     last_charge: CompletedCharge | None = None,
+    charge_id: str = FAKE_CHARGE_ID,
 ) -> Charger:
     """Return a charger; idle and unplugged unless told otherwise."""
     return Charger(
@@ -74,7 +75,7 @@ def make_charger(
         active_charge=None
         if charge_state is None
         else ActiveCharge(
-            id=FAKE_CHARGE_ID,
+            id=charge_id,
             state=charge_state,
             state_raw=charge_state.value,
             can_stop=True,

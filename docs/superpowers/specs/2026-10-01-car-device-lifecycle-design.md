@@ -25,6 +25,9 @@ Date: 2026-10-01 · Branch: `feat/car-device-lifecycle` · Issues: #41, #42
   - Charge start and stop. `charge_control.py` doesn't use the coordinator's car state and isn't touched.
     One thing next to it does change, to keep a stop safe: at setup the charge control gets the charger
     read only after the car read worked (§1, *Order*).
+  - The same lost stop after a rejected price read at setup (§1, *Order*, describes the hole for the car
+    read). The setup's price read runs after the charge control has the charger read, and that isn't
+    changed here; it is issue #85.
   - `sensor.py`, `binary_sensor.py`, `entity.py` and `__init__.py`: no behaviour change, only docstrings
     that describe the "not read yet" state. The car entities are still added by the platforms when
     `has_car` is true at setup, and `__init__.py` still removes an old car device when it is false.

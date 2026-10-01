@@ -195,6 +195,9 @@ Title such a PR by what it changes for users (*PR titles*). If users see a diffe
 shape of the diagnostics download isn't something users see, as long as what the user docs say the file
 keeps and leaves out stays true (D46).
 
+For a release that breaks the models, [`notes.md`](notes.md) has a dry run that lists what has to move
+before the pins change.
+
 ## Bumping Home Assistant
 
 A `pytest-homeassistant-custom-component` bump pull request also raises `hacs.json`'s `homeassistant` key

@@ -493,6 +493,185 @@ async def test_charge_energy_starts_a_new_cycle_per_charge(
     ]
 
 
+TOTAL = "sensor.garage_charger_total_energy"
+
+
+async def test_total_energy_sensor(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    entity_registry: er.EntityRegistry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Total energy: classes, unit, precision, charger device; 0.0 before any charge."""
+    await setup_integration(hass, mock_config_entry)
+    charger = _device(device_registry, mock_config_entry, str(FAKE_CHARGER_ID))
+    assert charger is not None
+
+    state = hass.states.get(TOTAL)
+    assert state is not None
+    assert state.state == "0.0"
+    assert state.attributes[ATTR_DEVICE_CLASS] == SensorDeviceClass.ENERGY
+    assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == UnitOfEnergy.KILO_WATT_HOUR
+    assert state.attributes[ATTR_STATE_CLASS] == SensorStateClass.TOTAL_INCREASING
+    assert ATTR_LAST_RESET not in state.attributes
+    entry = entity_registry.async_get(TOTAL)
+    assert entry is not None
+    assert entry.unique_id == f"{FAKE_CHARGER_ID}_total_energy"
+    assert entry.device_id == charger.id
+    assert entry.entity_category is None
+    assert entry.disabled_by is None
+    assert entry.options["sensor"]["suggested_display_precision"] == 2
+
+
+async def _read(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    minutes: float,
+    charger: Charger,
+) -> str:
+    """Read the given charger at MIDNIGHT plus the minutes; Total energy's state after it."""
+    freezer.move_to(MIDNIGHT + timedelta(minutes=minutes))
+    mock_client.get_charger.return_value = charger
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    return _state(hass, TOTAL)
+
+
+async def test_total_energy_across_a_charge(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """It grows while the charge is open, holds when it closed, and takes the final energy."""
+    freezer.move_to(MIDNIGHT)
+    await setup_integration(hass, mock_config_entry)
+    done = make_completed_charge(
+        charge_id=FAKE_CHARGE_ID,
+        kwh=5.4,
+        completed_at=MIDNIGHT + timedelta(minutes=12),
+    )
+    seen = [
+        await _read(hass, mock_config_entry, mock_client, freezer, minutes, charger)
+        for minutes, charger in (
+            (
+                5,
+                make_charger(
+                    is_connected=True, charge_state=ChargeState.CHARGING, charge_kwh=2.0
+                ),
+            ),
+            (
+                10,
+                make_charger(
+                    is_connected=True, charge_state=ChargeState.CHARGING, charge_kwh=5.0
+                ),
+            ),
+            (15, make_charger(is_connected=True)),
+            (20, make_charger(is_connected=True, last_charge=done)),
+            (80, make_charger(is_connected=True, last_charge=done)),
+        )
+    ]
+    assert seen == ["2.0", "5.0", "5.0", "5.4", "5.4"]
+
+
+async def test_total_energy_is_rounded(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The state is rounded to 3 decimals, so it carries no noise from adding floats."""
+    freezer.move_to(MIDNIGHT)
+    await setup_integration(hass, mock_config_entry)
+    earlier = make_completed_charge(
+        kwh=0.1, completed_at=MIDNIGHT + timedelta(minutes=5)
+    )
+    assert (
+        await _read(
+            hass,
+            mock_config_entry,
+            mock_client,
+            freezer,
+            10,
+            make_charger(last_charge=earlier),
+        )
+        == "0.1"
+    )
+    # 0.1 + 0.2 is 0.30000000000000004 as floats.
+    assert (
+        await _read(
+            hass,
+            mock_config_entry,
+            mock_client,
+            freezer,
+            20,
+            make_charger(
+                is_connected=True,
+                charge_state=ChargeState.CHARGING,
+                charge_kwh=0.2,
+                last_charge=earlier,
+            ),
+        )
+        == "0.3"
+    )
+    assert (
+        await _read(
+            hass,
+            mock_config_entry,
+            mock_client,
+            freezer,
+            25,
+            make_charger(
+                is_connected=True,
+                charge_state=ChargeState.CHARGING,
+                charge_kwh=1.23456,
+                last_charge=earlier,
+            ),
+        )
+        == "1.335"
+    )
+
+
+async def test_total_energy_unavailable_after_a_failed_read(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A failed charger read makes it unavailable; the next good read brings the total back."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING, charge_kwh=2.0
+    )
+    await setup_integration(hass, mock_config_entry)
+    assert _state(hass, TOTAL) == "2.0"
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    await mock_config_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert _state(hass, TOTAL) == STATE_UNAVAILABLE
+    mock_client.get_charger.side_effect = None
+    await mock_config_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert _state(hass, TOTAL) == "2.0"
+
+
+async def test_total_energy_survives_a_reload(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A reload in the middle of a charge carries the charge: its highest reading stays."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING, charge_kwh=2.0
+    )
+    await setup_integration(hass, mock_config_entry)
+    assert _state(hass, TOTAL) == "2.0"
+    # A lower reading after the reload: a ledger that wasn't saved and loaded would show 1.5.
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING, charge_kwh=1.5
+    )
+    await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert _state(hass, TOTAL) == "2.0"
+
+
 COST = "sensor.garage_charger_cost_this_charge"
 LAST_COST = "sensor.garage_charger_last_charge_cost"
 

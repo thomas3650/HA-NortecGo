@@ -55,6 +55,12 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   `docs/core/integration-quality-scale/rules/`. Most say "There are no exceptions to this rule", yet core
   marks a rule `exempt`, with a comment, when what it governs doesn't exist (`action-setup` for an
   integration without service actions).
+- hassfest's `icons.json` check (core's `script/hassfest/icons.py`) runs on a draft PR too. In the `entity`
+  section it wants every icon to start with `mdi:`, and allows only the keys `default`, `state`, `range`
+  and `state_attributes` in an entry. It doesn't refuse a state icon equal to its entry's `default` there:
+  that check reaches only core's `entity_component` section and an entry's `state_attributes`.
+  `tests/test_icons.py` is stricter by choice: only the `entity` section, only `default` and `state` in an
+  entry, a `default` in every entry, and no state icon equal to it.
 
 ## Testing
 
@@ -106,6 +112,9 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   removing the wrong id is no error.
 - `pytest.raises(match=...)` is a regex search, so a name that is a prefix of another matches the wrong
   message. Compare the whole `str(excinfo.value)` when the exact text matters.
+- `async_get_icons(hass, "entity", integrations=[DOMAIN])` (`homeassistant.helpers.icon`) returns a mapping
+  keyed by domain: `result[DOMAIN]` is the `entity` section of `icons.json`. It shows that Home Assistant
+  itself loads the file.
 
 ## Coordinators and actions
 
@@ -192,6 +201,14 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   added. So a per-cycle value needs `last_reset`, or no state class.
 - `device_class` `monetary` allows only the state class `total`, or none.
 - A sensor's display precision doesn't change its state string: the state is the native value as it is.
+- Icon translations: `icons.json` has an `entity` section, per platform and translation key, with a
+  `default` icon and optionally a `state` map; a state without an entry shows `default`. Home Assistant's
+  device-class icons are in each entity component's own `icons.json`; without a device class, or with
+  `enum`, an entity gets only its platform's generic icon. Which entities get an entry here is the rule
+  `tests/test_icons.py` checks against the entity registry.
+- The Material Design Icons list isn't in the Python environment (the frontend isn't installed for the
+  tests), so no test can tell whether an icon name exists, and a wrong name shows a blank icon. Check a new
+  name against the MDI list by hand, and look for blank icons in the visual check.
 
 ## Repairs
 

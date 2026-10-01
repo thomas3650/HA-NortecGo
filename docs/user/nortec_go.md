@@ -21,15 +21,15 @@ API as the app (through the `pynortecgo` library), which can change without noti
 
 ## Unsupported devices
 
-An account with more than one charger. With no car or more than one there are no car entities, and starting
-a charge needs exactly one car and one saved card (see *Prerequisites*).
+An account with more than one charger. With no car or more than one when the integration starts, there are
+no car entities, and starting a charge needs exactly one car and one saved card (see *Prerequisites*).
 
 ## Prerequisites
 
 You need a Nortec Go account with exactly one charger. To start charges from Home Assistant, the account
 also needs exactly one car and exactly one saved card; without them everything else works (the sensors, the
-prices and *Refresh*), and a start is refused with the reason. A car added later appears after you reload
-the integration.
+prices and *Refresh*), and a start is refused with the reason. A car added later to an account without one
+appears after you reload the integration (see *Known limitations*).
 
 ## Installation
 
@@ -65,7 +65,8 @@ The integration has no options to change after setup.
 
 ## Supported functionality
 
-The integration adds two devices: the charger, and the car when the account has exactly one.
+The integration adds two devices: the charger, and the car if the account has exactly one when the
+integration starts (see *Known limitations*).
 
 ### Charger
 
@@ -93,9 +94,12 @@ The integration adds two devices: the charger, and the car when the account has 
 | Plugged in | Binary sensor | On when the car reports that it's plugged in, at any charger |
 | Connected to charger | Binary sensor | On when the charger's cable is connected and the car reports it's plugged in |
 
-Values the car doesn't report show as unknown. Until the car has been read once, the car device is called
-*Car* and its entities are unavailable. If that happens when the integration is first added, the car's entity IDs start
-with `car_` (for example `sensor.car_battery`) and keep that name after the car's own name arrives; rename
+Values the car doesn't report show as unknown.
+
+If the car goes from the account, or a second car is added, the car's entities become unavailable and a
+repair notice offers to remove the car device (see *Troubleshooting*). If you replace the car with another
+one, the same device takes the new car's name, brand and model (it is called *Car* if the car has no name,
+and a name you gave the device in Home Assistant stays). The entity IDs keep the old car's name; rename
 them in the entity settings if you like.
 
 ## Use cases
@@ -219,7 +223,9 @@ step on *Refresh* fails then too.
   replaces them (or its retry about 15 minutes later, if it fails).
 - Car data can be hours old (see *Last seen*), so *Connected to charger* can turn on late.
 - Days and the price times follow Home Assistant's time zone.
-- A car removed from the account, with its entities, disappears after you reload the integration.
+- The car device is added and removed only when the integration starts (a reload, or a restart of Home
+  Assistant), never while it runs. A car added to an account without one appears after a reload. One
+  removed makes its entities unavailable until then.
 - An unplug and replug between two reads (up to 60 minutes apart while no charge is running) can't be seen;
   use the repair issue to allow starts again in that case.
 - A charge started or resumed outside Home Assistant, for example in the Nortec Go app, can take up to 60
@@ -259,6 +265,23 @@ The Nortec Go service limits sign-ins. Wait a while before you try again.
 ### "Starts are blocked"
 
 See *Starting a charge*.
+
+### "The Nortec Go account … no longer has exactly one car"
+
+The account had one car when the integration started, and now has none or more than one, so the car's
+entities are unavailable. If the car comes back on the account, they work again by themselves and the
+notice goes away. To remove the car device and its entities, select **Submit** in the notice: the
+integration reloads. Reloading the integration yourself, or restarting Home Assistant, does the same.
+
+### "Reading the car failed"
+
+When the integration starts, it reads the charger and then the car. If the car can't be read then (the
+service can't be reached, limits requests, returns an error or sends an answer the integration doesn't
+understand), Home Assistant tries the start again by itself: first after a few seconds (or, while Home
+Assistant itself is starting, when it has started), then at longer gaps of up to 10 minutes. Until a try
+works, all the integration's entities are unavailable, *Charge* included. The integration's entry shows the
+reason, which can also be one of the texts for a service that can't be reached, limits requests, returns an
+error or sends an answer the integration doesn't understand.
 
 ### Debug logging
 

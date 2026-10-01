@@ -75,7 +75,7 @@ rules:
   docs-use-cases: done
   dynamic-devices:
     status: todo
-    comment: "Whether the account has a car is fixed at setup; a car added later shows up only after a reload."
+    comment: "Deliberately not done (D44): car entities are added only at setup, so a car added to the account shows up after a reload."
   entity-category: done
   entity-device-class: done
   entity-disabled-by-default:
@@ -92,7 +92,7 @@ rules:
   repair-issues: done
   stale-devices:
     status: todo
-    comment: "A car removed while running keeps its last data until a reload, which removes its device; no async_remove_config_entry_device."
+    comment: "Deliberately not done while running (D44): a car that goes from the account makes its entities unavailable and raises a repair issue whose fix reloads the entry; the device is removed at setup. No async_remove_config_entry_device."
 
   # Platinum
   async-dependency: done

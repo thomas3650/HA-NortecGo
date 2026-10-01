@@ -122,7 +122,7 @@ class NortecGoCarBinarySensor(NortecGoCarEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        """The value from the charger and the car, or None before the car is read."""
+        """The value from the charger and the car, or None while the car is gone."""
         vehicle = self.coordinator.data.vehicle
         # for mypy: HA doesn't read is_on while the entity is unavailable
         if vehicle is None:

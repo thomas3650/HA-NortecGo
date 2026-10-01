@@ -85,11 +85,11 @@ it meant.
 - **`charge_status` binds the result to one local** and uses it at its three sites:
 
   ```python
-  state = charge_state(charger)
-  if charger.state is ChargerState.UNKNOWN or state is ChargeState.UNKNOWN:
+  of_charge = charge_state(charger)
+  if charger.state is ChargerState.UNKNOWN or of_charge is ChargeState.UNKNOWN:
       return None
-  if state in _STATUS_FROM_CHARGE:
-      return state.value
+  if of_charge in _STATUS_FROM_CHARGE:
+      return of_charge.value
   ```
 
   Its last read takes `.value` of the state after an `in` check. mypy narrows an attribute or a local after
@@ -141,8 +141,8 @@ it meant.
   `Charger`, a new `ACTIVE_CHARGE_FIELDS` pins `ActiveCharge`'s seven, and
   `test_client_model_fields_are_pinned` checks both. The whole-output test, the one test that looks at the
   `charger` block, expects the nested block.
-- `docs/releasing.md`'s bump checklist names the models whose fields are pinned. It gets `ActiveCharge`,
-  and the rule in §7.
+- `docs/releasing.md`'s bump checklist names the models whose fields are pinned. It gets `ActiveCharge`.
+  The paragraph below the checklist, on how to title a bump, gets the rule in §7.
 
 ## 5. Tests, and how the plan proves the behaviour is unchanged
 
@@ -159,7 +159,7 @@ description of the behaviour, and the proof is that it passes without being edit
    `test_costs.py` and `no_charge_ignores_fields` in `test_sensor.py`). The new model can't hold it, so they
    now build the same charger as their plain no-charge neighbours and still pass. Removing them, and making
    `make_charger` refuse values it would drop, would edit those test files, so it is a follow-up issue and
-   not part of this work.
+   not part of this work. The issue is filed during the work and named in the PR description.
 2. **Acceptance check: the diff under `tests/` touches only `conftest.py` and `test_diagnostics.py`.** Every
    other test file, including all of `test_charge_control.py`, `test_switch.py`, `test_coordinator.py`,
    `test_sensor.py`, `test_binary_sensor.py` and `test_costs.py`, is byte-identical to `origin/main` and
@@ -209,15 +209,20 @@ second keeps D44 before D46 in the file.
 ### D46: The shape of the diagnostics download isn't user-visible
 - **Date:** 2026-10-01 · **Status:** active
 - **Decision:** A change that only moves, renames, adds or removes keys in the diagnostics download isn't a
-  user-visible change: it needs no changelog entry and doesn't make a PR releasing. D38 still decides what
-  the download may show.
-- **Why:** The download is a support file. The user docs don't describe its keys, and nothing is meant to
-  be built on them. Without the rule, every client release that changes a model would force a release of
-  the integration.
-- **Source:** this spec, *Decisions* and §4.
+  user-visible change, as long as what the user docs say the file keeps and leaves out stays true: it needs
+  no changelog entry and doesn't make a PR releasing. D38 still decides what the download may show.
+- **Why:** The owner's ruling (#81): the download is a support file, the user docs don't name its keys, and
+  nothing is meant to be built on them. Without the rule, every client release that changes a model would
+  force a release of the integration.
+- **Source:** [pynortecgo 0.8.0 spec](superpowers/specs/2026-10-01-pynortecgo-0.8.0-design.md), Decisions
+  and §4.
+
+This move stays inside the rule: the user docs say the file keeps the charger's and the car's names and IDs
+and the last charge's values, and none of those change; they say nothing about the open charge.
 
 `docs/releasing.md`, *Bumping `pynortecgo`*, gets one sentence after "Title such a PR by what it changes for
-users": a change only in the shape of the diagnostics download isn't something users see (D46).
+users": a change only in the shape of the diagnostics download isn't something users see, as long as
+what the user docs say the file keeps and leaves out stays true (D46).
 
 ## 8. Other branches
 

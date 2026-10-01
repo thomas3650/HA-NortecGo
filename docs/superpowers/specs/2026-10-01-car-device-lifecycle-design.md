@@ -42,7 +42,7 @@ sets the team lead had asked about.
 |---|---|
 | When car entities are added or removed | Only at setup (first setup, a reload, a restart), never while running (D44) |
 | Setup, the service answers "no car" | No *Car* device; one from an earlier setup is removed. As today |
-| Setup, the car read fails | Setup is retried (§1). Fixes #41 |
+| Setup, the car read fails | Setup is retried (§1); a rejected read starts reauth, as today. Fixes #41 |
 | Running, account without a car | No car reads. As today |
 | Running, a "no car" answer | The car entities go unavailable and a repair issue is raised; nothing is removed (§2, §3) |
 | Running, a different car | The same device takes the new car's name, brand and model (§2) |
@@ -119,7 +119,8 @@ read (`charge_control.on_charger_read`). Today the control gets it first.
 - A failure of the car read at setup (a network blip between the two reads, a rate limit, a server error,
   an answer the client can't read) delays the whole entry, not only the car. Until a try works, every
   entity is unavailable: the charger's, the prices, and the *Charge* switch, so a charge can't be started
-  or stopped from Home Assistant in that time. Today the entry loads and only the car entities wait.
+  or stopped from Home Assistant in that time. A stop asked for before the restart waits for that try too
+  (*Order*). Today the entry loads and only the car entities wait.
 - Home Assistant retries by itself: after a reload or a first add, first after about 5 seconds, then at
   doubling gaps up to 10 minutes; during a Home Assistant start, first when the start has finished. A rate
   limit's own waiting time isn't used at setup.
@@ -212,7 +213,7 @@ Raised when the car goes (§2), so the owner sees why the car entities are unava
 | `exceptions.car_read_failed.message` | Reading the car failed. Home Assistant will try again. |
 | `issues.car_gone.title` | The Nortec Go account of {name} no longer has exactly one car |
 | `issues.car_gone.fix_flow.step.confirm.title` | Remove the car device of {name} |
-| `issues.car_gone.fix_flow.step.confirm.description` | The Nortec Go account no longer has exactly one car, so the car's entities are unavailable.\n\nIf the car comes back on the account, they work again by themselves and this notice goes away. To remove the car device and its entities now, select **Submit**: the integration reloads. A restart of Home Assistant removes them too. |
+| `issues.car_gone.fix_flow.step.confirm.description` | The Nortec Go account no longer has exactly one car, so the car's entities are unavailable.\n\nIf the car comes back on the account, they work again by themselves and this notice goes away. To remove the car device and its entities now, select **Submit**: the integration reloads. A restart of Home Assistant removes them too, if the account still doesn't have exactly one car. |
 | `issues.car_gone.fix_flow.abort.entry_not_found` | The Nortec Go entry no longer exists. |
 
 `{name}` is the entry's title, which is the charger's name.
@@ -221,7 +222,7 @@ Raised when the car goes (§2), so the owner sees why the car entities are unava
 
 | File | Change |
 |---|---|
-| `coordinator.py` | The car read: the setup rows of §1, the gone state and its issue of §2 and §3, the brand and model of §2, the `car_gone` property; `_car_checked` goes. In `_async_update_data`, the setup read's order (§1, *Order*), and the charger read's error mapping may be shaped so the car's setup read reuses it. The price reads, the intervals and `async_read_now` don't change. Docstrings that describe the "not read yet" state are brought up to date |
+| `coordinator.py` | The car read: the setup rows of §1, the gone state and its issue of §2 and §3, the brand and model of §2, the `car_gone` property; `_car_checked` goes. In `_async_update_data`, the setup read's order (§1, *Order*), and the charger read's error mapping may be shaped so the car's setup read reuses it. The price reads, the intervals and `async_read_now` don't change. Docstrings the change makes wrong are brought up to date |
 | `entity.py` | Docstrings only |
 | `const.py` | `CAR_GONE_ISSUE_ID` |
 | `repairs.py` | The reload flow and the choice by issue ID (§3) |
@@ -244,12 +245,13 @@ and isn't edited; D44 records the change.
     keep the old name until you rename them.
   - *Known limitations*: replace "A car removed from the account … disappears after you reload" with the
     rule: the car device is added and removed only when the integration starts (a reload or a restart).
-  - *Troubleshooting*: a short entry for the repair notice, by its title. And one sentence where setup
-    failures are described: while the car can't be read when the integration starts, all its entities,
-    *Charge* included, wait until a retry works.
+  - *Troubleshooting*: a short entry for the repair notice, by its title. And an entry headed "Reading
+    the car failed": while the car can't be read when the integration starts, all its entities, *Charge*
+    included, wait until a retry works.
 - **`CHANGELOG.md`**, under *Unreleased*:
   - *Fixed*: an account without a car no longer keeps an unavailable *Car* device after a failed first car
-    read (#41); a change of car no longer keeps the old car's brand and model.
+    read (#41); a change of car no longer keeps the old car's brand and model; a stop asked for before a
+    restart is no longer lost when the car read is rejected at start.
   - *Changed*: if the car can't be read when the integration starts, the start is retried; a car removed
     from the account makes its entities unavailable and raises a repair notice.
 - **`docs/decisions.md`:** D44 (below).

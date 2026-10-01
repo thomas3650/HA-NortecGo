@@ -10,7 +10,7 @@ from homeassistant.exceptions import (
     ConfigEntryError,
     HomeAssistantError,
 )
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.typing import UNDEFINED
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -33,6 +33,7 @@ from pynortecgo import (
 
 from .charge_control import ChargeControl, ChargeControlState, charge_status
 from .const import (
+    CAR_GONE_ISSUE_ID,
     CAR_READ_MIN_AGE,
     DOMAIN,
     FAST_READ_MAX_AGE,
@@ -62,8 +63,8 @@ _SETUP_CAR_ERROR_KEYS: tuple[tuple[type[NortecGoError], str], ...] = (
 class NortecGoData:
     """One read of the charger and the car, with the charge control's state.
 
-    vehicle is None when the account has no single car. read_at is when the charger was
-    last read successfully.
+    vehicle is None when the account has no single car, at setup or since (D44). read_at is
+    when the charger was last read successfully.
     """
 
     charger: Charger
@@ -121,6 +122,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self.known_prices: KnownSlots = {}
         self.price_currency: str | None = None
         self._car_failing = False
+        self._car_gone = False
         self._vehicle: Vehicle | None = None
         self._car_read_at: datetime | None = None
         self._read_car_next = False
@@ -129,11 +131,18 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self._price_retry: CALLBACK_TYPE | None = None
         # The setup read can schedule a retry before the timers start.
         entry.async_on_unload(self._async_cancel_price_retry)
+        # Once, here: the issue must not outlive this coordinator, however setup or unload goes.
+        entry.async_on_unload(self._async_delete_car_issue)
 
     @property
     def car_read_failing(self) -> bool:
         """Whether the car reads fail now: from the first failure to the next good read."""
         return self._car_failing
+
+    @property
+    def car_gone(self) -> bool:
+        """Whether the car went from the account while running: from a "no car" answer to the next good read (D44)."""
+        return self._car_gone
 
     @property
     def price_read_failing(self) -> bool:
@@ -290,6 +299,9 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN, translation_key="auth_failed"
             ) from err
+        except (VehicleNotFoundError, MultipleVehiclesError) as err:
+            self._async_car_gone(err)
+            return None
         except NortecGoError as err:
             self._log_car_error(err)
             return self._vehicle
@@ -297,6 +309,9 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         if self._car_failing:
             self._car_failing = False
             _LOGGER.info("Reading the car works again")
+        if self._car_gone:
+            self._car_gone = False
+            self._async_delete_car_issue()
         self._vehicle = vehicle
         self._async_update_car_device(vehicle)
         return vehicle
@@ -308,8 +323,44 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             _LOGGER.warning("Could not read the car; keeping its last data: %s", err)
 
     @callback
+    def _async_car_gone(self, err: NortecGoError) -> None:
+        """The account no longer has exactly one car: drop its data and raise the repair issue (D44).
+
+        Nothing is removed here; the next setup removes the device.
+        """
+        self._vehicle = None  # also for the reads where the car isn't due
+        self._car_failing = True
+        if self._car_gone:
+            return
+        self._car_gone = True
+        _LOGGER.warning(
+            "The account no longer has exactly one car; the car's entities are unavailable: %s",
+            err,
+        )
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            CAR_GONE_ISSUE_ID.format(entry_id=self.config_entry.entry_id),
+            is_fixable=True,
+            is_persistent=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="car_gone",
+            translation_placeholders={"name": self.config_entry.title},
+            data={"entry_id": self.config_entry.entry_id},
+        )
+
+    @callback
+    def _async_delete_car_issue(self) -> None:
+        """Delete the car's repair issue, if there is one."""
+        ir.async_delete_issue(
+            self.hass,
+            DOMAIN,
+            CAR_GONE_ISSUE_ID.format(entry_id=self.config_entry.entry_id),
+        )
+
+    @callback
     def _async_update_car_device(self, vehicle: Vehicle) -> None:
-        """Bring the car device's name, brand and model up to date (§2.1)."""
+        """Bring the car device's name, brand and model up to date, also for another car (D44)."""
         registry = dr.async_get(self.hass)
         identifier = car_device_identifier(self.charger_id)
         if (
@@ -325,8 +376,8 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             identifiers={identifier},
             name=vehicle.name or UNDEFINED,
             translation_key=None if vehicle.name else "car",
-            manufacturer=vehicle.brand or UNDEFINED,
-            model=vehicle.model or UNDEFINED,
+            manufacturer=vehicle.brand or None,
+            model=vehicle.model or None,
         )
 
     @callback

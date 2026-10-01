@@ -16,7 +16,7 @@ from homeassistant.exceptions import (
     ConfigEntryError,
     HomeAssistantError,
 )
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util import dt as dt_util
 from pynortecgo import (
@@ -41,6 +41,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.nortec_go.charge_control import ChargeControlState
 from custom_components.nortec_go.const import (
+    CAR_GONE_ISSUE_ID,
     DOMAIN,
     FAST_READ_MAX_AGE,
     INTERVAL_CHANGING,
@@ -311,6 +312,9 @@ async def test_no_car(
     assert not coordinator.has_car
     assert coordinator.data.vehicle is None
     assert caplog.text.count("No car entities") == 1
+    issue_id = CAR_GONE_ISSUE_ID.format(entry_id=mock_config_entry.entry_id)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+    assert not coordinator.car_gone
 
     freezer.tick(INTERVAL_IDLE)
     async_fire_time_changed(hass)
@@ -686,20 +690,151 @@ async def test_later_car_error_keeps_car_data(
     mock_client: AsyncMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A later car error keeps the last car data, logs once, and logs the recovery."""
+    """A later car error that isn't "no car" keeps the last car data, logs once, and logs the recovery."""
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
 
-    for error in (ApiError("GET /example", 500), VehicleNotFoundError("no car")):
-        mock_client.get_vehicle.side_effect = error
+    mock_client.get_vehicle.side_effect = ApiError("GET /example", 500)
+    for _ in range(2):
         await coordinator.async_read_now(with_car=True)
         assert coordinator.last_update_success
+        assert coordinator.car_read_failing
+        assert not coordinator.car_gone
         assert coordinator.data.vehicle == make_vehicle()
     assert caplog.text.count("Could not read the car") == 1
 
     mock_client.get_vehicle.side_effect = None
     await coordinator.async_read_now(with_car=True)
     assert "Reading the car works again" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "error", [VehicleNotFoundError("no car"), MultipleVehiclesError("two cars")]
+)
+async def test_car_gone_while_running(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+    error: Exception,
+) -> None:
+    """A "no car" answer while running: no car data, a repair issue, one warning; a good read ends it (D44)."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    issues = ir.async_get(hass)
+    issue_id = CAR_GONE_ISSUE_ID.format(entry_id=mock_config_entry.entry_id)
+    assert issues.async_get_issue(DOMAIN, issue_id) is None
+    assert not coordinator.car_gone
+
+    mock_client.get_vehicle.side_effect = error
+    for _ in range(2):
+        await coordinator.async_read_now(with_car=True)
+        assert coordinator.last_update_success
+        assert coordinator.has_car
+        assert coordinator.car_gone
+        assert coordinator.car_read_failing
+        assert coordinator.data.vehicle is None
+    assert caplog.text.count("no longer has exactly one car") == 1
+    issue = issues.async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.translation_key == "car_gone"
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.is_fixable
+    assert not issue.is_persistent
+    assert issue.translation_placeholders == {"name": mock_config_entry.title}
+    assert issue.data == {"entry_id": mock_config_entry.entry_id}
+
+    # A read of the charger alone must not bring the old car's data back.
+    car_reads = mock_client.get_vehicle.await_count
+    await coordinator.async_read_now()
+    assert mock_client.get_vehicle.await_count == car_reads
+    assert coordinator.data.vehicle is None
+
+    # Another car error keeps it gone, with no second warning.
+    mock_client.get_vehicle.side_effect = ApiError("GET /example", 500)
+    await coordinator.async_read_now(with_car=True)
+    assert coordinator.car_gone
+    assert coordinator.data.vehicle is None
+    assert "Could not read the car" not in caplog.text
+
+    mock_client.get_vehicle.side_effect = None
+    await coordinator.async_read_now(with_car=True)
+    assert not coordinator.car_gone
+    assert not coordinator.car_read_failing
+    assert coordinator.data.vehicle == make_vehicle()
+    assert issues.async_get_issue(DOMAIN, issue_id) is None
+    assert "Reading the car works again" in caplog.text
+
+
+async def test_car_gone_warns_after_another_car_error(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The "no car" warning is logged also when another car error was logged just before."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_vehicle.side_effect = ApiError("GET /example", 500)
+    await coordinator.async_read_now(with_car=True)
+    assert coordinator.data.vehicle == make_vehicle()
+    assert caplog.text.count("Could not read the car") == 1
+
+    mock_client.get_vehicle.side_effect = VehicleNotFoundError("no car")
+    await coordinator.async_read_now(with_car=True)
+    assert coordinator.car_gone
+    assert coordinator.data.vehicle is None
+    assert caplog.text.count("no longer has exactly one car") == 1
+
+
+async def test_car_gone_issue_deleted_at_unload(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """The issue doesn't outlive the loaded entry."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    issues = ir.async_get(hass)
+    issue_id = CAR_GONE_ISSUE_ID.format(entry_id=mock_config_entry.entry_id)
+
+    mock_client.get_vehicle.side_effect = VehicleNotFoundError("no car")
+    await coordinator.async_read_now(with_car=True)
+    assert issues.async_get_issue(DOMAIN, issue_id) is not None
+
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert issues.async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_car_device_follows_another_car(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Another car: the device takes its name and drops a brand and model it lacks; the owner's name stays."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    device = device_registry.async_get_device_by_identifier(
+        car_device_identifier(str(FAKE_CHARGER_ID)), mock_config_entry.entry_id
+    )
+    assert device is not None
+    assert (device.manufacturer, device.model) == ("Example", "Model E")
+    device_registry.async_update_device(device.id, name_by_user="My car")
+
+    mock_client.get_vehicle.return_value = make_vehicle(
+        name="Other car", brand=None, model=""
+    )
+    await coordinator.async_read_now(with_car=True)
+
+    updated = device_registry.async_get(device.id, include_child_devices=False)
+    assert updated is not None
+    assert (
+        updated.name,
+        updated.name_by_user,
+        updated.manufacturer,
+        updated.model,
+    ) == ("Other car", "My car", None, None)
 
 
 async def test_car_device_updated_on_rename(

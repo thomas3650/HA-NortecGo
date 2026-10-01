@@ -33,10 +33,10 @@ class NortecGoChargerEntity(NortecGoEntity):
 
 
 class NortecGoCarEntity(NortecGoEntity):
-    """An entity on the car device; unavailable until the car has been read."""
+    """An entity on the car device; unavailable while the car is gone from the account (D44)."""
 
     def __init__(self, coordinator: NortecGoCoordinator, key: str) -> None:
-        """Attach the entity to the car device, named "Car" until the car is known."""
+        """Attach the entity to the car device, named "Car" when the car has no name."""
         super().__init__(coordinator, key)
         vehicle = coordinator.data.vehicle
         device_info = DeviceInfo(
@@ -54,5 +54,5 @@ class NortecGoCarEntity(NortecGoEntity):
 
     @property
     def available(self) -> bool:
-        """Available when the last update worked and the car has been read."""
+        """Available when the last update worked and the account has its car."""
         return super().available and self.coordinator.data.vehicle is not None

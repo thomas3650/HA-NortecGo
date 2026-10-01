@@ -42,3 +42,5 @@ START_LOAD_GRACE: Final = timedelta(minutes=2)
 CHARGE_CONTROL_STORE_VERSION: Final = 1
 CHARGE_CONTROL_STORE_KEY: Final = "nortec_go.{entry_id}.charge_control"
 START_BLOCKED_ISSUE_ID: Final = "start_blocked_{entry_id}"
+# The repair issue for a car that went from the account while running (D44).
+CAR_GONE_ISSUE_ID: Final = "car_gone_{entry_id}"

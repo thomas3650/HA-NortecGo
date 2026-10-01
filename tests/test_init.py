@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant import loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL
+from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL, STATE_UNAVAILABLE
 from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
@@ -368,6 +368,42 @@ async def test_reload_without_car_removes_car_device(
     for entity_id in CAR_ENTITY_IDS:
         assert entity_registry.async_get(entity_id) is None
         assert hass.states.get(entity_id) is None
+
+
+@pytest.mark.parametrize(
+    "error",
+    [VehicleNotFoundError("no car"), MultipleVehiclesError("two cars")],
+)
+async def test_car_gone_makes_the_car_entities_unavailable(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    error: Exception,
+) -> None:
+    """While the car is gone its entities are unavailable but still there; a good read brings them back."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = mock_config_entry.runtime_data
+    entity_registry = er.async_get(hass)
+
+    mock_client.get_vehicle.side_effect = error
+    await coordinator.async_read_now(with_car=True)
+    await hass.async_block_till_done()
+    for entity_id in CAR_ENTITY_IDS:
+        assert entity_registry.async_get(entity_id) is not None
+        state = hass.states.get(entity_id)
+        assert state is not None
+        assert state.state == STATE_UNAVAILABLE
+
+    mock_client.get_vehicle.side_effect = None
+    await coordinator.async_read_now(with_car=True)
+    await hass.async_block_till_done()
+    for entity_id in CAR_ENTITY_IDS:
+        state = hass.states.get(entity_id)
+        assert state is not None
+        assert state.state != STATE_UNAVAILABLE
+    battery = hass.states.get("sensor.family_car_battery")
+    assert battery is not None
+    assert battery.state == "55.0"
 
 
 async def test_stored_block_survives_restart(

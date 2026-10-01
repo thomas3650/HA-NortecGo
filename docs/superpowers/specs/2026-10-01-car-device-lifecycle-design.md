@@ -114,11 +114,12 @@ read (`charge_control.on_charger_read`). Today the control gets it first.
   it, so the charge would keep running. With the car read first, a setup that fails on the car leaves the
   stored control as it was loaded, and the try that works sends the stop.
 - One limit stays, accepted by the owner for this work (2026-10-01) and recorded on #85: at a restart the
-  stored pending start has a deadline of at least 2 minutes (`START_LOAD_GRACE`, D31). The setup's charger
-  read and car read together have to finish within it. If a try's reads are slower than that and still
-  work, the deadline ends the pending start first, the stop that was asked for is forgotten, and the charge
-  keeps running. A read that fails doesn't cause this: a failed setup cancels the deadline, and the next
-  try gets a new one.
+  stored pending start has a deadline of at least 2 minutes (`START_LOAD_GRACE`, D31). A setup try has to
+  get through its charger read and its car read within it. If the deadline passes first, it ends the
+  pending start and saves that, whether the car read then works or fails: the stop that was asked for is
+  forgotten, and the charge keeps running. Only a try that fails before the deadline is safe: the failed
+  setup cancels the deadline, and the next try gets a new one. The same holds on `main` today for a charger
+  read that alone outlasts the deadline; this work adds the car read's time to it.
 - Only the setup read changes its order. While running, the control gets the charger read before the car is
   read, as today: there a car error fails nothing, and a rejected car read doesn't unload the entry.
 - This also covers the one car error that fails setup today, `AuthError`.

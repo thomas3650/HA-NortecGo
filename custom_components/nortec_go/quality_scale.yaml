@@ -84,8 +84,8 @@ rules:
   entity-translations: done
   exception-translations: done
   icon-translations:
-    status: todo
-    comment: "No icons.json yet; the Charge switch, the Refresh button and the Current price, Charge status and Charge limit sensors have no icon of their own."
+    status: done
+    comment: "icons.json gives an icon to every entity that has no device class or the enum device class, with one per state for Charge status; every other entity shows its device class's icon."
   reconfiguration-flow:
     status: todo
     comment: "No reconfigure step; the config flow has only the user and reauth steps."

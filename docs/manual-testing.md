@@ -128,6 +128,9 @@ Reads and the device page:
   *Refresh* only reads. A press whose read fails shows an error; the checklist has no step that makes one
   fail.
 - [ ] The device page: both devices, their entities, and the diagnostic entities in the diagnostic group.
+- [ ] Icons: an entity without a device class shows an icon of its own, not Home Assistant's generic one
+  (an eye, a toggle or a button pointer), and *Charge status* shows an icon for its current state. No icon
+  is blank.
 
 ### EV Smart Charging (#8)
 

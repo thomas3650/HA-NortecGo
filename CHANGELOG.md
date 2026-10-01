@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+
+- Icons: the entities that showed Home Assistant's generic icon now have one of their own, and *Charge
+  status* shows an icon for each state.
+
 ## [0.4.0] - 2026-10-01
 
 ### Added

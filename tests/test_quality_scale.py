@@ -44,7 +44,7 @@ CHECKED_STATUSES = {
     "strict-typing": "done",
     "dynamic-devices": "todo",
     "stale-devices": "todo",
-    "icon-translations": "todo",
+    "icon-translations": "done",
     "reconfiguration-flow": "todo",
 }
 

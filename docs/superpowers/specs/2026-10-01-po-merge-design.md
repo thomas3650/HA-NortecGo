@@ -30,9 +30,9 @@ Proposed by the team lead and ruled by the owner through the PO (issue #84, 2026
 | Releasing PRs | The PO may merge them (`feat`, `fix`, `perf`), and so publish a release |
 | Owner-merge PRs | A PR stays the owner's to merge when it touches charge start or stop; auth, tokens or reauth; a hard rule (`CLAUDE.md` → *Hard rules*); `.claude/`; `.pre-commit-config.yaml`; or `.github/workflows/`. A PR that only adds a decision the owner approved in its spec does not count |
 | When | Right away, once the PR is ready and the required checks are green on the head commit the PO checked |
-| How | `gh pr merge <n> --squash --match-head-commit <sha>`; never `--admin`, never `--auto`. An open review thread, a changes-requested review or a comment made after ready goes to the owner; the PO resolves no thread to get a merge through |
+| How | `gh pr merge <n> --squash --match-head-commit <sha>`; never `--admin`, never `--auto`. An open review thread, a changes-requested review or a comment made after ready stops the merge until the owner gives a go-ahead (a comment asking for a change goes to the team lead first); the PO resolves no thread to get a merge through |
 | A PR behind `main` | The resumed team lead updates it (merging `origin/main` in, and for a releasing PR the bump step again). The PO then re-runs `scripts/smoke` on the new head before it merges |
-| Proposed; the owner's approval of this spec confirms them | A PR comment or review made after ready stops the PO's merge until the owner answers (stricter than the ruling, which named an open thread and changes requested). An owner-merge PR that is behind `main` is brought up to date only when the owner says they are about to merge it |
+| Proposed; the owner's approval of this spec confirms them | A PR comment or review made after ready stops the PO's merge until the owner gives a go-ahead, also after the team lead has fixed what the comment asked for (stricter than the ruling, which named an open thread and changes requested). An owner-merge PR that is behind `main` is brought up to date only when the owner says they are about to merge it |
 | Hard rule 1 | It names who merges |
 | Decision log | D45: *The PO merges ready PRs*. D35's status becomes `active; the owner merges superseded by D45` |
 | Title | `process: the PO merges ready PRs (#84)`; non-releasing, so no `CHANGELOG.md` entry and no bump |
@@ -119,21 +119,25 @@ After `gh pr ready` (§8 *From branch ready to PR ready*, step 6), for a PR the 
    - no review, PR comment or reply in a review thread is newer than the PR's *cleared time* (below; the
      same GraphQL query gives each thread's latest comment time).
 
-   Otherwise the PO doesn't merge. A comment that asks for a change goes to the resumed team lead, as
-   *After ready* does today; anything else, or a comment the PO can't place, is escalated to the owner. The
-   PO resolves no thread and dismisses no review: a changes-requested review stops the merge until the owner
-   dismisses it. (PRs in the PO flow are opened under the owner's account, so the owner can't request
+   Otherwise the PO doesn't merge, and the merge waits for the owner's go-ahead:
+   - a comment that asks for a change goes to the resumed team lead, as *After ready* does today ("changes
+     requested" there means such a comment). After the fix the PR goes through *From branch ready to PR
+     ready* again, and the PO then asks the owner for a go-ahead, naming the comment and the fix;
+   - anything else, or a comment the PO can't place, is escalated to the owner at once.
+
+   The PO resolves no thread and dismisses no review: a review in the state `CHANGES_REQUESTED` stops the
+   merge until the owner dismisses it. (PRs in the PO flow are opened under the owner's account, so the owner can't request
    changes on them; a comment is the owner's way to stop a merge. The PO itself writes nothing on a PR after
    ready except its description.)
 4. **Merge the checked head:** `gh pr merge <n> --squash --match-head-commit <checked head>`. Never `--admin`
-   and never `--auto`. If GitHub refuses, the PO starts once more at step 1 (`main` may have moved during
-   the wait in step 2); a second refusal is escalated.
+   and never `--auto`. If GitHub refuses, the PO starts once more with the `git fetch` and step 1 (`main` may
+   have moved during the wait in step 2); a second refusal is escalated.
 
 **The cleared time** is part of what the PO records (§1), in UTC and ISO 8601 as GitHub's timestamps are:
-first the time it marked the PR ready. When the
-owner answers an escalation from step 3 with a go-ahead, the PO sets it to the time of that answer, so the
-comments the owner has dealt with no longer stop the merge; an unresolved thread still does, until the owner
-resolves it. A new checked head (after *Behind `main`*) doesn't change it.
+first the time it marked the PR ready. When the owner gives a go-ahead in step 3 (to an escalation, or
+after a team lead's fix), the PO sets it to the time of that answer, so the comments the owner has dealt
+with no longer stop the merge; an unresolved thread still does, until the owner resolves it. Nothing else
+moves it: not a new checked head, and not the team lead's fix alone.
 
 **Behind `main`.** The PO resumes the team lead (*After ready*: the issue worktree is re-created). The team
 lead merges `origin/main` in, for a releasing PR runs the bump step again (`releasing.md` → *Two releasing
@@ -149,8 +153,8 @@ To save a wasted smoke run, step 1 of *From branch ready to PR ready* gains the 
 **One merge at a time, in order.** The PRs the PO may merge form a queue, in the order they became ready.
 The PO merges the first, finishes §3 including the release check, and only then turns to the next. Only the
 next PR in the queue is brought up to date; the ones behind it wait, since the next merge would leave them
-behind again. A PR that waits for the owner's answer (step 3, or a refusal in step 4) steps out of the queue
-until the answer comes, and then rejoins it at the front. A resume for the first PR in the queue takes a
+behind again. A PR that waits for the owner's answer or for a team lead's fix (step 3, or a refusal in step 4)
+steps out of the queue until the owner's go-ahead comes, and then rejoins it at the front. A resume for the first PR in the queue takes a
 free team-lead slot before a new issue is picked.
 
 **Owner-merge PRs** are not in the queue and block nothing. One that falls behind `main` stays as it is
@@ -189,7 +193,7 @@ or the owner merged it (the loop finds the owner's merges, as today).
 | `CLAUDE.md` | Hard rule 1 names who merges: only the PO and the owner; the PO when `way-of-working.md` §8 *Merging* allows it, the owner otherwise; a team lead, the controller and a subagent never. The `scripts/po` line under *Commands* is unchanged |
 | `docs/way-of-working.md` §1 | Step 11: the owner merges; in the PO flow the PO merges what §8 *Merging* allows |
 | `docs/way-of-working.md` §6 | *Merging and pushing* says the same and points to §8. In the may/may-not table, "Merge PRs" stays in the controller's *may not* column, with a pointer that the PO may (§8) |
-| `docs/way-of-working.md` §8 | The intro and *Roles* (the PO no longer "never merges"; the team lead and workers still never do); the owner-only list (merging whatever *Merging* doesn't give the PO; re-running and tagging unchanged); *From branch ready to PR ready*: step 1 sends back a branch that `origin/main` isn't merged into, step 4 gains the owner-merge decision and the PR description's who-merges line, step 6 records the entry in `.git/po-sessions.json` and leads into *Merging*; *State* names what that file now holds per PR; the new *Merging* and *After a merge* subsections; *After ready*: changes requested still resume the team lead when a slot is free; a branch that `origin/main` isn't merged into (a merge conflict and a stale bump included) resumes it only for the first PR in the queue, and for an owner-merge PR once the owner says they are about to merge it, followed by the repeat of *From branch ready to PR ready*; such a resume takes a free slot before a new issue; the loop's merged-PR check runs *After a merge*, and the loop carries on *Merging* for a ready PR that isn't merged yet |
+| `docs/way-of-working.md` §8 | The intro and *Roles* (the PO no longer "never merges"; the team lead and workers still never do); the owner-only list (merging whatever *Merging* doesn't give the PO; re-running and tagging unchanged); *From branch ready to PR ready*: step 1 sends back a branch that `origin/main` isn't merged into, step 4 gains the owner-merge decision and the PR description's who-merges line, step 6 records the entry in `.git/po-sessions.json` and leads into *Merging*; *State* names what that file now holds per PR; the new *Merging* and *After a merge* subsections; *After ready*: changes requested (a comment asking for a change) still resume the team lead when a slot is free, and the merge then waits for the owner's go-ahead; a branch that `origin/main` isn't merged into (a merge conflict and a stale bump included) resumes it only for the first PR in the queue, and for an owner-merge PR once the owner says they are about to merge it, followed by the repeat of *From branch ready to PR ready*; such a resume takes a free slot before a new issue; the loop's merged-PR check runs *After a merge*, and the loop carries on *Merging* for a ready PR that isn't merged yet |
 | `.claude/agents/po.md` | The description and the intro no longer say "the owner merges". In *Never*: "Merge a PR" becomes merging an owner-merge PR, merging with `--admin` or `--auto`, and resolving a review thread or dismissing a review to get a merge through. Force-push, tags, re-runs on `main` and GitHub settings stay |
 | `docs/releasing.md` | "the owner may merge days after the bump" no longer names the owner; *What happens on merge* says that in the PO flow the PO does the check afterwards (pointing to §8 *After a merge*); *Two releasing PRs at once* points to §8 for the merge order |
 | `docs/decisions.md` | The new entry D45, and D35's status |

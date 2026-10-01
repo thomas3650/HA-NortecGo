@@ -30,20 +30,36 @@
 
 What the spec implies but no single test states, most likely first. Each line names what pins it.
 
-1. **A read of a removed field that mypy can't see** (through `Any`, or in a string). Expected: none is left.
-   Pinned by Task 1, Step 9's grep, which prints nothing.
+1. **A read of a removed field that mypy can't see** (through `Any`). Expected: none is left. Pinned by
+   Task 1, Step 9's grep, which prints nothing.
 2. **A test edited to make it pass.** Expected: the existing tests pass untouched; that is the proof that
    behaviour is unchanged. Pinned by Task 1, Step 9's `git diff --name-only`, which prints exactly two paths.
 3. **An open charge with no energy, power or cost reading** (`kwh`, `kw` or `cost` is `None` on the
    `ActiveCharge`). Expected: the sensor is unknown, as today, not 0 and not the no-charge value. Pinned by
-   the existing cases in `tests/test_sensor.py` and `tests/test_costs.py`, and by Task 1, Step 8: the
-   coverage report shows no missing line in the code this task changes.
+   two existing cases, untouched: `test_charge_energy_and_power_values[open_charge_no_readings]` in
+   `tests/test_sensor.py` and `test_charge_cost[open_no_cost_reading]` in `tests/test_costs.py`.
 4. **No open charge in the charge control** (`active_charge` is `None`). Expected: `charge_is_open` goes by
-   the charger's state alone, the switch is off unless a start is pending, the status falls through to
-   `not_released`, `unplugged` or `idle`, and a stop isn't skipped as "already stopping". Pinned by the
-   existing cases in `tests/test_charge_control.py`, untouched.
-5. **The lock moves more than the client.** Expected: `uv.lock` changes only the `pynortecgo` package entry
+   the charger's state alone, the switch is off unless a start is pending, and the status falls through to
+   `not_released`, `unplugged` or `idle`. Pinned by the existing cases in `tests/test_charge_control.py`,
+   untouched.
+5. **Two things in the charge control that no existing test pins**, found by mutating the moved reads: a
+   stop with a read charger and no open charge still sends the stop (every stop test reads a `CHARGING`
+   charger first), and in `charge_status` the `UNKNOWN` check stays below the pending-start return. No test
+   can be added in this work (the test files stay untouched), so the guard is the review: `task-reviewer`
+   confirms, from Task 1, Step 9's diff of `charge_control.py`, that the `async_stop` line is a literal name
+   swap and that the local in `charge_status` sits after the three early returns. Both cases go in the
+   follow-up issue.
+6. **The lock moves more than the client.** Expected: `uv.lock` changes only the `pynortecgo` package entry
    (0.8.0 needs the same dependencies as 0.7.0). Pinned by Task 1, Step 2.
+
+---
+
+## Before wave 1 (the controller)
+
+- [x] Merge `origin/main` in (no rebase), `uv sync`, the gates, push. Done when this plan was written: the
+  branch holds `main` with #86 and #87. #86 changed `version` in `manifest.json`, next to the `requirements`
+  line Task 1 changes, so the tasks start from a head that has it. If `main` moves again before the task
+  worktrees are made, repeat this step first.
 
 ---
 
@@ -74,8 +90,6 @@ What the spec implies but no single test states, most likely first. Each line na
   `coordinator.py` and `binary_sensor.py`. `NortecGoChargeSensorDescription.value_fn` becomes
   `Callable[[ActiveCharge], float | None]`.
 
-The line numbers below are from the branch at the time of writing; go by the quoted text.
-
 - [ ] **Step 1: Bump both pins**
 
 In `pyproject.toml` and in `custom_components/nortec_go/manifest.json`, change `pynortecgo==0.7.0` to
@@ -89,9 +103,10 @@ git diff --stat uv.lock
 git diff uv.lock | grep '^[-+]' | grep -v '^[-+][-+]'
 ```
 
-Expected: the changed lines are only in the `pynortecgo` package entry (its version, and its sdist and wheel
-lines), plus the `pynortecgo` specifier where the lock repeats the project's own requirement. If any other
-package's version moved, stop and report it.
+Expected: `uv lock` prints one `Updated` line, `Updated pynortecgo v0.7.0 -> v0.8.0`, and the diff has four
+changed line pairs, all for `pynortecgo`: the specifier where the lock repeats the project's own
+requirement, the package's version, its sdist and its wheel. If `uv lock` names any other package, stop and
+report it.
 
 - [ ] **Step 3: See it fail (the red state)**
 
@@ -100,9 +115,10 @@ uv run mypy
 ```
 
 Expected: FAIL, with errors only in `charge_control.py`, `coordinator.py`, `binary_sensor.py`, `sensor.py`,
-`costs.py` and `tests/conftest.py`. Each says `"Charger" has no attribute "charge_…"`, or names an unexpected
-keyword argument for `Charger`. Keep the list: every line in it is a read this task moves. An error in any
-other file means the spec's inventory is wrong: stop and report it.
+`costs.py` and `tests/conftest.py`. They say `"Charger" has no attribute "charge_…"`, or name an unexpected
+keyword argument for `Charger`; a line with such an error can carry a second one that follows from it (a
+`no-any-return`, in `costs.py` and in `charge_status`). Keep the list: every line in it is a read this task
+moves. An error in any other file means the spec's inventory is wrong: stop and report it.
 
 - [ ] **Step 4: The fixture, `tests/conftest.py`**
 
@@ -326,7 +342,8 @@ uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-
 
 Expected: all pass. In the coverage report, `charge_control.py`, `costs.py`, `sensor.py`, `binary_sensor.py`
 and `coordinator.py` show no missing line that this task wrote or changed (compare the *Missing* column with
-the lines you edited). If `ruff format --check` fails, run `uv run ruff format` and rerun. A failing test in
+the lines you edited; `binary_sensor.py` has one uncovered line today, in the car sensor, which isn't
+yours). If `ruff format --check` fails, run `uv run ruff format` and rerun. A failing test in
 a file other than `conftest.py` or `test_diagnostics.py` is a behaviour change: fix the integration code,
 never that test.
 
@@ -336,10 +353,14 @@ never that test.
 git diff --name-only HEAD -- tests
 grep -rnE '\.(charge_id|charge_state|charge_state_raw|can_stop|charge_kwh|charge_kw|charge_cost)\b' custom_components tests
 git diff HEAD -- custom_components/nortec_go/manifest.json
+git diff HEAD -- custom_components/nortec_go/charge_control.py
 ```
 
 Expected: the first prints exactly `tests/conftest.py` and `tests/test_diagnostics.py`; the grep prints
-nothing (exit status 1); the manifest diff is the one `requirements` line.
+nothing (exit status 1); the manifest diff is the one `requirements` line. The `charge_control.py` diff is
+the new helper, four one-line swaps (`charge_is_open`, `is_charge_on`, `async_stop`, `on_charger_read`) and
+the `charge_status` block (one added line for the local, and the `UNKNOWN` condition and the two lines
+below it reading the local), and nothing else. Put that diff in the report.
 
 - [ ] **Step 10: The bump checklist (`docs/releasing.md`, *Bumping `pynortecgo`*)**
 
@@ -391,7 +412,8 @@ Expected: one commit, and a clean tree.
 
 **Interfaces:**
 - Consumes: the public name `ActiveCharge` (fixed by this plan; the code lands with Task 1), and the number
-  D46, handed out by the PO.
+  D46, handed out by the PO. The task starts ahead of that input (`docs/way-of-working.md`, *Starting ahead
+  of inputs*): its commit is picked only once Task 1 is on the feature branch.
 - Produces: nothing other tasks use.
 
 - [ ] **Step 1: The decision entry**
@@ -413,7 +435,7 @@ own reasoning and stays out.
   and §4
 ```
 
-D44 isn't in the file on this branch (it is on another open PR); leave the gap.
+The file's last entry is D45, with D44 before it.
 
 - [ ] **Step 2: The checklist item in `docs/releasing.md`**
 
@@ -454,6 +476,7 @@ grep -n "ActiveCharge" docs/releasing.md
 git diff --stat
 uv run pytest -q
 uv run ruff check && uv run ruff format --check && uv run mypy && uv run actionlint && uv run zizmor --offline .github/workflows
+uv run pytest --cov=custom_components.nortec_go --cov-report=term-missing --cov-fail-under=95
 ```
 
 Expected: D46 once as a heading in `decisions.md` and once in `releasing.md`; `ActiveCharge` once in
@@ -485,11 +508,12 @@ git commit -F /tmp/pynortecgo-080-task-2-msg.txt
   Step 9, with the first one as the spec writes it: `git diff --name-only origin/main...HEAD -- tests`.
 - [ ] Task 2 started from names this plan fixes: re-check `docs/releasing.md`'s `ActiveCharge` against the
   code that landed (`grep -n "ACTIVE_CHARGE_FIELDS" tests/test_diagnostics.py`).
-- [ ] File the follow-up issue (label `v3`): the two test cases that became duplicates
-  (`no_charge_ignores_cost`, `no_charge_ignores_fields`), and `make_charger` dropping charge values given
-  without a state. Name it in the PR description.
-- [ ] If #86 has merged: merge `origin/main` in (no rebase), look at `tests/test_diagnostics.py` in the
-  merge, and rerun the gates and the checks. D44 then sits before D46 in `docs/decisions.md`.
+- [ ] File the follow-up issue (label `v3`), and name it in the PR description. It holds:
+  - the two test cases that became duplicates (`no_charge_ignores_cost`, `no_charge_ignores_fields`), and
+    `make_charger` dropping charge values given without a state;
+  - two missing tests in the charge control (Review Focus 5): a stop with a read charger and no open charge
+    sends the stop, and `charge_status` with a pending start and an unknown charger state.
+- [ ] If `main` moved again: merge `origin/main` in (no rebase), and rerun the gates and the checks.
 - [ ] The PR description: the bump checklist's four results (Task 1, Step 10), the rulings (the release
   level; the client's changed warning wording isn't user-visible; D46), the learnings or that there are none,
   the follow-up issue, and that the PR is the owner's to merge (D45).

@@ -92,6 +92,13 @@ The subagent guard refuses a Bash command whose text names `.env`, even in an ex
 that leaves it out, say). A reviewer that tries a plan's code makes its scratch copy with `git archive HEAD`,
 unpacked into a directory outside the repo: it holds only tracked files. Found in #40.
 
+## 2026-10-01: A subagent's Python one-liner and `.claude/`
+
+The subagent guard refuses a subagent's `python -c` command whose text names a path under `.claude/`
+("python may write a guarded path"), even when the code only reads the file. A reviewer reads such a file
+with the Read tool or `git show`, and leaves a check that needs code (parsing an agent file's frontmatter,
+say) to the controller. Found in #84.
+
 ## 2026-10-01: A piped gate hides its exit code
 
 A gate piped through `tail` or `grep` ends with that command's exit code, so a failing gate can look green.

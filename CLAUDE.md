@@ -48,7 +48,9 @@ imported below. Lasting decisions are in `docs/decisions.md`.
 
 ## Hard rules
 
-1. Every change reaches `main` only through a merged PR. Never commit on or push to `main`.
+1. Every change reaches `main` only through a merged PR. Never commit on or push to `main`. Only the PO and
+   the owner merge: the PO when `docs/way-of-working.md` §8 *Merging* allows it, the owner otherwise. A team
+   lead, the controller and a subagent never merge.
 2. Never start or stop a real charge without the owner's explicit OK, in dev or manual testing. Tests always
    mock `pynortecgo`.
 3. Nothing private in this public repo: no account, charger or user IDs, tokens, emails, captures, APK

@@ -201,7 +201,7 @@ integration shows *Last charge cost* as unknown and logs nothing more.
 
 - *Diagnostics*: the sentence on what the file keeps also names the last completed charge:
 
-  > It keeps your charger's and car's names and IDs, and the last charge's ID, cost and time, …
+  > It keeps your charger's and car's names and IDs, and the last charge's ID, cost, energy and time. …
 
 `docs/manual-testing.md` → *Entities*, under *Charger*: two lines, *Cost this charge* and *Last charge
 cost*, in the form of the lines there. (That section's intro already says the owner checks the values and

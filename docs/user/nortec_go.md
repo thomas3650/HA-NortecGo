@@ -285,9 +285,9 @@ are going. To download it, go to **Settings** > **Devices & services** > **Norte
 menu (⋮) and select **Download diagnostics**.
 
 The file leaves out your email, the session tokens and the device ID the integration signs in with; your
-password is never stored. It keeps your charger's and car's names and IDs, and the last charge's ID, cost and
-time. Home Assistant adds its own information, such as its version, your installed custom integrations and
-your time zone. Check the file before you share it, and remove what you don't want public.
+password is never stored. It keeps your charger's and car's names and IDs, and the last charge's ID, cost,
+energy and time. Home Assistant adds its own information, such as its version, your installed custom
+integrations and your time zone. Check the file before you share it, and remove what you don't want public.
 
 ### Reporting a problem
 

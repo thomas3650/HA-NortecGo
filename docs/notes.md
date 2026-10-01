@@ -85,3 +85,14 @@ The Bash tool's shell is zsh, where `"$r:path"` applies a `:` modifier to `$r` (
 
 Without a file name, `pre-commit validate-config` checks nothing and exits 0. Name the file:
 `uv run pre-commit validate-config .pre-commit-config.yaml`. Found in #45.
+
+## 2026-10-01: A scratch copy of the tree for a subagent
+
+The subagent guard refuses a Bash command whose text names `.env`, even in an exclude list (a copy command
+that leaves it out, say). A reviewer that tries a plan's code makes its scratch copy with `git archive HEAD`,
+unpacked into a directory outside the repo: it holds only tracked files. Found in #40.
+
+## 2026-10-01: A piped gate hides its exit code
+
+A gate piped through `tail` or `grep` ends with that command's exit code, so a failing gate can look green.
+Run the gates unpiped, or read the gate's own status (in zsh, `${pipestatus[1]}`). Found in #40.

@@ -242,7 +242,7 @@ class NortecGoChargeSensor(NortecGoChargerEntity, SensorEntity):
 
 
 class NortecGoTotalEnergySensor(NortecGoChargerEntity, SensorEntity):
-    """The energy delivered since the integration was added, summed per charge (D47)."""
+    """The energy delivered since the sensor was added, summed per charge (D47)."""
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR

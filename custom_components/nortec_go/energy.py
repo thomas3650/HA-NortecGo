@@ -142,6 +142,9 @@ def _ledger_from(data: dict[str, Any]) -> EnergyLedger:
     """The stored ledger; raises KeyError, TypeError or ValueError on a wrong shape."""
     settled_id = data["settled_id"]
     settled_at = data["settled_at"]
+    provisional = data["provisional"]
+    if not isinstance(provisional, list):
+        raise TypeError("provisional is not a list")
     return EnergyLedger(
         since=_parse_time(data["since"]),
         settled_kwh=_parse_kwh(data["settled_kwh"]),
@@ -153,7 +156,7 @@ def _ledger_from(data: dict[str, Any]) -> EnergyLedger:
                 kwh=_parse_kwh(item["kwh"]),
                 seen_at=_parse_time(item["seen_at"]),
             )
-            for item in data["provisional"]
+            for item in provisional
         ),
     )
 

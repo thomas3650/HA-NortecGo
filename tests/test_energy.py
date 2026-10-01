@@ -422,6 +422,8 @@ async def test_store_accepts_whole_numbers(
         ),
         pytest.param({**STORED_DATA, "settled_at": 12}, id="number_as_time"),
         pytest.param({**STORED_DATA, "provisional": None}, id="no_provisional_list"),
+        pytest.param({**STORED_DATA, "provisional": ""}, id="provisional_is_text"),
+        pytest.param({**STORED_DATA, "provisional": {}}, id="provisional_is_an_object"),
         pytest.param(
             {**STORED_DATA, "provisional": [{"id": "b", "seen_at": "nonsense"}]},
             id="provisional_item_missing_kwh",

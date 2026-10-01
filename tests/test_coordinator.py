@@ -57,7 +57,7 @@ from custom_components.nortec_go.coordinator import (
     car_device_identifier,
     interval_for,
 )
-from custom_components.nortec_go.energy import EnergyStore
+from custom_components.nortec_go.energy import EnergyLedger, EnergyStore
 
 from .conftest import (
     FAKE_CHARGE_ID,
@@ -2035,3 +2035,35 @@ async def test_wrong_shaped_energy_store_starts_a_new_ledger(
     assert _coordinator(mock_config_entry).data.total_energy_kwh == 0.0
     assert hass_storage[key]["data"]["since"] == "2026-09-26T22:00:00+00:00"
     assert "Ignoring the stored energy total" in caplog.text
+
+
+async def test_control_change_during_the_energy_save_is_kept(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A stop that returns while the ledger is saved is in the data the read returns."""
+    freezer.move_to(MIDNIGHT)
+    mock_client.get_charger.return_value = _charging(1.0)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    control = coordinator.charge_control
+    assert _switch(hass) == "on"
+
+    async def _save(store: EnergyStore, ledger: EnergyLedger) -> None:
+        # The stop returns while the ledger is written. The read it asks for fails, so only
+        # the read under test can carry the change.
+        await control.async_stop()
+        mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+
+    freezer.tick(INTERVAL_CHARGING)
+    mock_client.get_charger.return_value = _charging(2.0)
+    with patch.object(EnergyStore, "async_save", _save):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    mock_client.stop_charge.assert_awaited_once()
+    assert control.state.stop_pending
+    assert coordinator.data.control == control.state
+    assert _switch(hass) == "off"

@@ -524,7 +524,7 @@ async def test_total_energy_sensor(
     assert entry.options["sensor"]["suggested_display_precision"] == 2
 
 
-async def _read(
+async def _read_total(
     hass: HomeAssistant,
     entry: MockConfigEntry,
     mock_client: AsyncMock,
@@ -555,7 +555,9 @@ async def test_total_energy_across_a_charge(
         completed_at=MIDNIGHT + timedelta(minutes=12),
     )
     seen = [
-        await _read(hass, mock_config_entry, mock_client, freezer, minutes, charger)
+        await _read_total(
+            hass, mock_config_entry, mock_client, freezer, minutes, charger
+        )
         for minutes, charger in (
             (
                 5,
@@ -590,7 +592,7 @@ async def test_total_energy_is_rounded(
         kwh=0.1, completed_at=MIDNIGHT + timedelta(minutes=5)
     )
     assert (
-        await _read(
+        await _read_total(
             hass,
             mock_config_entry,
             mock_client,
@@ -602,7 +604,7 @@ async def test_total_energy_is_rounded(
     )
     # 0.1 + 0.2 is 0.30000000000000004 as floats.
     assert (
-        await _read(
+        await _read_total(
             hass,
             mock_config_entry,
             mock_client,
@@ -618,7 +620,7 @@ async def test_total_energy_is_rounded(
         == "0.3"
     )
     assert (
-        await _read(
+        await _read_total(
             hass,
             mock_config_entry,
             mock_client,

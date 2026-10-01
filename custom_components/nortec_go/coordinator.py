@@ -225,10 +225,12 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
                 vehicle = await self._async_read_vehicle()
             else:
                 vehicle = self._vehicle
+        # After every read that can fail this update, so a failed update moves nothing.
+        await self._async_advance_energy(charger, read_at)
+        # No await from here to the return: a control change made during one would be
+        # overwritten by this older snapshot.
         control = self.charge_control.state
         self.update_interval = interval_for(charger, control, timedelta(0))
-        # Last: every read that can fail this update is done, so a failed update moves nothing.
-        await self._async_advance_energy(charger, read_at)
         return NortecGoData(
             charger=charger,
             vehicle=vehicle,

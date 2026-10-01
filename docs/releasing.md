@@ -64,7 +64,7 @@ Every PR title is `type(scope)!: text`. The `version-check` check reads it on ev
 - a `version` that is exactly the next one;
 - an empty *Unreleased*;
 - below it, a `## [X.Y.Z] - YYYY-MM-DD` section with entries. Only the date's format is checked, not its
-  value, since the owner may merge days after the bump.
+  value, since the merge may come days after the bump.
 
 A non-releasing PR changes neither `version` nor `CHANGELOG.md`. The rules live in
 `scripts/release_check.py`.
@@ -82,7 +82,8 @@ one releasing PR merges, the other can't merge until it takes in `main`, and the
    - take `main`'s `version` in `manifest.json`.
 3. Commit the merge, rerun the bump step, commit and push.
 
-In the PO flow the team lead does this after the PO resumes it (`way-of-working.md` §8).
+In the PO flow the team lead does this after the PO resumes it, and the PO merges one PR at a time
+(`way-of-working.md` §8, *Merging*).
 
 ## Fixing an old changelog entry
 
@@ -112,6 +113,9 @@ second finds the release made and ends in `decide`. Then check:
 - the tag;
 - the release, with the changelog section as its notes;
 - that HACS offers the version.
+
+In the PO flow the PO does these checks after every merge, except the HACS one, which stays the owner's
+(`way-of-working.md` §8, *After a merge*).
 
 ## When a release fails
 

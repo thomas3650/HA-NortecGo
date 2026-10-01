@@ -6,6 +6,8 @@ from homeassistant.components.repairs import RepairsFlow, RepairsFlowResult
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
+from .entry import NortecGoConfigEntry
+
 
 class StartBlockedRepairFlow(RepairsFlow):
     """One confirm step that clears the start block."""
@@ -24,7 +26,9 @@ class StartBlockedRepairFlow(RepairsFlow):
         self, user_input: dict[str, str] | None = None
     ) -> RepairsFlowResult:
         """Clear the block when the owner confirms."""
-        entry = self.hass.config_entries.async_get_entry(self._entry_id)
+        entry: NortecGoConfigEntry | None = self.hass.config_entries.async_get_entry(
+            self._entry_id
+        )
         if entry is None or entry.state is not ConfigEntryState.LOADED:
             return self.async_abort(reason="not_loaded")
         if user_input is not None:

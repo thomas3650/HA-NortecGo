@@ -34,7 +34,6 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - Python 3.14 allows `except A, B:` without parentheses (PEP 758), and `ruff format` removes them.
 - The pre-commit `ruff format` hook also formats Python blocks inside `.md` files. The first commit of a
   plan can fail because the hook changed the file; add it again and commit.
-
 - `hass --debug` turns on asyncio debug mode, not debug logging, and HA logs only warnings and up unless
   the config sets a `logger`. `hass --verbose` logs INFO and DEBUG; `--log-file <path>` writes the log
   elsewhere than `config/`.
@@ -42,6 +41,15 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   in the Bluetooth integration (CoreBluetooth via PyObjC). Run it in the foreground with a timer instead
   (`scripts/smoke`). Started with Claude Code's Bash `run_in_background` (`scripts/develop`), it keeps
   running, Bluetooth included; stop it with `pkill -f "hass -c config"`.
+- hassfest's quality-scale check (`validate_iqs_file` in core's `script/hassfest/quality_scale.py`) returns
+  at once for an integration that isn't in core, so only `tests/test_quality_scale.py` checks
+  `quality_scale.yaml` here. It mirrors hassfest's comment rule: a rule written as a mapping needs a
+  `comment`.
+- The current quality-scale rule texts are Markdown files in the public
+  [developers.home-assistant](https://github.com/home-assistant/developers.home-assistant) repo, under
+  `docs/core/integration-quality-scale/rules/`. Most say "There are no exceptions to this rule", yet core
+  marks a rule `exempt`, with a comment, when what it governs doesn't exist (`action-setup` for an
+  integration without service actions).
 
 ## Testing
 

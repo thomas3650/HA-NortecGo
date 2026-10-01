@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-01
+
 ### Changed
 
 - If the car can't be read when the integration starts, the start is tried again until the service answers,

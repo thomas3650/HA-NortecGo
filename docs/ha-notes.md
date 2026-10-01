@@ -58,9 +58,9 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - hassfest's `icons.json` check (core's `script/hassfest/icons.py`) runs on a draft PR too. In the `entity`
   section it wants every icon to start with `mdi:`, and allows only the keys `default`, `state`, `range`
   and `state_attributes` in an entry. It doesn't refuse a state icon equal to its entry's `default` there:
-  that check reaches only core's `entity_component` section. `tests/test_icons.py` is stricter by choice:
-  only the `entity` section, only `default` and `state` in an entry, a `default` in every entry, and no
-  state icon equal to it.
+  that check reaches only core's `entity_component` section and an entry's `state_attributes`.
+  `tests/test_icons.py` is stricter by choice: only the `entity` section, only `default` and `state` in an
+  entry, a `default` in every entry, and no state icon equal to it.
 
 ## Testing
 

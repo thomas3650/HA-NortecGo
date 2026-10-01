@@ -126,9 +126,9 @@ After `gh pr ready` (§8 *From branch ready to PR ready*, step 6), for a PR the 
    - anything else, or a comment the PO can't place, is escalated to the owner at once.
 
    The PO resolves no thread and dismisses no review: a review in the state `CHANGES_REQUESTED` stops the
-   merge until the owner dismisses it. (PRs in the PO flow are opened under the owner's account, so the owner can't request
-   changes on them; a comment is the owner's way to stop a merge. The PO itself writes nothing on a PR after
-   ready except its description.)
+   merge until the owner dismisses it. (PRs in the PO flow are opened under the owner's account, so the
+   owner can't request changes on them; a comment is the owner's way to stop a merge. The PO itself writes
+   nothing on a PR after ready except its description.)
 4. **Merge the checked head:** `gh pr merge <n> --squash --match-head-commit <checked head>`. Never `--admin`
    and never `--auto`. If GitHub refuses, the PO starts once more with the `git fetch` and step 1 (`main` may
    have moved during the wait in step 2); a second refusal is escalated.
@@ -153,9 +153,9 @@ To save a wasted smoke run, step 1 of *From branch ready to PR ready* gains the 
 **One merge at a time, in order.** The PRs the PO may merge form a queue, in the order they became ready.
 The PO merges the first, finishes §3 including the release check, and only then turns to the next. Only the
 next PR in the queue is brought up to date; the ones behind it wait, since the next merge would leave them
-behind again. A PR that waits for the owner's answer or for a team lead's fix (step 3, or a refusal in step 4)
-steps out of the queue until the owner's go-ahead comes, and then rejoins it at the front. A resume for the first PR in the queue takes a
-free team-lead slot before a new issue is picked.
+behind again. A PR that waits for the owner's answer or for a team lead's fix (step 3, or a refusal in
+step 4) steps out of the queue until the owner's go-ahead comes, and then rejoins it at the front. A resume
+for the first PR in the queue takes a free team-lead slot before a new issue is picked.
 
 **Owner-merge PRs** are not in the queue and block nothing. One that falls behind `main` stays as it is
 until the owner says they are about to merge it; the PO then brings it up to date (*Behind `main`*, without

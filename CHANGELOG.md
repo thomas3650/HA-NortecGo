@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Fixed
+
+- The *Refresh* button shows an error when its charger read or its price read fails, instead of succeeding
+  silently. A `button.press` step in a script or an automation fails then too.
+
 ## [0.1.1] - 2026-09-29
 
 ### Fixed

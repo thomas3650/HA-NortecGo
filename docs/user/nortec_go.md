@@ -199,6 +199,10 @@ press the *Refresh* button. From an automation, the `homeassistant.update_entity
 entity reads the charger, and the car if it wasn't read in the last few minutes, but not the prices (see
 *Automation examples*).
 
+If the charger read or the price read of a *Refresh* press fails, the press shows an error. The other read
+still runs; when both fail, the error is the charger read's. In a script or an automation, a `button.press`
+step on *Refresh* fails then too.
+
 ## Known limitations
 
 - One charger per account. An account with no charger or with more than one can't be added.

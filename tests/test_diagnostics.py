@@ -252,6 +252,19 @@ async def test_diagnostics_output(
             "first_slot_start": "2026-09-26T22:00:00+00:00",
             "last_slot_start": "2026-09-26T23:45:00+00:00",
         },
+        "energy": {
+            "since": "2026-09-27T10:00:00+00:00",
+            "settled_kwh": 0.0,
+            "settled_id": None,
+            "settled_at": None,
+            "provisional": [
+                {
+                    "id": FAKE_CHARGE_ID,
+                    "kwh": 4.2,
+                    "seen_at": "2026-09-27T10:00:00+00:00",
+                }
+            ],
+        },
     }
 
 

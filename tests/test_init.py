@@ -321,6 +321,21 @@ async def test_remove_entry_removes_stored_prices(
     assert key not in hass_storage
 
 
+async def test_remove_entry_removes_the_stored_energy_ledger(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Deleting the entry deletes its stored Total energy ledger."""
+    await setup_integration(hass, mock_config_entry)
+    key = f"nortec_go.{mock_config_entry.entry_id}.energy"
+    assert key in hass_storage
+    assert await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert key not in hass_storage
+
+
 CAR_ENTITY_IDS = (
     "sensor.family_car_battery",
     "sensor.family_car_charge_limit",

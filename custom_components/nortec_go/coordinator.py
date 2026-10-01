@@ -50,6 +50,7 @@ from .const import (
     PRICE_RETRY_DELAY,
     TICK_MINUTES,
 )
+from .energy import EnergyLedger, EnergyStore, advance, new_ledger, total_kwh
 from .entry import NortecGoConfigEntry
 from .prices import KnownSlots, PriceStore, merge_forecast, next_price_read, prune
 
@@ -69,13 +70,15 @@ class NortecGoData:
     """One read of the charger and the car, with the charge control's state.
 
     vehicle is None when the account has no single car, at setup or since (D44). read_at is
-    when the charger was last read successfully.
+    when the charger was last read successfully. total_energy_kwh is the energy ledger's total
+    after this read (D47).
     """
 
     charger: Charger
     vehicle: Vehicle | None
     control: ChargeControlState
     read_at: datetime
+    total_energy_kwh: float
 
 
 def interval_for(
@@ -132,6 +135,9 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self._car_read_at: datetime | None = None
         self._read_car_next = False
         self._price_store = PriceStore(hass, entry.entry_id)
+        self._energy_store = EnergyStore(hass, entry.entry_id)
+        # A placeholder until async_load_energy; nothing reads or saves it.
+        self._energy = new_ledger(dt_util.utcnow())
         self._prices_failing = False
         self._price_retry: CALLBACK_TYPE | None = None
         # The setup read can schedule a retry before the timers start.
@@ -158,6 +164,11 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
     def price_retry_pending(self) -> bool:
         """Whether a price read retry is scheduled (D37)."""
         return self._price_retry is not None
+
+    @property
+    def energy_ledger(self) -> EnergyLedger:
+        """The ledger Total energy is summed from (D47)."""
+        return self._energy
 
     async def _async_update_data(self) -> NortecGoData:
         """Read the charger, then the car when due; set the next interval."""
@@ -216,8 +227,14 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
                 vehicle = self._vehicle
         control = self.charge_control.state
         self.update_interval = interval_for(charger, control, timedelta(0))
+        # Last: every read that can fail this update is done, so a failed update moves nothing.
+        await self._async_advance_energy(charger, read_at)
         return NortecGoData(
-            charger=charger, vehicle=vehicle, control=control, read_at=read_at
+            charger=charger,
+            vehicle=vehicle,
+            control=control,
+            read_at=read_at,
+            total_energy_kwh=total_kwh(self._energy),
         )
 
     async def _async_read_charger(self) -> Charger:
@@ -233,6 +250,13 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
                     dt_util.utcnow() - self.data.read_at,
                 )
             raise
+
+    async def _async_advance_energy(self, charger: Charger, read_at: datetime) -> None:
+        """Count the read in the energy ledger, and save the ledger when it changed (D47)."""
+        advanced = advance(self._energy, charger, read_at)
+        if advanced is not self._energy:
+            self._energy = advanced
+            await self._energy_store.async_save(advanced)
 
     def _car_due(self, now: datetime) -> bool:
         """Read the car when asked, or when its last try is old enough (§3.2)."""
@@ -398,6 +422,18 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         name = charger.name or self.config_entry.title
         if device.name != name:
             registry.async_update_device(device.id, name=name)
+
+    async def async_load_energy(self) -> None:
+        """Load the stored energy ledger, or start a new one (D47).
+
+        A new one is saved at once, so its start survives a restart that comes before the first
+        charge: a charge that then runs while Home Assistant is off still counts.
+        """
+        ledger = await self._energy_store.async_load()
+        if ledger is None:
+            ledger = new_ledger(dt_util.utcnow())
+            await self._energy_store.async_save(ledger)
+        self._energy = ledger
 
     async def async_load_prices(self) -> None:
         """Load the stored slots, without yesterday's, and the prices' currency."""

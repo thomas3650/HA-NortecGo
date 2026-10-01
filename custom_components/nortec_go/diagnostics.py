@@ -84,6 +84,8 @@ async def async_get_config_entry_diagnostics(
                 "first_slot_start": min(slots, default=None),
                 "last_slot_start": max(slots, default=None),
             },
+            # The Total energy ledger; charge IDs aren't secrets (D38).
+            "energy": asdict(coordinator.energy_ledger),
         }
     )
     return async_redact_data(diagnostics, TO_REDACT)

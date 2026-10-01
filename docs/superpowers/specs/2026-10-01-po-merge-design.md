@@ -30,7 +30,7 @@ Proposed by the team lead and ruled by the owner through the PO (issue #84, 2026
 | Releasing PRs | The PO may merge them (`feat`, `fix`, `perf`), and so publish a release |
 | Owner-merge PRs | A PR stays the owner's to merge when it touches charge start or stop; auth, tokens or reauth; a hard rule (`CLAUDE.md` → *Hard rules*); `.claude/`; `.pre-commit-config.yaml`; or `.github/workflows/`. A PR that only adds a decision the owner approved in its spec does not count |
 | When | Right away, once the PR is ready and the required checks are green on the head commit the PO checked |
-| How | `gh pr merge <n> --squash --match-head-commit <sha>`; never `--admin`, never `--auto`. An open review thread, a changes-requested review or a comment made after ready stops the merge until the owner gives a go-ahead (a comment asking for a change goes to the team lead first); the PO resolves no thread to get a merge through |
+| How | `gh pr merge <n> --squash --match-head-commit <sha>`; never `--admin`, never `--auto`. An open review thread, a changes-requested review or a comment made after ready stops the merge: a comment until the owner gives a go-ahead (one asking for a change goes to the team lead first), a thread until the owner resolves it, a review until the owner dismisses it. The PO resolves no thread and dismisses no review to get a merge through |
 | A PR behind `main` | The resumed team lead updates it (merging `origin/main` in, and for a releasing PR the bump step again). The PO then re-runs `scripts/smoke` on the new head before it merges |
 | Proposed; the owner's approval of this spec confirms them | A PR comment or review made after ready stops the PO's merge until the owner gives a go-ahead, also after the team lead has fixed what the comment asked for (stricter than the ruling, which named an open thread and changes requested). An owner-merge PR that is behind `main` is brought up to date only when the owner says they are about to merge it |
 | Hard rule 1 | It names who merges |
@@ -94,7 +94,8 @@ why).
 
 **What the PO records.** When it marks a PR ready, the PO writes to the PR's entry in
 `.git/po-sessions.json`: that it is ready, who merges it (`po` or `owner`), the head commit the smoke
-test ran on (the *checked head*), and the *cleared time* (§2). A later session reads it there. If the entry
+test ran on (the *checked head*), the *cleared time* (§2), and what the PR waits for, if anything (the
+owner's go-ahead, or a team lead's fix and for which comment or check). A later session reads it there. If the entry
 or the checked head is missing, or the PR's head is a different commit, the PR goes through *From branch
 ready to PR ready* again before any merge.
 
@@ -122,7 +123,8 @@ After `gh pr ready` (§8 *From branch ready to PR ready*, step 6), for a PR the 
    Otherwise the PO doesn't merge, and the merge waits for the owner's go-ahead:
    - a comment that asks for a change goes to the resumed team lead, as *After ready* does today ("changes
      requested" there means such a comment). After the fix the PR goes through *From branch ready to PR
-     ready* again, and the PO then asks the owner for a go-ahead, naming the comment and the fix;
+     ready* again, as in *Behind `main`* (no `gh pr ready`; the new checked head is recorded), and the PO
+     then asks the owner for a go-ahead, naming the comment and the fix;
    - anything else, or a comment the PO can't place, is escalated to the owner at once.
 
    The PO resolves no thread and dismisses no review: a review in the state `CHANGES_REQUESTED` stops the
@@ -153,9 +155,10 @@ To save a wasted smoke run, step 1 of *From branch ready to PR ready* gains the 
 **One merge at a time, in order.** The PRs the PO may merge form a queue, in the order they became ready.
 The PO merges the first, finishes §3 including the release check, and only then turns to the next. Only the
 next PR in the queue is brought up to date; the ones behind it wait, since the next merge would leave them
-behind again. A PR that waits for the owner's answer or for a team lead's fix (step 3, or a refusal in
-step 4) steps out of the queue until the owner's go-ahead comes, and then rejoins it at the front. A resume
-for the first PR in the queue takes a free team-lead slot before a new issue is picked.
+behind again. A PR that waits for the owner's answer or for a team lead's fix steps out of the queue, and
+rejoins it at the front: after the owner's go-ahead (step 3, or a refusal in step 4), or once the fix for a
+failed check (step 2) has been through *From branch ready to PR ready* again. A resume for a PR that is
+first in the queue or has stepped out of it takes a free team-lead slot before a new issue is picked.
 
 **Owner-merge PRs** are not in the queue and block nothing. One that falls behind `main` stays as it is
 until the owner says they are about to merge it; the PO then brings it up to date (*Behind `main`*, without

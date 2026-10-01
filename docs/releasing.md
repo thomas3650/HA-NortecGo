@@ -172,16 +172,16 @@ or renamed without them. It doesn't see a change made only in GitHub's settings.
 
 `requirements` in `manifest.json` pins the `pynortecgo` client library to an exact version, for example
 `pynortecgo==X.Y.Z`, and `pyproject.toml` pins the same version. A new client release gets its own pull
-request that bumps both pins, updates the lock with `uv lock --upgrade-package pynortecgo` (which leaves
-the other pins alone, apart from what the new version needs), runs the usual gates, and works through this
-checklist before merging:
+request, or the pull request of the feature that needs it. That pull request bumps both pins, updates the
+lock with `uv lock --upgrade-package pynortecgo` (which leaves the other pins alone, apart from what the new
+version needs), runs the usual gates, and works through this checklist before merging:
 
 - [ ] Read the new version's exception messages, including errors it wraps from lower layers, and confirm
   they hold no email, password, tokens, device ID or request bodies. The integration passes them into its
   logs (`CLAUDE.md`, hard rule 5).
 - [ ] If `test_client_model_fields_are_pinned` in `tests/test_diagnostics.py` fails, the diagnostics show
-  a changed `Charger` or `Vehicle` field: decide for each new field whether it is a secret, add it to
-  `TO_REDACT` in `diagnostics.py` if so, and update the pinned sets (D38).
+  a changed `Charger`, `CompletedCharge` or `Vehicle` field: decide for each new field whether it is a
+  secret, add it to `TO_REDACT` in `diagnostics.py` if so, and update the pinned sets (D38).
 - [ ] Look for new exception classes the charger, car, price, start and stop calls can raise, and give each
   the right handling. The charger read's catch-all only keeps an unknown error from crashing the read.
 - [ ] Read the client's changelog for breaking changes to the models the entities use.

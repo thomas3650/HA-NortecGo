@@ -29,6 +29,7 @@ from pynortecgo import (
     NortecGoClient,
     NortecGoError,
     PaymentSourceNotFoundError,
+    UnknownChargerStateError,
     VehicleNotFoundError,
 )
 
@@ -67,6 +68,7 @@ CHARGE_STATUS_OPTIONS = [
 _PRE_CHECK_ERRORS: dict[type[NortecGoError], str] = {
     CableNotConnectedError: "cable_not_connected",
     ChargerNotReleasedError: "charger_not_released",
+    UnknownChargerStateError: "charger_state_unknown",
     PaymentSourceNotFoundError: "no_payment_source",
     MultiplePaymentSourcesError: "multiple_payment_sources",
     VehicleNotFoundError: "no_vehicle",

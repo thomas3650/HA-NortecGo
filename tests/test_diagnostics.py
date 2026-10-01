@@ -16,6 +16,7 @@ from pynortecgo import (
     ChargerNotFoundError,
     ChargerState,
     ChargeState,
+    CompletedCharge,
     NortecGoConnectionError,
     Vehicle,
     VehicleNotFoundError,
@@ -33,15 +34,18 @@ from custom_components.nortec_go.entry import tokens_to_data
 
 from .conftest import (
     DEFAULT_FORECAST_START,
+    FAKE_CHARGE_ID,
     FAKE_CHARGER_ID,
     FAKE_CHARGER_NAME,
     FAKE_DEVICE_ID,
     FAKE_EMAIL,
+    FAKE_LAST_CHARGE_ID,
     FAKE_PASSWORD,
     FAKE_TOKENS,
     FAKE_VEHICLE_NAME,
     NEW_TOKENS,
     make_charger,
+    make_completed_charge,
     make_forecast,
     setup_integration,
 )
@@ -50,7 +54,6 @@ from .conftest import (
 # today's, and a price retry at 12:15 comes before the 15:05 read.
 NOON = datetime(2026, 9, 27, 10, 0, tzinfo=UTC)
 REDACTED = "**REDACTED**"
-FAKE_CHARGE_ID = "fake-charge-id"  # make_charger's charge ID while a charge is open
 # strings.json exceptions, without the final period (HA strips it).
 CANNOT_CONNECT = "Can't reach the Nortec Go service. Home Assistant will try again"
 CHARGER_NOT_FOUND = (
@@ -93,7 +96,11 @@ CHARGER_FIELDS = {
     "can_stop",
     "charge_kwh",
     "charge_kw",
+    "charge_cost",
+    "currency",
+    "last_charge",
 }
+COMPLETED_CHARGE_FIELDS = {"id", "cost", "kwh", "completed_at"}
 VEHICLE_FIELDS = {
     "id",
     "name",
@@ -178,6 +185,8 @@ async def test_diagnostics_output(
         charge_state=ChargeState.CHARGING,
         charge_kwh=4.2,
         charge_kw=7.1,
+        charge_cost=9.87,
+        last_charge=make_completed_charge(),
     )
     await setup_integration(hass, mock_config_entry)
 
@@ -208,6 +217,14 @@ async def test_diagnostics_output(
                 "can_stop": True,
                 "charge_kwh": 4.2,
                 "charge_kw": 7.1,
+                "charge_cost": 9.87,
+                "currency": "DKK",
+                "last_charge": {
+                    "id": FAKE_LAST_CHARGE_ID,
+                    "cost": 42.5,
+                    "kwh": 18.4,
+                    "completed_at": "2026-09-25T06:15:00+00:00",
+                },
             },
             "vehicle": {
                 "id": 424242,
@@ -395,4 +412,5 @@ async def test_unloaded_entry(
 def test_client_model_fields_are_pinned() -> None:
     """A pynortecgo bump that changes these fields fails here: judge each new one (D38)."""
     assert {f.name for f in fields(Charger)} == CHARGER_FIELDS
+    assert {f.name for f in fields(CompletedCharge)} == COMPLETED_CHARGE_FIELDS
     assert {f.name for f in fields(Vehicle)} == VEHICLE_FIELDS

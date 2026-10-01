@@ -67,7 +67,7 @@ def test_every_icon_is_a_well_formed_name() -> None:
 
 
 def test_no_state_icon_repeats_the_default() -> None:
-    """A state icon differs from its entry's default; hassfest (CI only) refuses a repeat."""
+    """A state icon differs from its entry's default: a state without an icon shows the default."""
     for platform, key, entry in _entries(_load("icons.json")):
         for state, icon in entry.get("state", {}).items():
             assert icon != entry["default"], f"{platform}.{key}.{state}"

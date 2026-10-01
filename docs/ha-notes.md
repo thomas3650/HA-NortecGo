@@ -56,10 +56,11 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   marks a rule `exempt`, with a comment, when what it governs doesn't exist (`action-setup` for an
   integration without service actions).
 - hassfest's `icons.json` check (core's `script/hassfest/icons.py`) runs on a draft PR too. In the `entity`
-  section it wants every icon to start with `mdi:`, allows only the keys `default`, `state`, `range` and
-  `state_attributes` in an entry, and refuses a state icon equal to its entry's `default`.
-  `tests/test_icons.py` checks the same and is stricter by choice: only the `entity` section, and a
-  `default` in every entry.
+  section it wants every icon to start with `mdi:`, and allows only the keys `default`, `state`, `range`
+  and `state_attributes` in an entry. It doesn't refuse a state icon equal to its entry's `default` there:
+  that check reaches only core's `entity_component` section. `tests/test_icons.py` is stricter by choice:
+  only the `entity` section, only `default` and `state` in an entry, a `default` in every entry, and no
+  state icon equal to it.
 
 ## Testing
 

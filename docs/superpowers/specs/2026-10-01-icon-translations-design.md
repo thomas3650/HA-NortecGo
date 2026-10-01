@@ -106,8 +106,9 @@ A new `tests/test_icons.py`, with `pynortecgo` mocked as everywhere:
 3. Every icon is a well-formed name: `mdi:`, then groups of lowercase letters and digits joined by
    hyphens (`^mdi:[a-z0-9]+(-[a-z0-9]+)*$`).
 4. The *Charge status* `state` keys equal `CHARGE_STATUS_OPTIONS`; the *Charge* switch's `state` keys are
-   within `on` and `off`. No `state` icon equals its entry's `default` (`hassfest` is expected to refuse
-   that, and it runs in CI only).
+   within `on` and `off`. No `state` icon equals its entry's `default` (a repeat is redundant:
+   a state without an entry shows `default`. This is this repo's own rule; `hassfest` doesn't check it for
+   an integration's `entity` section).
 5. Home Assistant itself loads the file: `async_get_icons(hass, "entity", integrations=[DOMAIN])` returns
    a mapping whose `DOMAIN` entry equals the file's `entity` section.
 6. With the integration set up for an account with a car, every entity of the entry follows §1: it is in

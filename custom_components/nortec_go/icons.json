@@ -1,0 +1,38 @@
+{
+  "entity": {
+    "button": {
+      "refresh": {
+        "default": "mdi:refresh"
+      }
+    },
+    "sensor": {
+      "current_price": {
+        "default": "mdi:cash-clock"
+      },
+      "charge_limit": {
+        "default": "mdi:battery-charging-80"
+      },
+      "charge_status": {
+        "default": "mdi:ev-station",
+        "state": {
+          "start_blocked": "mdi:alert-circle",
+          "starting": "mdi:play-circle-outline",
+          "charging": "mdi:battery-charging",
+          "paused": "mdi:pause-circle-outline",
+          "stopping": "mdi:stop-circle-outline",
+          "not_released": "mdi:connection",
+          "unplugged": "mdi:power-plug-off",
+          "idle": "mdi:power-plug"
+        }
+      }
+    },
+    "switch": {
+      "charge": {
+        "default": "mdi:ev-station",
+        "state": {
+          "on": "mdi:battery-charging"
+        }
+      }
+    }
+  }
+}

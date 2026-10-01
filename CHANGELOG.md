@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-01
+
 ### Fixed
 
 - The *Refresh* button shows an error when its charger read or its price read fails, instead of succeeding

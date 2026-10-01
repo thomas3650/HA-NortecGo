@@ -215,7 +215,7 @@ second keeps D44 before D46 in the file.
   nothing is meant to be built on them. Without the rule, every client release that changes a model would
   force a release of the integration.
 - **Source:** [pynortecgo 0.8.0 spec](superpowers/specs/2026-10-01-pynortecgo-0.8.0-design.md), Decisions
-  and §4.
+  and §4
 
 This move stays inside the rule: the user docs say the file keeps the charger's and the car's names and IDs
 and the last charge's values, and none of those change; they say nothing about the open charge.

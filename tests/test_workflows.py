@@ -196,3 +196,59 @@ def test_release_workflows_run_bash_with_pipefail() -> None:
     """`shell: bash` makes run steps use -eo pipefail, so a failed git ls-remote in a pipe fails the step."""
     for name in ("auto-release.yml", "release.yml", "version-check.yml"):
         assert _load(name)["defaults"] == {"run": {"shell": "bash"}}, name
+
+
+PRE_COMMIT = WORKFLOWS.parent.parent / ".pre-commit-config.yaml"
+
+
+def _pre_commit_repos() -> list[dict[str, Any]]:
+    data = yaml.safe_load(PRE_COMMIT.read_text(encoding="utf-8"))
+    assert isinstance(data, dict)
+    repos = data["repos"]
+    assert isinstance(repos, list)
+    return repos
+
+
+def test_pre_commit_ruff_is_the_locked_one() -> None:
+    """pre-commit runs ruff through uv run, so its version is the one in uv.lock (D41)."""
+    repos = _pre_commit_repos()
+    assert not any("ruff-pre-commit" in repo["repo"] for repo in repos)
+    hooks = {
+        hook["id"]: hook
+        for repo in repos
+        if repo["repo"] == "local"
+        for hook in repo["hooks"]
+    }
+    check, fmt = hooks["ruff-check"], hooks["ruff-format"]
+    assert check["entry"] == "uv run ruff check --force-exclude"
+    assert check["args"] == ["--fix"]
+    assert check["types_or"] == ["python", "pyi", "jupyter"]
+    assert fmt["entry"] == "uv run ruff format --force-exclude"
+    assert fmt["types_or"] == ["python", "pyi", "jupyter", "markdown"]
+    for hook in (check, fmt):
+        assert hook["language"] == "system"
+        assert hook["require_serial"] is True
+
+
+def test_pre_commit_ruff_runs_before_gitleaks() -> None:
+    """The ruff hooks keep their place: after pre-commit-hooks, before gitleaks."""
+    repos = _pre_commit_repos()
+    ids = [[hook["id"] for hook in repo["hooks"]] for repo in repos]
+    ruff = next(i for i, repo_ids in enumerate(ids) if "ruff-check" in repo_ids)
+    gitleaks = next(i for i, repo_ids in enumerate(ids) if "gitleaks" in repo_ids)
+    hygiene = next(i for i, repo_ids in enumerate(ids) if "check-yaml" in repo_ids)
+    assert hygiene < ruff < gitleaks
+    assert repos[ruff]["repo"] == "local"
+    assert "ruff-format" in ids[ruff]
+
+
+def test_dependabot_bumps_pre_commit_hooks() -> None:
+    """Dependabot bumps the remote pre-commit hooks monthly, in one group."""
+    config = yaml.safe_load(
+        (WORKFLOWS.parent / "dependabot.yml").read_text(encoding="utf-8")
+    )
+    updates = {u["package-ecosystem"]: u for u in config["updates"]}
+    pre_commit = updates["pre-commit"]
+    assert pre_commit["directory"] == "/"
+    assert pre_commit["schedule"] == {"interval": "monthly"}
+    assert pre_commit["groups"] == {"pre-commit": {"patterns": ["*"]}}

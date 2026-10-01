@@ -20,3 +20,13 @@ updates:
     groups:
       uv:
         patterns: ["*"]
+  - package-ecosystem: pre-commit
+    directory: /
+    commit-message:
+      prefix: chore
+      include: scope
+    schedule:
+      interval: monthly
+    groups:
+      pre-commit:
+        patterns: ["*"]

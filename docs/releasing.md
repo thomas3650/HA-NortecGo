@@ -172,9 +172,9 @@ or renamed without them. It doesn't see a change made only in GitHub's settings.
 
 `requirements` in `manifest.json` pins the `pynortecgo` client library to an exact version, for example
 `pynortecgo==X.Y.Z`, and `pyproject.toml` pins the same version. A new client release gets its own pull
-request that bumps both pins, updates the lock with `uv lock --upgrade-package pynortecgo` (which leaves
-the other pins alone, apart from what the new version needs), runs the usual gates, and works through this
-checklist before merging:
+request, or the pull request of the feature that needs it. That pull request bumps both pins, updates the
+lock with `uv lock --upgrade-package pynortecgo` (which leaves the other pins alone, apart from what the new
+version needs), runs the usual gates, and works through this checklist before merging:
 
 - [ ] Read the new version's exception messages, including errors it wraps from lower layers, and confirm
   they hold no email, password, tokens, device ID or request bodies. The integration passes them into its

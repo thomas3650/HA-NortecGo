@@ -32,8 +32,13 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   for voluptuous schemas, so `probatio` fails mypy strict there; `config_flow.py` imports
   `voluptuous as vol  # noqa: TID251`.
 - Python 3.14 allows `except A, B:` without parentheses (PEP 758), and `ruff format` removes them.
-- The pre-commit `ruff format` hook also formats Python blocks inside `.md` files. The first commit of a
-  plan can fail because the hook changed the file; add it again and commit.
+- The pre-commit `ruff-format` hook also formats Python blocks inside `.md` files, such as specs and plans
+  (found in #45).
+  - A commit of a plan can fail once with "files were modified by this hook"; re-stage and commit again.
+  - It dedents class methods (indented `def`s) to module level. How a plan writes those, and fragments, is in
+    [`way-of-working.md`](way-of-working.md#1-flow-for-non-trivial-changes) §1 step 5.
+  - It formats those blocks but doesn't lint them, so a plan's test code can hold a `ruff check` finding (for
+    example D403, a lowercase first word in a docstring) that only shows once the code lands in a `.py` file.
 - `hass --debug` turns on asyncio debug mode, not debug logging, and HA logs only warnings and up unless
   the config sets a `logger`. `hass --verbose` logs INFO and DEBUG; `--log-file <path>` writes the log
   elsewhere than `config/`.

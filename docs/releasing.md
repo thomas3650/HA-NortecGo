@@ -114,8 +114,8 @@ second finds the release made and ends in `decide`. Then check:
 - the release, with the changelog section as its notes;
 - that HACS offers the version.
 
-In the PO flow the PO does these checks after every merge, except the HACS one, which stays the owner's
-(`way-of-working.md` §8, *After a merge*).
+In the PO flow the PO checks the runs after every merge, and the tag and the release after the merge of a
+releasing PR; the HACS check stays the owner's (`way-of-working.md` §8, *After a merge*).
 
 ## When a release fails
 

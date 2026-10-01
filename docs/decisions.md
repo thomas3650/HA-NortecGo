@@ -403,3 +403,14 @@ superseded. How to add one:
 - **Why:** The owner's ruling (#84): a finished PR shouldn't wait for the owner to press merge, while the
   changes that can cost money, lock the account or weaken the process keep the owner's eye.
 - **Source:** [PO merge spec](superpowers/specs/2026-10-01-po-merge-design.md), Decisions
+
+### D46: The shape of the diagnostics download isn't user-visible
+- **Date:** 2026-10-01 · **Status:** active
+- **Decision:** A change that only moves, renames, adds or removes keys in the diagnostics download isn't a
+  user-visible change, as long as what the user docs say the file keeps and leaves out stays true: it needs
+  no changelog entry and doesn't make a PR releasing. D38 still decides what the download may show.
+- **Why:** The owner's ruling (#81): the download is a support file, the user docs don't name its keys, and
+  nothing is meant to be built on them. Without the rule, every client release that changes a model would
+  force a release of the integration.
+- **Source:** [pynortecgo 0.8.0 spec](superpowers/specs/2026-10-01-pynortecgo-0.8.0-design.md), Decisions
+  and §4

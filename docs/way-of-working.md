@@ -14,9 +14,10 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
 4. **Spec** in `docs/superpowers/specs/`, then `full-reviewer` until Ready.
 5. **Plan:** `superpowers:writing-plans`, in `docs/superpowers/plans/`, with a `Model:` tag on every task
    (and a `Guarded files:` line where needed; see §5) and a `Wave:` number on every task, written for
-   parallel work (see [Parallel waves](#parallel-waves)). Then `full-reviewer` until Ready. The `ruff-format`
-   hook reformats Python blocks in Markdown, so a fragment that isn't a whole statement (parametrize rows,
-   say) goes in a `text` block, and so do class methods (indented `def`s), which it dedents to module level.
+   parallel work (see [Parallel waves](#parallel-waves)). Then `full-reviewer` until Ready. In a plan, a
+   fragment that isn't a whole statement (parametrize rows, say) goes in a `text` block, and so do class
+   methods (indented `def`s): a pre-commit hook reformats Python blocks in Markdown
+   ([`ha-notes.md`](ha-notes.md#tooling)).
 6. **Draft PR:** once the spec and plan are both Ready, commit them, push, and open a **draft** PR with
    `Closes #n` and links to the spec and plan. Its title follows [`releasing.md`](releasing.md#pr-titles).
    The owner reviews the spec and plan there.
@@ -353,15 +354,15 @@ One branch at a time, in the main checkout (only the PO works there, and only on
 
 Only the PO and the owner merge (D45). The PO merges a PR when it took the PR through *From branch ready to
 PR ready* and marked it ready, in this or an earlier session, the PR is not owner-merge, and nothing on it
-waits for the owner (step 3). Every other PR is the owner's to merge, also Dependabot's, the owner's own
-and trivial ones (§4).
+waits for the owner (step 3 of the merge, below). Every other PR is the owner's to merge, also
+Dependabot's, the owner's own and trivial ones (§4).
 
 **Owner-merge PRs.** A PR is owner-merge when its diff touches something *Escalation* always escalates for
 (the part of that list a diff can touch): charge start or stop (the code that calls them, or what decides
-when they are called); auth, tokens or reauth; a hard rule; `.claude/`, `.pre-commit-config.yaml` or
-`.github/workflows/`. A new decision alone doesn't make a PR owner-merge: the owner approved it in the spec.
-The PO decides from the changed files (`gh pr diff <n> --name-only`) and the spec; a plan task tagged
-`Model: opus` for charge or auth (§5) is a sign. Below 90% sure, the PR is owner-merge.
+when they are called); auth, tokens or reauth; a hard rule; or one of the paths *Escalation* names. A new
+decision alone doesn't make a PR owner-merge: the owner approved it in the spec. The PO decides from the
+changed files (`gh pr diff <n> --name-only`) and the spec; a plan task tagged `Model: opus` for charge or
+auth (§5) is a sign. Below 90% sure, the PR is owner-merge.
 
 **What the PO records.** When it marks a PR ready, the PO writes to the PR's entry in
 `.git/po-sessions.json`: that it is ready, who merges it (`po` or `owner`), the *checked head* (the head
@@ -371,14 +372,13 @@ or the checked head is missing, or the PR's head is a different commit, the PR g
 ready to PR ready* again before any merge.
 
 The merge, after a `git fetch`:
-1. **Up to date:** `origin/main` is merged into the PR's head
-   (`git merge-base --is-ancestor origin/main origin/<branch>`). If not: **Behind `main`**, which covers a
-   merge conflict too.
+1. **Up to date:** `origin/main` is merged into the PR's head (the test in *From branch ready to PR ready*,
+   step 1). If not: **Behind `main`**, which covers a merge conflict too.
 2. **The required checks have run and passed on the checked head:**
-   `gh pr checks <n> --required --json name,bucket` shows all six in bucket `pass`. The PO waits while any is
-   `pending`, and while `version-check` is `skipping`: on a draft it is skipped, GitHub counts a skipped
-   check as passed, and its real run starts only after `gh pr ready`. A failed check goes back to the
-   resumed team lead with the finding.
+   `gh pr checks <n> --required --json name,bucket` shows every required check in bucket `pass`. The PO
+   waits while any is `pending`, and while `version-check` is `skipping`: on a draft it is skipped, GitHub
+   counts a skipped check as passed, and its real run starts only after `gh pr ready`. A failed check goes
+   back to the resumed team lead with the finding.
 3. **Nothing waits for the owner:**
    - the head is still the checked head, and no review has the state `CHANGES_REQUESTED`
      (`gh pr view <n> --json headRefOid,reviews,comments`);
@@ -402,24 +402,26 @@ The merge, after a `git fetch`:
 Then *After a merge*.
 
 **The cleared time** is in UTC and ISO 8601, as GitHub's timestamps are: first the time the PO marked the PR
-ready. When the owner gives a go-ahead in step 3, the PO sets it to the time of that answer, so the comments
-the owner has dealt with no longer stop the merge. Nothing else moves it: not a new checked head, and not a
-team lead's fix alone.
+ready. When the owner gives a go-ahead in step 3 of the merge, the PO sets it to the time of that answer, so
+the comments the owner has dealt with no longer stop the merge. Nothing else moves it: not a new checked
+head, and not a team lead's fix alone.
 
 **Behind `main`.** The PO resumes the team lead (*After ready*). The team lead merges `origin/main` in, for a
 releasing PR runs the bump step again ([`releasing.md`](releasing.md#two-releasing-prs-at-once)), pushes, and
 reports `branch ready`. The PO repeats *From branch ready to PR ready* on the new head, with these
 differences: the visual check only if `main` brought a visible change; the acceptance check only for the
-title, the bump and the PR description; no `gh pr ready`. Step 6's clean-up runs again. The PO records the
-new checked head and starts again with the `git fetch` and step 1.
+title, the bump and the PR description; no `gh pr ready`. The clean-up in step 6 of *From branch ready to PR
+ready* runs again. The PO records the new checked head and starts the merge again with the `git fetch` and
+step 1.
 
 **The queue.** The PRs the PO may merge form a queue, in the order they became ready. The PO merges one at a
 time: the first, then *After a merge* including its release check, and only then the next. Only the next PR
 in the queue is brought up to date; the ones behind it wait, since the next merge would leave them behind
 again. A PR that waits for the owner's answer or for a team lead's fix steps out of the queue, and rejoins it
-at the front: after the owner's go-ahead (step 3, or a refusal in step 4), or once the fix for a failed check
-(step 2) has been through *From branch ready to PR ready* again. A resume for a PR that is first in the
-queue, or has stepped out of it, takes a free team-lead slot before a new issue is picked.
+at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4), or once the fix
+for a failed required check (step 2 of the merge) has been through *From branch ready to PR ready* again. A
+resume for a PR that is first in the queue, or has stepped out of it, takes a free team-lead slot before a
+new issue is picked.
 
 Owner-merge PRs are not in the queue and block nothing. One that falls behind `main` stays as it is until
 the owner says they are about to merge it; the PO then brings it up to date (**Behind `main`**, without the

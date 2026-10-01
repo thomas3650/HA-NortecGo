@@ -27,14 +27,6 @@ pinned to a `master` commit SHA, which Dependabot can't bump; refresh it by hand
 chained with anything that mentions `main` later (`gh pr create --base main`, `git fetch origin main:main`).
 Run `git push` as its own command.
 
-## 2026-09-26: ruff-format reformats Markdown code blocks
-
-The ruff-format pre-commit hook also formats Python code blocks inside `.md` files, such as specs and plans.
-A commit of a plan can fail once with "files were modified by this hook"; re-stage and commit again.
-The hook formats those blocks but doesn't lint them, so a plan's test code can hold a `ruff check` finding
-(for example D403, a lowercase first word in a docstring) that only shows once the code lands in a `.py` file.
-Found in #45.
-
 ## 2026-09-28: EV Smart Charging doesn't re-send *off*
 
 EV Smart Charging compares its schedule with its own remembered state (`auto_charging_state`), not with the
@@ -92,12 +84,13 @@ The subagent guard refuses a Bash command whose text names `.env`, even in an ex
 that leaves it out, say). A reviewer that tries a plan's code makes its scratch copy with `git archive HEAD`,
 unpacked into a directory outside the repo: it holds only tracked files. Found in #40.
 
-## 2026-10-01: A subagent's Python one-liner and `.claude/`
+## 2026-10-01: A subagent's one-liner and guarded paths
 
-The subagent guard refuses a subagent's `python -c` command whose text names a path under `.claude/`
-("python may write a guarded path"), even when the code only reads the file. A reviewer reads such a file
-with the Read tool or `git show`, and leaves a check that needs code (parsing an agent file's frontmatter,
-say) to the controller. Found in #84.
+The subagent guard refuses a subagent's `python -c` or `perl -e` command whose text names a guarded path
+(`.claude/`, `.git/` or `.pre-commit-config.yaml`), even when the code only reads the file. The message
+names the command as it was called, for example "python3 may write a guarded path". A reviewer reads such a
+file with the Read tool or `git show`, and leaves a check that needs code (parsing an agent file's
+frontmatter, say) to the controller. Found in #84.
 
 ## 2026-10-01: A piped gate hides its exit code
 

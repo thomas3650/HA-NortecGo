@@ -6,6 +6,20 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-01
+
+### Added
+
+- *Cost this charge*: what the open charge costs so far.
+- *Last charge cost*: the billed total of the most recent completed charge. Its long-term statistics add
+  up what the charges completed from then on cost.
+
+### Changed
+
+- `pynortecgo` 0.7.0. Each charger read makes one more request.
+- A start refused because the charger reports an unknown state says so, instead of showing a general
+  failure.
+
 ## [0.1.2] - 2026-10-01
 
 ### Fixed

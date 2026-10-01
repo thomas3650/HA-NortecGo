@@ -77,7 +77,8 @@ integration starts (see *Known limitations*).
 | Charging | Binary sensor | On while the car draws power |
 | Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it; off right after a stop until the charger shows it |
 | Charge status | Sensor | Start blocked, Starting, Charging, Paused, Stopping, Waiting for replug, Unplugged or Idle |
-| Energy this charge | Sensor | The energy the open charge has delivered so far, in kWh. Unknown when no charge is open. It can be added to the Energy dashboard as an individual device; each charge counts as a new cycle |
+| Energy this charge | Sensor | The energy the open charge has delivered so far, in kWh. Unknown when no charge is open. For the Energy dashboard, use *Total energy* |
+| Total energy | Sensor | The energy the charger has delivered since you added the integration, in kWh, kept across restarts. Use it for the Energy dashboard (see *Use cases*) |
 | Charging power | Sensor | The charge's latest measured power, in kW. 0 when no charge is open, and unknown if the power couldn't be read |
 | Cost this charge | Sensor | What the open charge costs so far, incl. VAT, fees and the grid tariff, in the charger's currency. Unknown when no charge is open. It can lag *Energy this charge* by a reading, and its last value can be below the billed total; while a charge is stopping it can already show the billed total |
 | Last charge cost | Sensor | The billed total of the most recent completed charge on the charger. Its long-term statistics add up the charges completed after the sensor's first value. Unknown if the charge isn't among the charger's newest, or if it couldn't be read |
@@ -125,6 +126,14 @@ Use *Charging* as the charging state entity, not the *Charge* switch: *Charge* s
 paused and right after a start, so EV Smart Charging's retry wouldn't fire when it should. Keep *Continuous
 charging preferred* on: after a stop the charger needs the cable unplugged and replugged before it can
 start again, so planning one continuous session suits it best.
+
+### The charger in the Energy dashboard
+
+In **Settings** > **Dashboards** > **Energy**, add an individual device with *Total energy* as its energy
+sensor and, if you like, *Charging power* as its power sensor.
+
+Don't add *Energy this charge* as well: the charger would be counted twice. If you added it before *Total
+energy* existed, replace it.
 
 ## Starting a charge
 
@@ -199,7 +208,10 @@ minutes by itself, without a read.
 
 *Energy this charge*, *Charging power* and *Cost this charge* come from the last charger read, so while
 charging they can be up to 5 minutes old. *Last charge cost* follows at the first read after a charge ends,
-or the one after it (up to 60 minutes later); press *Refresh* to read it sooner.
+or the one after it (up to 60 minutes later); press *Refresh* to read it sooner. *Total energy* follows the
+same reads. While a charge runs it grows with *Energy this charge*. When the charge ends, it moves up to
+the charge's final energy at the read that first lists the charge as completed (see *Known limitations* for
+when that doesn't happen).
 
 Turning *Charge* on or off reads the charger right away. To read the charger, the car and the prices now,
 press the *Refresh* button. From an automation, the `homeassistant.update_entity` action on any Nortec Go
@@ -230,10 +242,18 @@ step on *Refresh* fails then too.
   use the repair issue to allow starts again in that case.
 - A charge started or resumed outside Home Assistant, for example in the Nortec Go app, can take up to 60
   minutes to show. Press *Refresh* to see it sooner.
-- The Energy dashboard sees a new charge only when *Energy this charge* starts well below the previous
-  charge's final energy. A charge that follows a very short one, or that is first read late (such as one
-  started outside Home Assistant), can be missed, and then only the difference is counted. Energy delivered
-  after the last read of a charge isn't counted either.
+- *Total energy* misses the end of a charge when a newer charge has completed before the charger was read
+  again (two charges end between two reads, or a newer charge ends while Home Assistant is off). The older
+  charge then keeps its highest reading, and the energy delivered after that reading isn't counted.
+- A charge that the integration never read while it was open (it started and ended between two reads, which
+  are up to 60 minutes apart, or while Home Assistant was off) is counted only if it is still the charger's
+  most recent completed charge at the next read.
+- *Total energy* starts at 0 when you add the integration, and again if you remove the integration and add
+  it back. The Energy dashboard keeps its history.
+- *Total energy* never goes down. In the rare case that a charge's final energy is below a reading taken
+  while it ran, the reading counts.
+- *Energy this charge* restarts with every charge, so it isn't meant for the Energy dashboard: a charge that
+  follows a very short one, or that is first read late, can be missed there.
 - A hold that led to no charge is expected to expire by itself within about 7 days and can't be cancelled
   from Home Assistant.
 - After a stop, the charger needs the cable unplugged and replugged before the next start, so an EV Smart
@@ -312,9 +332,10 @@ are going. To download it, go to **Settings** > **Devices & services** > **Norte
 menu (⋮) and select **Download diagnostics**.
 
 The file leaves out your email, the session tokens and the device ID the integration signs in with; your
-password is never stored. It keeps your charger's and car's names and IDs, and the last charge's ID, cost,
-energy and time. Home Assistant adds its own information, such as its version, your installed custom
-integrations and your time zone. Check the file before you share it, and remove what you don't want public.
+password is never stored. It keeps your charger's and car's names and IDs, the last charge's ID, cost,
+energy and time, and the IDs, energy and times behind *Total energy*. Home Assistant adds its own
+information, such as its version, your installed custom integrations and your time zone. Check the file
+before you share it, and remove what you don't want public.
 
 ### Reporting a problem
 

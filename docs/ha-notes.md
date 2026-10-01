@@ -93,8 +93,8 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - To run the first retry of an entry in `SETUP_RETRY`, fire the time 10 s ahead
   (`async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10))`) and wait with
   `hass.async_block_till_done(wait_background_tasks=True)`. Home Assistant runs the retry as a background
-  task (see the bullet on work that a timer starts), so with the default wait the entry is still in
-  `SETUP_IN_PROGRESS`.
+  task (see the bullet on work that a timer starts), so with the default wait the entry can still be
+  in `SETUP_IN_PROGRESS`.
 
 ## Coordinators and actions
 

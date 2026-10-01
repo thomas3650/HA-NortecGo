@@ -21,8 +21,8 @@ API as the app (through the `pynortecgo` library), which can change without noti
 
 ## Unsupported devices
 
-An account with more than one charger. With no car or more than one there are no car entities, and starting
-a charge needs exactly one car and one saved card (see *Prerequisites*).
+An account with more than one charger. With no car or more than one when the integration starts, there are
+no car entities, and starting a charge needs exactly one car and one saved card (see *Prerequisites*).
 
 ## Prerequisites
 
@@ -65,7 +65,7 @@ The integration has no options to change after setup.
 
 ## Supported functionality
 
-The integration adds two devices: the charger, and the car when the account has exactly one car when the
+The integration adds two devices: the charger, and the car if the account has exactly one when the
 integration starts (see *Known limitations*).
 
 ### Charger

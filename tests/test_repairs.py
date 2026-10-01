@@ -1,4 +1,4 @@
-"""Tests for the Nortec Go repair fix flow."""
+"""Tests for the Nortec Go repair fix flows."""
 
 from http import HTTPStatus
 import json

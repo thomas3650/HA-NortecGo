@@ -230,9 +230,10 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             raise
 
     def _car_due(self, now: datetime) -> bool:
-        """Read the car when asked, or when its last try is old enough (§3.2); the setup read always reads it."""
+        """Read the car when asked, or when its last try is old enough (§3.2)."""
         return (
             self._read_car_next
+            # For mypy only: the setup read always sets _car_read_at.
             or self._car_read_at is None
             or now - self._car_read_at >= CAR_READ_MIN_AGE
         )

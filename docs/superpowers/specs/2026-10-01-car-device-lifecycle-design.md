@@ -27,7 +27,7 @@ Date: 2026-10-01 · Branch: `feat/car-device-lifecycle` · Issues: #41, #42
     read only after the car read worked (§1, *Order*).
   - The same lost stop after a rejected price read at setup (§1, *Order*, describes the hole for the car
     read). The setup's price read runs after the charge control has the charger read, and that isn't
-    changed here; it is issue #85.
+    changed here; it is issue #85. #85 also holds the deadline limit described in §1, *Order*.
   - `sensor.py`, `binary_sensor.py`, `entity.py` and `__init__.py`: no behaviour change, only docstrings
     that describe the "not read yet" state. The car entities are still added by the platforms when
     `has_car` is true at setup, and `__init__.py` still removes an old car device when it is false.
@@ -113,6 +113,12 @@ read (`charge_control.on_charger_read`). Today the control gets it first.
   the car read failed after that, the stop would be cancelled and the next try would no longer know about
   it, so the charge would keep running. With the car read first, a setup that fails on the car leaves the
   stored control as it was loaded, and the try that works sends the stop.
+- One limit stays, accepted by the owner for this work (2026-10-01) and recorded on #85: at a restart the
+  stored pending start has a deadline of at least 2 minutes (`START_LOAD_GRACE`, D31). The setup's charger
+  read and car read together have to finish within it. If a try's reads are slower than that and still
+  work, the deadline ends the pending start first, the stop that was asked for is forgotten, and the charge
+  keeps running. A read that fails doesn't cause this: a failed setup cancels the deadline, and the next
+  try gets a new one.
 - Only the setup read changes its order. While running, the control gets the charger read before the car is
   read, as today: there a car error fails nothing, and a rejected car read doesn't unload the entry.
 - This also covers the one car error that fails setup today, `AuthError`.

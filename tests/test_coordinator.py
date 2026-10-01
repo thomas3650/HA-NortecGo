@@ -422,6 +422,9 @@ async def test_failed_setup_car_read_keeps_a_stop_asked(
     state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
     assert state in (ConfigEntryState.SETUP_RETRY, ConfigEntryState.SETUP_ERROR)
     mock_client.stop_charge.assert_not_awaited()
+    # A save is written on a timer; let one that was scheduled land before looking.
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
     assert hass_storage[key]["data"] == stored
 
     mock_client.get_vehicle.side_effect = None

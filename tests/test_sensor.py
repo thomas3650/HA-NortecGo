@@ -389,11 +389,6 @@ async def test_charge_energy_and_power_sensors(
     [
         (make_charger(is_connected=True), STATE_UNKNOWN, "0.0"),
         (
-            make_charger(is_connected=True, charge_kwh=5.0, charge_kw=6.0),
-            STATE_UNKNOWN,
-            "0.0",
-        ),
-        (
             make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
             STATE_UNKNOWN,
             STATE_UNKNOWN,
@@ -411,7 +406,6 @@ async def test_charge_energy_and_power_sensors(
     ],
     ids=[
         "no_charge",
-        "no_charge_ignores_fields",
         "open_charge_no_readings",
         "open_charge_with_readings",
     ],

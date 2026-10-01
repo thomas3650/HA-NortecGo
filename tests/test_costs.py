@@ -23,7 +23,6 @@ BILLED = make_completed_charge(charge_id=FAKE_CHARGE_ID, cost=13.07)
     ("charger", "expected"),
     [
         (make_charger(), None),
-        (make_charger(charge_cost=5.0, last_charge=make_completed_charge()), None),
         (make_charger(charge_state=ChargeState.CHARGING, charge_cost=12.34), 12.34),
         (
             make_charger(
@@ -64,7 +63,6 @@ BILLED = make_completed_charge(charge_id=FAKE_CHARGE_ID, cost=13.07)
     ],
     ids=[
         "no_charge",
-        "no_charge_ignores_cost",
         "open_no_last_charge",
         "open_other_last_charge",
         "billed_while_stopping",

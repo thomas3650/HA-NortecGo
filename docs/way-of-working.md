@@ -42,7 +42,7 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
     ([`releasing.md`](releasing.md#a-releasing-pr)) and push, update the PR description (Rulings,
     learnings, the smoke result), then `gh pr ready` only when the owner's review is needed, and tell the
     owner.
-11. **Merge:** the owner merges.
+11. **Merge:** the owner merges. In the PO flow the PO merges what §8 *Merging* allows (D45).
 
 ### Parallel waves
 
@@ -183,8 +183,9 @@ before it is opened.
   on when the issue's branch is created, and comes off if the work stops before the PR is merged (a merge
   closes the issue). `blocked-ha` ("Waits for a Home Assistant release") goes on an issue that can't move
   until a Home Assistant release, for example #55. When in doubt, ask the owner (D30).
-- **Merging and pushing:** the owner merges. Only the controller pushes or marks a PR ready; in the PO flow
-  (§8) the team lead pushes and the PO marks ready.
+- **Merging and pushing:** only the owner and the PO merge: the PO in the PO flow, when §8 *Merging* allows
+  it, and the owner otherwise. Only the controller pushes or marks a PR ready; in the PO flow (§8) the team
+  lead pushes and the PO marks ready.
 - **Git guards:** run `uv run pre-commit install` once per clone. The hooks refuse commits on `main` and pushes
   to `main`, and `.claude/settings.json` denies pushes to `main` and `--no-verify`. `main` is also protected
   server-side, with the required checks. Some hooks run a dev tool with `uv run` (ruff, `actionlint`,
@@ -205,7 +206,7 @@ before it is opened.
 
 | The controller may | The controller may not |
 |---|---|
-| Edit anything in the repo, including `.claude/` and `.pre-commit-config.yaml`; `.claude/settings.json` only after asking the owner each time | Merge PRs |
+| Edit anything in the repo, including `.claude/` and `.pre-commit-config.yaml`; `.claude/settings.json` only after asking the owner each time | Merge PRs (in the PO flow the PO may; §8 *Merging*) |
 | Create branches, commit, push feature branches | Force-push |
 | Open draft PRs, update PR descriptions, `gh pr ready` | Push a tag, or re-run a workflow run on `main` (either can publish), unless the owner says so for that release |
 | Create, comment on and label issues (for example, file deferred items) | Change GitHub repo settings, secrets or environments |
@@ -244,20 +245,22 @@ The one-time GitHub settings applied for this repo's ground structure are an exp
 
 ## 8. PO flow
 
-An alternative to running the §1 flow directly: a PO session runs the backlog through team leads, and the
-owner answers escalations and merges (D35). The agent files `.claude/agents/po.md` and `team-lead.md` point
-here.
+An alternative to running the §1 flow directly: a PO session runs the backlog through team leads, makes
+their PRs ready and merges them, and the owner answers escalations and merges the PRs that *Merging* leaves
+to the owner (D35, D45). The agent files `.claude/agents/po.md` and `team-lead.md` point here.
 
 ### Roles and start modes
 
 - **PO:** started by the owner with `scripts/po`, interactive, in the main checkout; its session is always
   named `po`. Picks issues, starts and resumes team leads, answers their questions or escalates, approves
-  specs and plans, hands out D-numbers, runs step 10's checks and marks PRs ready. Never merges.
+  specs and plans, hands out D-numbers, runs step 10's checks, marks PRs ready, and merges them when
+  *Merging* allows it.
 - **Team lead:** a background session per issue, in its own issue worktree, started by the PO and named
   `tl-<topic>`; at most 2. Runs §1 steps 3 to 9 as the controller, with the PO (addressed as `po`) in the
   owner's place. For a releasing title it then runs the bump step
-  ([`releasing.md`](releasing.md#a-releasing-pr)), as its last step before `branch ready`. It never runs
-  `gh pr ready`, `scripts/smoke` or `scripts/develop`, and splits a wave wider than 3 workers.
+  ([`releasing.md`](releasing.md#a-releasing-pr)), as its last step before `branch ready`. It never merges
+  and never runs `gh pr ready`, `scripts/smoke` or `scripts/develop`, and it splits a wave wider than 3
+  workers.
 - **Workers:** the team lead's subagents, as in §2; at most 3 active per team lead.
 - **Team lead mode**, for hard problems: the owner runs `scripts/team-lead` in the foreground in the main
   checkout (session name `team-lead`, no PO named), and is the PO. **PO mode and team lead mode never run at
@@ -265,8 +268,9 @@ here.
   `team-lead` runs, or in a linked worktree, and the PO also checks at start that no session named
   `team-lead` runs. Team leads (`tl-*`) still running while the PO is down count as PO mode: the owner
   doesn't start `scripts/team-lead` then.
-- Owner only: merging, anything that starts or stops a real charge, pushing a tag, re-running a workflow run
-  on `main`, the permission setup for team leads, and `.claude/settings.json`.
+- Owner only: merging what *Merging* doesn't give the PO, anything that starts or stops a real charge,
+  pushing a tag, re-running a workflow run on `main`, the permission setup for team leads, and
+  `.claude/settings.json`.
 
 ### Picking and starting an issue
 
@@ -318,8 +322,10 @@ check is reported by what it covered, not what it saw; a defect is described in 
 ### From branch ready to PR ready
 
 One branch at a time, in the main checkout (only the PO works there, and only one Home Assistant runs):
-1. The main checkout must be clean; if not, escalate. `git fetch`, `git switch --detach origin/<branch>`,
-   `uv sync`. While detached, the PO starts and resumes no team leads.
+1. The main checkout must be clean; if not, escalate. `git fetch`. If `origin/main` isn't merged into the
+   branch (`git merge-base --is-ancestor origin/main origin/<branch>` fails), it goes back to the team lead
+   with that finding, before any smoke test. Otherwise `git switch --detach origin/<branch>`, `uv sync`.
+   While detached, the PO starts and resumes no team leads.
 2. `scripts/smoke`. A failure that comes from the shared `config/` (for example a store version another
    branch left) is escalated, not sent back.
 3. **Visual check**, when the change is visible in HA (entities, names, icons, units, the options flow,
@@ -333,27 +339,136 @@ One branch at a time, in the main checkout (only the PO works there, and only on
 4. **Acceptance check:** the PR against the issue's user story and the approved spec, the title's type and
    release level ([`releasing.md`](releasing.md#pr-titles)), and the PR description (rulings, learnings,
    smoke result, which parts the visual check covered, and that the screenshots are in
-   `local/screenshots/<topic>/`). Not a second code review.
+   `local/screenshots/<topic>/`). Not a second code review. The PO also decides here who merges the PR
+   (*Merging*, **Owner-merge PRs**), and the PR description says so in one line: the PO, or the owner and
+   why.
 5. Switch back to the branch the main checkout was on, and `uv sync`.
 6. On a failure: back to the team lead with the finding. Otherwise: update the PR description, `gh pr ready`,
-   tell the owner, stop the team lead (`claude stop <id>`), and remove its worktrees (`git worktree remove
-   --force`: they hold `.venv` and `.superpowers/sdd/`) and `wt/` branches. The SDD workspace goes with them;
-   the rulings are in the PR description.
+   record the PR (*Merging*, **What the PO records**), tell the owner (for an owner-merge PR: that it is
+   theirs to merge, and why), stop the team lead (`claude stop <id>`), and remove its worktrees (`git
+   worktree remove --force`: they hold `.venv` and `.superpowers/sdd/`) and `wt/` branches. The SDD workspace
+   goes with them; the rulings are in the PR description. Then, for a PR the PO may merge: *Merging*.
+
+### Merging
+
+Only the PO and the owner merge (D45). The PO merges a PR when it took the PR through *From branch ready to
+PR ready* and marked it ready, in this or an earlier session, the PR is not owner-merge, and nothing on it
+waits for the owner (step 3). Every other PR is the owner's to merge, also Dependabot's, the owner's own
+and trivial ones (§4).
+
+**Owner-merge PRs.** A PR is owner-merge when its diff touches something *Escalation* always escalates for
+(the part of that list a diff can touch): charge start or stop (the code that calls them, or what decides
+when they are called); auth, tokens or reauth; a hard rule; `.claude/`, `.pre-commit-config.yaml` or
+`.github/workflows/`. A new decision alone doesn't make a PR owner-merge: the owner approved it in the spec.
+The PO decides from the changed files (`gh pr diff <n> --name-only`) and the spec; a plan task tagged
+`Model: opus` for charge or auth (§5) is a sign. Below 90% sure, the PR is owner-merge.
+
+**What the PO records.** When it marks a PR ready, the PO writes to the PR's entry in
+`.git/po-sessions.json`: that it is ready, who merges it (`po` or `owner`), the *checked head* (the head
+commit the smoke test ran on), the *cleared time*, and what the PR waits for, if anything (the owner's
+go-ahead, or a team lead's fix and for which comment or check). A later session reads it there. If the entry
+or the checked head is missing, or the PR's head is a different commit, the PR goes through *From branch
+ready to PR ready* again before any merge.
+
+The merge, after a `git fetch`:
+1. **Up to date:** `origin/main` is merged into the PR's head
+   (`git merge-base --is-ancestor origin/main origin/<branch>`). If not: **Behind `main`**, which covers a
+   merge conflict too.
+2. **The required checks have run and passed on the checked head:**
+   `gh pr checks <n> --required --json name,bucket` shows all six in bucket `pass`. The PO waits while any is
+   `pending`, and while `version-check` is `skipping`: on a draft it is skipped, GitHub counts a skipped
+   check as passed, and its real run starts only after `gh pr ready`. A failed check goes back to the
+   resumed team lead with the finding.
+3. **Nothing waits for the owner:**
+   - the head is still the checked head, and no review has the state `CHANGES_REQUESTED`
+     (`gh pr view <n> --json headRefOid,reviews,comments`);
+   - no review thread is unresolved (`gh api graphql`, the PR's `reviewThreads { isResolved }`; threads from
+     the owner's review of the spec and plan on the draft count too);
+   - no review, PR comment or reply in a review thread is newer than the cleared time (the same query gives
+     each thread's latest comment time).
+
+   Otherwise the PO doesn't merge, and the merge waits for the owner's go-ahead. A comment that asks for a
+   change goes to the resumed team lead (*After ready*); after the fix the PR goes through *From branch
+   ready to PR ready* again, as in **Behind `main`**, and the PO then asks the owner for a go-ahead, naming
+   the comment and the fix. Anything else, or a comment the PO can't place, is escalated at once. The PO
+   resolves no thread and dismisses no review: a thread stops the merge until the owner resolves it, and a
+   `CHANGES_REQUESTED` review until the owner dismisses it. The PO writes nothing on a PR after ready except
+   its description. PRs in the PO flow are opened under the owner's account, so the owner can't request
+   changes on them: a comment is the owner's way to stop a merge.
+4. **Merge the checked head:** `gh pr merge <n> --squash --match-head-commit <checked head>`; never `--admin`,
+   never `--auto`. If GitHub refuses, start once more with the `git fetch` and step 1 (`main` may have moved
+   during the wait); a second refusal is escalated.
+
+Then *After a merge*.
+
+**The cleared time** is in UTC and ISO 8601, as GitHub's timestamps are: first the time the PO marked the PR
+ready. When the owner gives a go-ahead in step 3, the PO sets it to the time of that answer, so the comments
+the owner has dealt with no longer stop the merge. Nothing else moves it: not a new checked head, and not a
+team lead's fix alone.
+
+**Behind `main`.** The PO resumes the team lead (*After ready*). The team lead merges `origin/main` in, for a
+releasing PR runs the bump step again ([`releasing.md`](releasing.md#two-releasing-prs-at-once)), pushes, and
+reports `branch ready`. The PO repeats *From branch ready to PR ready* on the new head, with these
+differences: the visual check only if `main` brought a visible change; the acceptance check only for the
+title, the bump and the PR description; no `gh pr ready`. Step 6's clean-up runs again. The PO records the
+new checked head and starts again with the `git fetch` and step 1.
+
+**The queue.** The PRs the PO may merge form a queue, in the order they became ready. The PO merges one at a
+time: the first, then *After a merge* including its release check, and only then the next. Only the next PR
+in the queue is brought up to date; the ones behind it wait, since the next merge would leave them behind
+again. A PR that waits for the owner's answer or for a team lead's fix steps out of the queue, and rejoins it
+at the front: after the owner's go-ahead (step 3, or a refusal in step 4), or once the fix for a failed check
+(step 2) has been through *From branch ready to PR ready* again. A resume for a PR that is first in the
+queue, or has stepped out of it, takes a free team-lead slot before a new issue is picked.
+
+Owner-merge PRs are not in the queue and block nothing. One that falls behind `main` stays as it is until
+the owner says they are about to merge it; the PO then brings it up to date (**Behind `main`**, without the
+merge) and tells the owner.
+
+### After a merge
+
+For every merged PR of the PO flow, whether the PO or the owner merged it (the loop finds the owner's
+merges):
+1. **`main` is green:** watch the required workflows on `main` for the merge commit, and the `auto-release`
+   runs ([`releasing.md`](releasing.md#what-happens-on-merge)). For a merge the PO made, the merge commit's
+   title is the PR title followed by ` (#<n>)`; if not, escalate.
+2. **The release, for a releasing PR:** the tag `vX.Y.Z` is on the merge commit, and the release exists with
+   the changelog section as its notes. That HACS offers the version is left to the owner; the PO says so in
+   its message.
+3. **On a failure in 1 or 2:** escalate, and merge nothing more until the owner has answered. The PO never
+   re-runs a workflow run on `main` and never pushes a tag
+   ([`releasing.md`](releasing.md#when-a-release-fails)).
+4. **Labels:** `Closes #n` closes the issue; remove `active` if it is still there.
+5. **The main checkout:** `git fetch --prune`; when it is on `main`, `git pull --ff-only`; then `uv sync` (§6
+   *Git guards*). Delete the merged local branch (`git branch -D <type>/<topic>`), and mark the PR's entry in
+   `.git/po-sessions.json` as merged; its D-numbers stay recorded.
+6. **Tell the owner** in the terminal: which PR merged, and the version it released, if any.
+7. **The next PR in the queue** (*Merging*), if there is one; it is now behind `main`. Owner-merge PRs that
+   are behind stay as they are.
+8. **Pick the next issue** (*Picking and starting an issue*).
 
 ### After ready, the loop, and failures
 
-- A ready PR takes no slot. On changes requested, a merge conflict, or a stale bump (a releasing PR behind
-  `main` after another release; [`releasing.md`](releasing.md#two-releasing-prs-at-once)), the PO re-creates
-  the issue worktree at the same path, runs `uv sync` in it, and resumes the team lead
-  (`claude --bg --permission-mode auto --resume <session-id>`, run in the re-created issue worktree) when a
-  slot is free. Conflicts are fixed by merging `origin/main` in, never by a force-push. A
-  resumed team lead starts without its old SDD ledger.
-- The PO's `/loop` (every 10 to 20 minutes) checks GitHub for merged PRs (remove `active` if still there, pick
-  the next issue), answers to open `PO question`s, and review comments or conflicts on ready PRs.
+- A ready PR takes no slot. The PO re-creates the issue worktree at the same path, runs `uv sync` in it, and
+  resumes the team lead (`claude --bg --permission-mode auto --resume <session-id>`, run in the re-created
+  issue worktree) when a slot is free, for:
+  - changes requested (a comment that asks for a change), or a failed required check; the merge then follows
+    *Merging*, step 3 or step 2;
+  - a branch that `origin/main` isn't merged into, which includes a merge conflict and a stale bump (a
+    releasing PR behind `main` after another release;
+    [`releasing.md`](releasing.md#two-releasing-prs-at-once)): only for the first PR in the queue, and for an
+    owner-merge PR once the owner says they are about to merge it (*Merging*, **The queue**).
+
+  Conflicts are fixed by merging `origin/main` in, never by a force-push. A resumed team lead starts without
+  its old SDD ledger.
+- The PO's `/loop` (every 10 to 20 minutes) checks GitHub for merged PRs (*After a merge*), ready PRs the PO
+  may merge that aren't merged yet (*Merging*: checks still running when a session ended, an escalation since
+  answered, a PR waiting for its turn), answers to open `PO question`s, and review comments or conflicts on
+  ready PRs.
 - **State:** GitHub is the source of truth; `.git/po-sessions.json` maps each team lead's session id and
-  `ListAgents` name to its issue, branch and worktree, and holds the D-numbers handed out.
-  `claude agents --json` shows the running sessions, interactive and background; `ListAgents` the names to
-  message.
+  `ListAgents` name to its issue, branch and worktree, and holds the D-numbers handed out and each ready PR's
+  record (*Merging*, **What the PO records**). `claude agents --json` shows the running sessions, interactive
+  and background; `ListAgents` the names to message.
 - A team lead that is gone is resumed once; if that fails, the PO escalates and leaves the issue `active`.
   One with nothing new in `claude logs <id>` for 2 loops is asked for its status, then escalated.
 - If the PO session ends, team leads keep running. A `SendMessage` to a PO that is down fails at once; it

@@ -13,9 +13,11 @@ in your context.
 
 ## At the start of a session
 1. Read `docs/way-of-working.md` §8, and `.git/po-sessions.json` if it exists.
-2. Run `ListAgents`. If a session named `team-lead` runs, the owner is in team lead mode: say so and do
-   nothing else.
-3. Rebuild the picture: `claude agents --json`, `gh issue list --label active`, `gh pr list`.
+2. Run `uv run python scripts/sessions.py running team-lead`. If it prints `team-lead`, the owner is in
+   team lead mode: say so and do nothing else. Then run `uv run python scripts/sessions.py reachable po`,
+   and again in every round of the loop (§8 *Roles and start modes*, **Sessions of this repo**).
+3. Rebuild the picture: `uv run python scripts/sessions.py running` and `claude agents --json` (which also
+   lists other projects' sessions), `gh issue list --label active`, `gh pr list`.
 4. Send `hello` to every team lead in `.git/po-sessions.json`.
 5. Start the loop with `/loop` (self-paced, 10 to 20 minutes between checks).
 
@@ -31,5 +33,5 @@ in your context.
 - Edit `.claude/settings.json` without the owner's OK each time.
 - Post real-instance data on GitHub or in a commit message (§8 *Public text*).
 - Start or stop a real charge.
-- Start or resume a team lead while the main checkout is detached.
+- Start or resume a team lead while the main checkout is detached, or while `reachable po` fails.
 - Run more than 2 team leads.

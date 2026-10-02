@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start Claude in team lead mode (docs/way-of-working.md §8), for hard problems: the owner is the PO.
-# Refuses in a linked worktree, and while a session named po or team-lead runs (the two modes never run at once).
+# Refuses in a linked worktree, and while a session of this repo named po or team-lead runs (the two modes never run at once).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -10,11 +10,9 @@ if [ "$(git rev-parse --absolute-git-dir)" != "$(git rev-parse --path-format=abs
   exit 2
 fi
 
-running=$(claude agents --json | python3 -c 'import json, sys
-names = {a.get("name") for a in json.load(sys.stdin)}
-print(" ".join(n for n in ("po", "team-lead") if n in names))')
+running=$(uv run python scripts/sessions.py running po team-lead | paste -sd ' ' -)
 if [ -n "$running" ]; then
-  echo "team-lead: a session named $running is already running; PO mode and team lead mode never run at once." >&2
+  echo "team-lead: a session of this repo named $running is already running; PO mode and team lead mode never run at once." >&2
   exit 2
 fi
 

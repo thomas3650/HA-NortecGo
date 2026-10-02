@@ -27,7 +27,7 @@ pythonpath = ["scripts"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["custom_components", "tests", "scripts/release_check.py"]
+files = ["custom_components", "tests", "scripts/release_check.py", "scripts/sessions.py"]
 mypy_path = "scripts"
 explicit_package_bases = true
 
@@ -84,7 +84,7 @@ mark-parentheses = false
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
-known-first-party = ["custom_components.nortec_go", "tests", "release_check"]
+known-first-party = ["custom_components.nortec_go", "tests", "release_check", "sessions"]
 combine-as-imports = true
 split-on-trailing-comma = false
 
@@ -95,5 +95,5 @@ max-complexity = 25
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-# A script run by the workflows, not a package; it prints its verdicts.
+# Scripts run by the workflows or by hand, not a package; they print their results.
 "scripts/*.py" = ["INP001", "T201"]

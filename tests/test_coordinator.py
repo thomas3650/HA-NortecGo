@@ -1810,7 +1810,7 @@ async def test_pending_stop_during_an_outage_ends_at_2_minutes(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """With reads failing, the pending stop ends at 2 minutes: the switch shows the last read, reads every 5 min."""
+    """With reads failing, the pending stop ends at 2 minutes: the switch stays off while the stop is stored, reads every 5 min."""
     mock_client.get_charger.return_value = make_charger(
         is_connected=True,
         charge_state=ChargeState.CHARGING,
@@ -1827,7 +1827,7 @@ async def test_pending_stop_during_an_outage_ends_at_2_minutes(
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert not coordinator.data.control.stop_pending
-    assert _switch(hass) == "on"
+    assert _switch(hass) == "off"
     assert coordinator.update_interval == INTERVAL_CHARGING
 
 

@@ -2,7 +2,6 @@
 
 import asyncio
 from collections.abc import AsyncGenerator
-import contextlib
 from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -47,13 +46,16 @@ from custom_components.nortec_go.charge_control import (
     async_remove_charge_control,
     charge_is_open,
     charge_status,
+    is_charge_off,
     is_charge_on,
+    is_stoppable,
 )
 from custom_components.nortec_go.const import (
     DOMAIN,
     START_CONFIRM_TIMEOUT,
     START_LOAD_GRACE,
     STOP_CONFIRM_TIMEOUT,
+    STOP_MAX_TRIES,
 )
 
 from .conftest import make_charger
@@ -61,7 +63,8 @@ from .conftest import make_charger
 IDLE = ChargeControlState()
 PENDING = ChargeControlState(start_pending=True)
 STOP_ASKED = ChargeControlState(start_pending=True, stop_asked=True)
-STOP_PENDING = ChargeControlState(stop_pending=True)
+STOP_ASKED_ONLY = ChargeControlState(stop_asked=True)
+STOP_PENDING = ChargeControlState(stop_asked=True, stop_pending=True)
 BLOCKED = ChargeControlState(blocked=True)
 CONNECTED = make_charger(is_connected=True)
 CHARGING = make_charger(
@@ -71,6 +74,12 @@ CHARGING = make_charger(
 )
 BUSY_NO_CHARGE_STATE = make_charger(
     is_connected=True, state=ChargerState.BUSY_NON_CHARGING
+)
+NOT_STOPPABLE = make_charger(
+    is_connected=True,
+    charge_state=ChargeState.STARTING,
+    state=ChargerState.BUSY,
+    can_stop=False,
 )
 STORE_KEY = "nortec_go.{}.charge_control"
 
@@ -94,6 +103,16 @@ async def _fire(
     freezer.tick(delta)
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def _saved(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_storage: dict[str, Any]
+) -> dict[str, Any]:
+    """The stored data, once a delayed save has landed."""
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    data: dict[str, Any] = hass_storage[STORE_KEY.format(entry.entry_id)]["data"]
+    return data
 
 
 @pytest.mark.parametrize(
@@ -541,34 +560,22 @@ async def test_start_timer_does_nothing_after_shutdown(
     on_change.assert_not_called()
 
 
-async def test_start_timer_waits_for_a_stop_in_flight(
+async def test_start_timer_after_the_start_ended_does_nothing(
     hass: HomeAssistant,
+    entry: MockConfigEntry,
     control: ChargeControl,
-    client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """The start timer coming due during stop_charge() waits for the lock and blocks nothing (Review Focus 3)."""
-    attempts_before = control.start_attempts
+    """A start timer whose work waits for the lock while a read ends the pending start blocks nothing."""
     await control.async_start()
-    freezer.tick(START_CONFIRM_TIMEOUT - timedelta(seconds=1))
-    control.on_charger_read(
-        CHARGING, attempts_before
-    )  # stale: pending stays, charge seen
-    release = asyncio.Event()
-
-    async def slow_stop() -> None:
-        await release.wait()
-
-    client.stop_charge.side_effect = slow_stop
-    stop = hass.async_create_task(control.async_stop())
-    await asyncio.sleep(0)
-    freezer.tick(timedelta(seconds=2))
-    async_fire_time_changed(hass)
-    await asyncio.sleep(0)
-    release.set()
-    await stop
+    async with control._lock:  # noqa: SLF001
+        freezer.tick(START_CONFIRM_TIMEOUT)
+        async_fire_time_changed(hass)
+        await asyncio.sleep(0)
+        control.on_charger_read(CHARGING, control.start_attempts)
     await hass.async_block_till_done(wait_background_tasks=True)
-    assert control.state == STOP_PENDING
+    assert control.state == IDLE
+    assert _issue(hass, entry) is None
 
 
 @pytest.mark.parametrize(
@@ -753,21 +760,6 @@ async def test_block_cleared_by_release_after_the_block(
     assert not control.state.blocked
 
 
-@pytest.mark.parametrize("charger", [CHARGING, BUSY_NO_CHARGE_STATE])
-async def test_stop_during_pending_start(
-    hass: HomeAssistant, control: ChargeControl, client: AsyncMock, charger: Any
-) -> None:
-    """Stop asked, no API call; the charge (also BUSY_NON_CHARGING without a charge state) is stopped once when a read sees it."""
-    await control.async_start()
-    await control.async_stop()
-    client.stop_charge.assert_not_awaited()
-    assert control.state == STOP_ASKED
-    control.on_charger_read(charger, control.start_attempts)
-    await hass.async_block_till_done(wait_background_tasks=True)
-    client.stop_charge.assert_awaited_once()
-    assert control.state == STOP_PENDING
-
-
 async def test_turn_on_after_turn_off_clears_stop_asked(
     control: ChargeControl, client: AsyncMock
 ) -> None:
@@ -777,16 +769,6 @@ async def test_turn_on_after_turn_off_clears_stop_asked(
     await control.async_start()
     assert control.state == PENDING
     client.start_charge.assert_awaited_once()
-
-
-async def test_stop_asked_ends_with_the_timeout(
-    hass: HomeAssistant, control: ChargeControl, freezer: FrozenDateTimeFactory
-) -> None:
-    """The stop request ends with the pending start's timeout, which blocks."""
-    await control.async_start()
-    await control.async_stop()
-    await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
-    assert control.state == BLOCKED
 
 
 async def test_stop_calls_stop_charge(
@@ -825,20 +807,6 @@ async def test_stop_no_active_charge_asks_for_a_read(
     request_refresh.assert_awaited()
 
 
-async def test_stop_not_stoppable_error(
-    control: ChargeControl, client: AsyncMock
-) -> None:
-    """ChargeNotStoppableError: charge_not_stoppable, raised from None."""
-    control.on_charger_read(CHARGING, control.start_attempts)
-    client.stop_charge.side_effect = ChargeNotStoppableError("x")
-    with pytest.raises(HomeAssistantError) as exc_info:
-        await control.async_stop()
-    assert exc_info.value.translation_key == "charge_not_stoppable"
-    assert exc_info.value.__cause__ is None
-    assert exc_info.value.__suppress_context__
-    client.stop_charge.assert_awaited_once()
-
-
 async def test_stop_auth_error_starts_reauth(
     hass: HomeAssistant,
     entry: MockConfigEntry,
@@ -857,25 +825,7 @@ async def test_stop_auth_error_starts_reauth(
     await hass.async_block_till_done()
     flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
     assert any(flow["context"]["source"] == "reauth" for flow in flows)
-
-
-async def test_stop_connection_error_asks_for_a_read(
-    hass: HomeAssistant,
-    control: ChargeControl,
-    client: AsyncMock,
-    request_refresh: AsyncMock,
-) -> None:
-    """A connection error: stop_failed, raised from None, but a read is asked for."""
-    control.on_charger_read(CHARGING, control.start_attempts)
-    client.stop_charge.side_effect = NortecGoConnectionError("x")
-    with pytest.raises(HomeAssistantError) as exc_info:
-        await control.async_stop()
-    assert exc_info.value.translation_key == "stop_failed"
-    assert exc_info.value.__cause__ is None
-    assert exc_info.value.__suppress_context__
-    client.stop_charge.assert_awaited_once()
-    await hass.async_block_till_done()
-    request_refresh.assert_awaited()
+    assert control.state == STOP_ASKED_ONLY
 
 
 async def test_stop_sets_pending_stop(
@@ -887,25 +837,6 @@ async def test_stop_sets_pending_stop(
     client.stop_charge.assert_awaited_once()
     assert control.state == STOP_PENDING
     on_change.assert_called()
-
-
-@pytest.mark.parametrize(
-    "error",
-    [
-        NoActiveChargeError("x"),
-        ChargeNotStoppableError("x"),
-        NortecGoConnectionError("x"),
-    ],
-)
-async def test_stop_without_success_sets_no_pending_stop(
-    control: ChargeControl, client: AsyncMock, error: Exception
-) -> None:
-    """No charge to stop, or a failed stop: nothing to wait for."""
-    control.on_charger_read(CHARGING, control.start_attempts)
-    client.stop_charge.side_effect = error
-    with contextlib.suppress(HomeAssistantError):
-        await control.async_stop()
-    assert control.state == IDLE
 
 
 async def test_stop_while_stop_pending_is_noop(
@@ -978,42 +909,6 @@ async def test_pending_stop_stays_on_a_stale_read(control: ChargeControl) -> Non
     assert control.state == STOP_PENDING
 
 
-async def test_pending_stop_ends_on_a_stale_read_without_the_charge_on(
-    control: ChargeControl,
-) -> None:
-    """The pending-stop check runs before the stale-read return, even on a stale read (§2.3)."""
-    control.on_charger_read(CHARGING, control.start_attempts)
-    await control.async_stop()
-    control.on_charger_read(
-        make_charger(
-            is_connected=True,
-            charge_state=ChargeState.STOPPING,
-            state=ChargerState.BUSY_CHARGING,
-        ),
-        control.start_attempts - 1,
-    )
-    assert control.state == IDLE
-
-
-async def test_pending_stop_times_out_without_a_read(
-    hass: HomeAssistant,
-    control: ChargeControl,
-    freezer: FrozenDateTimeFactory,
-    on_change: MagicMock,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """After 2 minutes, with no read, the pending stop ends with a warning and tells the coordinator."""
-    control.on_charger_read(CHARGING, control.start_attempts)
-    await control.async_stop()
-    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT - timedelta(seconds=1))
-    assert control.state == STOP_PENDING
-    on_change.reset_mock()
-    await _fire(hass, freezer, timedelta(seconds=1))
-    assert control.state == IDLE
-    assert "No stop seen within" in caplog.text
-    on_change.assert_called()
-
-
 async def test_stop_after_the_timeout_without_a_read(
     hass: HomeAssistant,
     control: ChargeControl,
@@ -1055,7 +950,7 @@ async def test_read_without_the_charge_ends_the_stop_timer(
     control.on_charger_read(CONNECTED, control.start_attempts)
     assert control.state == IDLE
     await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
-    assert "No stop seen within" not in caplog.text
+    assert "Stopping the charge failed" not in caplog.text
 
 
 async def test_stop_timer_does_nothing_after_shutdown(
@@ -1072,7 +967,7 @@ async def test_stop_timer_does_nothing_after_shutdown(
     on_change.reset_mock()
     await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
     assert control.state == STOP_PENDING
-    assert "No stop seen within" not in caplog.text
+    assert "Stopping the charge failed" not in caplog.text
     on_change.assert_not_called()
 
 
@@ -1092,7 +987,7 @@ async def test_stop_timer_after_the_stop_ended_does_nothing(
         control.on_charger_read(CONNECTED, control.start_attempts)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert control.state == IDLE
-    assert "No stop seen within" not in caplog.text
+    assert "Stopping the charge failed" not in caplog.text
 
 
 async def test_background_stop_leaves_one_stop_timer(
@@ -1108,34 +1003,9 @@ async def test_background_stop_leaves_one_stop_timer(
     control.on_charger_read(CHARGING, control.start_attempts)
     await hass.async_block_till_done(wait_background_tasks=True)
     client.stop_charge.assert_awaited_once()
-    assert _timers(hass, f"{DOMAIN} stop deadline") == 1
+    assert _timers(hass, f"{DOMAIN} stop wait") == 1
     await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
-    assert caplog.text.count("No stop seen within") == 1
-
-
-async def test_background_stop_shows_off_at_once(
-    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
-) -> None:
-    """While the background stop is in flight the switch is off and Stopping.
-
-    The background task starts eagerly, so stop_charge waits on an event to keep it in flight.
-    """
-    release = asyncio.Event()
-
-    async def slow_stop() -> None:
-        await release.wait()
-
-    client.stop_charge.side_effect = slow_stop
-    await control.async_start()
-    await control.async_stop()
-    control.on_charger_read(CHARGING, control.start_attempts)
-    assert control.state == STOP_PENDING
-    assert not is_charge_on(CHARGING, control.state)
-    assert charge_status(CHARGING, control.state) == "stopping"
-    release.set()
-    await hass.async_block_till_done(wait_background_tasks=True)
-    client.stop_charge.assert_awaited_once()
-    assert control.state == STOP_PENDING
+    assert caplog.text.count("Stopping the charge failed") == 1
 
 
 async def test_turn_off_before_the_background_stop_is_noop(
@@ -1156,80 +1026,23 @@ async def test_turn_off_before_the_background_stop_is_noop(
     client.stop_charge.assert_awaited_once()
 
 
-@pytest.mark.parametrize(
-    "error",
-    [
-        NoActiveChargeError("x"),
-        ChargeNotStoppableError("x"),
-        AuthError("x"),
-        NortecGoConnectionError("x"),
-    ],
-)
-async def test_background_stop_without_success_ends_pending_stop(
-    hass: HomeAssistant,
-    entry: MockConfigEntry,
-    control: ChargeControl,
-    client: AsyncMock,
-    error: Exception,
-) -> None:
-    """The background stop finds no charge or fails: the pending stop it queued ends."""
-    release = asyncio.Event()
-
-    async def slow_stop() -> None:
-        await release.wait()
-        raise error
-
-    client.stop_charge.side_effect = slow_stop
-    with patch.object(entry, "async_start_reauth", MagicMock()):
-        await control.async_start()
-        await control.async_stop()
-        control.on_charger_read(CHARGING, control.start_attempts)
-        assert control.state == STOP_PENDING
-        release.set()
-        await hass.async_block_till_done(wait_background_tasks=True)
-    assert control.state == IDLE
-
-
-async def test_stored_shape(
-    hass: HomeAssistant,
-    entry: MockConfigEntry,
-    control: ChargeControl,
-    hass_storage: dict[str, Any],
-) -> None:
-    """The stored shape has the six keys of minor version 2; the pending stop never reaches it."""
-    control.on_charger_read(CHARGING, control.start_attempts)
-    await control.async_stop()
-    await control.async_shutdown()
-    stored = hass_storage[STORE_KEY.format(entry.entry_id)]
-    assert stored["minor_version"] == 2
-    assert stored["data"] == {
-        "blocked_since": None,
-        "block_reason": None,
-        "start_pending_since": None,
-        "stop_asked_since": None,
-        "stop_tries": 0,
-        "stop_tried_at": None,
-    }
-    again = ChargeControl(
-        hass, entry, AsyncMock(), on_change=MagicMock(), request_refresh=AsyncMock()
-    )
-    await again.async_load()
-    assert again.state == IDLE
-
-
 async def test_clear_block(
     hass: HomeAssistant,
     entry: MockConfigEntry,
     control: ChargeControl,
     client: AsyncMock,
+    hass_storage: dict[str, Any],
 ) -> None:
-    """clear_block (the fix flow) clears the block and deletes the issue."""
+    """clear_block (the fix flow) clears the block and its stored reason, and deletes the issue."""
     client.start_charge.side_effect = ChargeStartError(ChargeStartStep.CONFIRM, True)
     with pytest.raises(HomeAssistantError):
         await control.async_start()
     control.clear_block()
     assert control.state == IDLE
     assert _issue(hass, entry) is None
+    saved = await _saved(hass, entry, hass_storage)
+    assert saved["blocked_since"] is None
+    assert saved["block_reason"] is None
 
 
 async def test_store_round_trip(
@@ -1464,36 +1277,6 @@ async def test_shutdown_waits_and_refuses(
         await control.async_stop()
 
 
-async def test_stop_with_a_pending_start_and_a_charge_seen(
-    control: ChargeControl, client: AsyncMock
-) -> None:
-    """A pending start whose charge the last read saw: stop_charge once, pending ends."""
-    attempts_before = control.start_attempts
-    await control.async_start()
-    control.on_charger_read(CHARGING, attempts_before)  # stale: pending stays
-    assert control.state == PENDING
-    await control.async_stop()
-    client.stop_charge.assert_awaited_once()
-    assert control.state == STOP_PENDING
-
-
-async def test_background_stop_error_is_logged(
-    hass: HomeAssistant,
-    control: ChargeControl,
-    client: AsyncMock,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """The stop asked during a pending start fails: logged, not raised."""
-    client.stop_charge.side_effect = ChargeNotStoppableError("x")
-    await control.async_start()
-    await control.async_stop()
-    control.on_charger_read(CHARGING, control.start_attempts)
-    await hass.async_block_till_done(wait_background_tasks=True)
-    client.stop_charge.assert_awaited_once()
-    assert "Could not stop the charge asked to stop" in caplog.text
-    assert control.state == IDLE
-
-
 async def test_background_stop_after_shutdown_does_nothing(
     control: ChargeControl, client: AsyncMock
 ) -> None:
@@ -1542,3 +1325,816 @@ def test_charge_status_pending_start_before_unknown_charger_state(
     """A pending start with no charge seen shows before the charger's unknown state."""
     charger = make_charger(is_connected=True, state=ChargerState.UNKNOWN)
     assert charge_status(charger, control) == expected
+
+
+@pytest.mark.parametrize(
+    ("charger", "stoppable", "off"),
+    [
+        (CHARGING, True, False),
+        (make_charger(is_connected=True, charge_state=ChargeState.PAUSED), True, False),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.UNKNOWN),
+            True,
+            False,
+        ),
+        (NOT_STOPPABLE, False, False),
+        (BUSY_NO_CHARGE_STATE, False, False),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.STOPPING),
+            False,
+            True,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.COMPLETED),
+            False,
+            True,
+        ),
+        (CONNECTED, False, True),
+        (make_charger(is_connected=False), False, True),
+        (
+            make_charger(is_connected=True, state=ChargerState.BUSY_NON_RELEASED),
+            False,
+            True,
+        ),
+        (make_charger(is_connected=True, state=ChargerState.UNKNOWN), False, False),
+    ],
+)
+def test_stoppable_and_off(charger: Any, stoppable: bool, off: bool) -> None:
+    """Stoppable needs a charge that can be stopped and isn't ending; off needs a known charger state."""
+    assert is_stoppable(charger) is stoppable
+    assert is_charge_off(charger) is off
+
+
+async def test_stop_during_pending_start(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """Stop asked during a pending start: no call until a read sees the charge, then one."""
+    await control.async_start()
+    await control.async_stop()
+    client.stop_charge.assert_not_awaited()
+    assert control.state == STOP_ASKED
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+    assert control.state == STOP_PENDING
+
+
+async def test_no_call_while_a_start_is_pending(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A turn-off during a pending start makes no call, also when the last (stale) read shows a charge."""
+    attempts_before = control.start_attempts
+    await control.async_start()
+    control.on_charger_read(CHARGING, attempts_before)  # stale: the start stays pending
+    assert control.state == PENDING
+    await control.async_stop()
+    client.stop_charge.assert_not_awaited()
+    assert control.state == STOP_ASKED
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_open_charger_without_a_charge_gets_no_call(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """An open charger with no charge object ends the pending start, but the stop waits (D50)."""
+    await control.async_start()
+    await control.async_stop()
+    control.on_charger_read(BUSY_NO_CHARGE_STATE, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_not_awaited()
+    assert control.state == STOP_ASKED_ONLY
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_stop_outlives_the_start_deadline(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The start deadline blocks, as before, and no longer drops the stop (#85, case 2)."""
+    await control.async_start()
+    await control.async_stop()
+    await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
+    assert control.state == ChargeControlState(blocked=True, stop_asked=True)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+    assert control.state == STOP_PENDING  # the charge seen cleared the block (D26)
+    client.start_charge.assert_awaited_once()
+
+
+async def test_stop_ends_when_no_charge_came(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """After the deadline, a read that shows no charge ends the stop without a call."""
+    await control.async_start()
+    await control.async_stop()
+    await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
+    control.on_charger_read(CONNECTED, control.start_attempts)
+    assert control.state == BLOCKED
+    client.stop_charge.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ChargeNotStoppableError("x"),
+        NortecGoConnectionError("x"),
+        ApiError("POST /example", 500),
+    ],
+)
+async def test_failed_stop_is_tried_again_after_the_wait(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    request_refresh: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+    error: Exception,
+) -> None:
+    """A failed call raises nothing, logs its number, keeps the stop, and the next call waits 2 minutes."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = error
+    await control.async_stop()
+    await hass.async_block_till_done()
+    client.stop_charge.assert_awaited_once()
+    assert control.state == STOP_ASKED_ONLY
+    assert (
+        f"Stopping the charge failed (try 1 of 10): {type(error).__name__}"
+        in caplog.text
+    )
+    request_refresh.assert_not_awaited()
+
+    client.stop_charge.side_effect = None
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT - timedelta(seconds=1))
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()  # the reads work, but the wait runs
+
+    await _fire(hass, freezer, timedelta(seconds=1))
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == 2
+    assert control.state == STOP_PENDING
+
+
+async def test_no_active_charge_does_not_end_the_stop(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    request_refresh: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The answer "no active charge" is no evidence: the stop stays until a read decides (D50)."""
+    client.stop_charge.side_effect = NoActiveChargeError("x")
+    await control.async_stop()  # the last read shows an idle charger: the call is made
+    await hass.async_block_till_done()
+    client.stop_charge.assert_awaited_once()
+    assert control.state == STOP_ASKED_ONLY
+    request_refresh.assert_awaited()
+    assert "Stopping the charge failed" not in caplog.text
+
+    control.on_charger_read(BUSY_NO_CHARGE_STATE, control.start_attempts)
+    assert control.state == STOP_ASKED_ONLY  # a charge is opening: the stop waits
+
+    client.stop_charge.side_effect = None
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == 2
+
+
+async def test_no_active_charge_then_a_read_without_a_charge_ends_the_stop(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A turn-off on an idle charger: one call, and the read that shows no charge ends the stop."""
+    client.stop_charge.side_effect = NoActiveChargeError("x")
+    await control.async_stop()
+    control.on_charger_read(CONNECTED, control.start_attempts)
+    assert control.state == IDLE
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_charge_the_read_says_cant_be_stopped_gets_no_call(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    request_refresh: AsyncMock,
+) -> None:
+    """A charge that can't be stopped yet: stored, a read asked for, no call until a read says it can (#32)."""
+    control.on_charger_read(NOT_STOPPABLE, control.start_attempts)
+    await control.async_stop()
+    await hass.async_block_till_done()
+    client.stop_charge.assert_not_awaited()
+    assert control.state == STOP_ASKED_ONLY
+    request_refresh.assert_awaited()
+    control.on_charger_read(NOT_STOPPABLE, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_not_awaited()
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_stale_read_changes_nothing_about_the_stop(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A stale read neither ends a pending stop nor sends a stored stop (D26, D50)."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    control.on_charger_read(
+        make_charger(is_connected=True, charge_state=ChargeState.STOPPING),
+        control.start_attempts - 1,
+    )
+    assert control.state == STOP_PENDING
+
+
+async def test_stale_read_sends_no_stop(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A stored stop waiting for its charge isn't sent by a stale read."""
+    control.on_charger_read(NOT_STOPPABLE, control.start_attempts)
+    await control.async_stop()
+    control.on_charger_read(CHARGING, control.start_attempts - 1)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_not_awaited()
+
+
+async def test_accepted_stop_without_effect_has_failed(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    on_change: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """2 minutes after an accepted stop with the charge still on, the try has failed and the next read tries again."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT - timedelta(seconds=1))
+    control.on_charger_read(CHARGING, control.start_attempts)
+    assert control.state == STOP_PENDING
+    on_change.reset_mock()
+    await _fire(hass, freezer, timedelta(seconds=1))
+    assert control.state == STOP_ASKED_ONLY
+    assert (
+        "Stopping the charge failed (try 1 of 10): the charge was still on"
+        in caplog.text
+    )
+    on_change.assert_called()
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == 2
+    assert control.state == STOP_PENDING
+
+
+async def test_try_in_flight_shows_off_and_the_charges_own_state(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """While a queued try is in flight the switch is off and the status is the charge's own; Stopping once accepted."""
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    await control.async_start()
+    await control.async_stop()
+    control.on_charger_read(CHARGING, control.start_attempts)
+    assert control.state == STOP_ASKED_ONLY
+    assert not is_charge_on(CHARGING, control.state)
+    assert charge_status(CHARGING, control.state) == "charging"
+    release.set()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+    assert control.state == STOP_PENDING
+    assert charge_status(CHARGING, control.state) == "stopping"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        NoActiveChargeError("x"),
+        ChargeNotStoppableError("x"),
+        AuthError("x"),
+        NortecGoConnectionError("x"),
+    ],
+)
+async def test_queued_try_without_success_keeps_the_stop(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    error: Exception,
+) -> None:
+    """A try queued by a read that fails raises nowhere and keeps the stop; a rejected session starts reauth."""
+    client.stop_charge.side_effect = error
+    with patch.object(entry, "async_start_reauth", MagicMock()) as reauth:
+        await control.async_start()
+        await control.async_stop()
+        control.on_charger_read(CHARGING, control.start_attempts)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+    assert control.state == STOP_ASKED_ONLY
+    assert reauth.called is isinstance(error, AuthError)
+
+
+async def test_auth_error_logs_no_error_text(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A rejected session is logged by what it is, not by the client's text."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = AuthError("some text from the service")
+    with (
+        patch.object(entry, "async_start_reauth", MagicMock()),
+        pytest.raises(HomeAssistantError),
+    ):
+        await control.async_stop()
+    assert "(try 1 of 10): the session was rejected" in caplog.text
+    assert "some text from the service" not in caplog.text
+
+
+async def test_two_reads_make_one_call(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A second read while a try is in flight queues nothing."""
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    await control.async_start()
+    await control.async_stop()
+    control.on_charger_read(CHARGING, control.start_attempts)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    release.set()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_turn_off_then_a_read_make_one_call(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A read while a turn-off's call is in flight queues nothing, and none follows the accepted call."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    release.set()
+    await stop
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_repeated_turn_off_keeps_the_time_and_the_count(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A turn-off while a stop is stored doesn't start it again, and makes no call inside the wait."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = ChargeNotStoppableError("x")
+    await control.async_stop()
+    first = await _saved(hass, entry, hass_storage)
+    assert first["stop_tries"] == 1
+    freezer.tick(timedelta(seconds=30))
+    await control.async_stop()
+    again = await _saved(hass, entry, hass_storage)
+    assert again == first
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_turn_on_clears_a_stored_stop(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A turn-on with a stop stored and a charge open clears the stop and starts nothing."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = ChargeNotStoppableError("x")
+    await control.async_stop()
+    assert control.state == STOP_ASKED_ONLY
+    await control.async_start()
+    assert control.state == IDLE
+    client.start_charge.assert_not_awaited()
+
+
+async def test_turn_on_clears_a_stored_stop_before_a_refused_start(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The stop is cleared whatever the start then does: here starts are blocked."""
+    await control.async_start()
+    await control.async_stop()
+    await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
+    assert control.state == ChargeControlState(blocked=True, stop_asked=True)
+    with pytest.raises(ServiceValidationError):
+        await control.async_start()
+    assert control.state == BLOCKED
+    client.start_charge.assert_awaited_once()
+
+
+async def test_wait_holds_from_one_stop_to_the_next(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A new stop right after a failed call waits out what is left of the 2 minutes (D50)."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = ChargeNotStoppableError("x")
+    await control.async_stop()
+    await control.async_start()  # clears the stop; the charge is open, so no start
+    client.stop_charge.side_effect = None
+    await control.async_stop()
+    client.stop_charge.assert_awaited_once()
+    assert control.state == STOP_ASKED_ONLY
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == 2
+
+
+async def test_reload_right_after_a_call_waits_and_keeps_the_count(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A reloaded control has the stop, its count and what is left of the wait; the pending stop isn't stored."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    await control.async_shutdown()
+    saved = hass_storage[STORE_KEY.format(entry.entry_id)]["data"]
+    assert saved["stop_asked_since"] is not None
+    assert saved["stop_tries"] == 1
+    assert saved["stop_tried_at"] is not None
+
+    again = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await again.async_load()
+    assert again.state == STOP_ASKED_ONLY
+    again.on_charger_read(CHARGING, again.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()  # the charger lags: no second call yet
+
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    again.on_charger_read(CHARGING, again.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == 2
+    await again.async_shutdown()
+    assert hass_storage[STORE_KEY.format(entry.entry_id)]["data"]["stop_tries"] == 2
+
+
+async def test_wait_at_load_is_never_more_than_2_minutes(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A stored try time in the future (a clock change) gives a wait of 2 minutes, not more."""
+    key = STORE_KEY.format(entry.entry_id)
+    now = dt_util.utcnow()
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": key,
+        "data": {
+            "blocked_since": None,
+            "block_reason": None,
+            "start_pending_since": None,
+            "stop_asked_since": now.isoformat(),
+            "stop_tries": 1,
+            "stop_tried_at": (now + timedelta(hours=3)).isoformat(),
+        },
+    }
+    control = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await control.async_load()
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+    await control.async_shutdown()
+
+
+async def test_queued_try_that_makes_no_call_starts_no_wait(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A try queued by a read, then overtaken by a turn-on, makes no call and blocks no later one."""
+    await control.async_start()
+    await control.async_stop()
+    await control._lock.acquire()  # noqa: SLF001
+    start = hass.async_create_task(control.async_start())
+    await asyncio.sleep(0)  # the turn-on queues for the lock first
+    control.on_charger_read(CHARGING, control.start_attempts)  # the try second
+    control._lock.release()  # noqa: SLF001
+    await start
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_not_awaited()
+    assert control.state == IDLE
+    await control.async_stop()
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_slow_call_waits_from_its_answer(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The 2 minutes run from the charger's answer: a call that took 3 minutes isn't judged at once."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)
+    freezer.tick(timedelta(minutes=3))
+    async_fire_time_changed(hass)
+    release.set()
+    await stop
+    assert control.state == STOP_PENDING
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT - timedelta(seconds=1))
+    assert control.state == STOP_PENDING
+    assert "Stopping the charge failed" not in caplog.text
+    await _fire(hass, freezer, timedelta(seconds=1))
+    assert control.state == STOP_ASKED_ONLY
+
+
+async def test_cancelled_call_keeps_the_stop_and_counts(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A cancelled call was made: the stop stays, the try counts, and the wait runs."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)
+    stop.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await stop
+    assert control.state == STOP_ASKED_ONLY
+    saved = await _saved(hass, entry, hass_storage)
+    assert saved["stop_tries"] == 1
+    client.stop_charge.side_effect = None
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+
+
+async def test_call_cancelled_with_a_failed_setup_arms_no_timer(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A failed setup closes the control before it cancels the call: no timer is left on a dead control."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)
+    control._async_close()  # noqa: SLF001  (what the entry runs when a setup fails)
+    stop.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await stop
+    assert _timers(hass, f"{DOMAIN} stop wait") == 0
+    assert control.state == STOP_ASKED_ONLY
+
+
+async def test_completed_charge_gets_no_call(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    request_refresh: AsyncMock,
+) -> None:
+    """A last read with a completed charge: the turn-off calls nothing, asks for a read, and that read ends the stop."""
+    completed = make_charger(is_connected=True, charge_state=ChargeState.COMPLETED)
+    control.on_charger_read(completed, control.start_attempts)
+    await control.async_stop()
+    await hass.async_block_till_done()
+    client.stop_charge.assert_not_awaited()
+    assert control.state == STOP_ASKED_ONLY
+    request_refresh.assert_awaited()
+    control.on_charger_read(completed, control.start_attempts)
+    assert control.state == IDLE
+    client.stop_charge.assert_not_awaited()
+
+
+async def test_read_that_ends_the_stop_during_a_call(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A read shows the charge off while the call is in flight: the accepted call leaves no pending stop behind."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+
+    client.stop_charge.side_effect = slow_stop
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)
+    control.on_charger_read(CONNECTED, control.start_attempts)
+    assert control.state == IDLE
+    release.set()
+    await stop
+    assert control.state == IDLE
+    await control.async_start()  # not refused: no pending stop is under way
+    client.start_charge.assert_awaited_once()
+
+
+async def test_try_skipped_at_a_reload_is_sent_by_the_new_control(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A reload between the read and the stop: the try is skipped, the stop is saved, and the reloaded control sends it (#26)."""
+    await control.async_start()
+    await control.async_stop()
+    await control._lock.acquire()  # noqa: SLF001
+    shutdown = hass.async_create_task(control.async_shutdown())
+    await asyncio.sleep(0)  # the unload queues for the lock first
+    control.on_charger_read(CHARGING, control.start_attempts)  # the try second
+    control._lock.release()  # noqa: SLF001
+    await shutdown
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_not_awaited()
+    saved = hass_storage[STORE_KEY.format(entry.entry_id)]["data"]
+    assert saved["stop_asked_since"] is not None
+    assert saved["start_pending_since"] is None
+    assert saved["stop_tries"] == 0
+
+    again = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await again.async_load()
+    assert again.state == STOP_ASKED_ONLY
+    again.on_charger_read(CHARGING, again.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+    client.start_charge.assert_awaited_once()
+    await again.async_shutdown()
+
+
+async def test_wait_timer_does_nothing_on_a_closed_control(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    freezer: FrozenDateTimeFactory,
+    on_change: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A wait timer whose work waits for the lock while the entry closes judges nothing."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await control.async_stop()
+    async with control._lock:  # noqa: SLF001
+        freezer.tick(STOP_CONFIRM_TIMEOUT)
+        async_fire_time_changed(hass)
+        await asyncio.sleep(0)
+        control._async_close()  # noqa: SLF001
+        on_change.reset_mock()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert control.state == STOP_PENDING
+    assert "Stopping the charge failed" not in caplog.text
+    on_change.assert_not_called()
+
+
+async def test_unknown_charger_state_keeps_the_stop(
+    hass: HomeAssistant, control: ChargeControl, client: AsyncMock
+) -> None:
+    """A charger in an unknown state with no charge isn't "off": the stop waits."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = ChargeNotStoppableError("x")
+    await control.async_stop()
+    control.on_charger_read(
+        make_charger(is_connected=True, state=ChargerState.UNKNOWN),
+        control.start_attempts,
+    )
+    assert control.state == STOP_ASKED_ONLY
+
+
+async def test_no_call_after_10_tries(
+    hass: HomeAssistant,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The 10th call is the last one for a stop asked."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = ChargeNotStoppableError("x")
+    await control.async_stop()
+    for _ in range(STOP_MAX_TRIES + 2):
+        await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+        control.on_charger_read(CHARGING, control.start_attempts)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == STOP_MAX_TRIES
+    client.start_charge.assert_not_awaited()
+
+
+async def test_wait_over_at_load_sends_the_stop_at_once(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A stored try time more than 2 minutes old leaves no wait: the first read sends the stop."""
+    key = STORE_KEY.format(entry.entry_id)
+    now = dt_util.utcnow()
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": key,
+        "data": {
+            "blocked_since": None,
+            "block_reason": None,
+            "start_pending_since": None,
+            "stop_asked_since": (now - timedelta(minutes=5)).isoformat(),
+            "stop_tries": 1,
+            "stop_tried_at": (now - timedelta(minutes=3)).isoformat(),
+        },
+    }
+    control = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await control.async_load()
+    assert control.state == STOP_ASKED_ONLY
+    assert _timers(hass, f"{DOMAIN} stop wait") == 0
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    client.stop_charge.assert_awaited_once()
+    client.start_charge.assert_not_awaited()
+    await control.async_shutdown()
+    assert hass_storage[key]["data"]["stop_tries"] == 2
+
+
+async def test_failed_call_after_a_read_ended_the_stop_logs_no_warning(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A read shows the charge off while a call that then fails is in flight: no stop is left to warn about."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    release = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await release.wait()
+        raise ChargeNotStoppableError("x")
+
+    client.stop_charge.side_effect = slow_stop
+    stop = hass.async_create_task(control.async_stop())
+    await asyncio.sleep(0)
+    control.on_charger_read(CONNECTED, control.start_attempts)
+    release.set()
+    await stop
+    assert control.state == IDLE
+    assert "Stopping the charge failed" not in caplog.text
+    saved = await _saved(hass, entry, hass_storage)
+    assert saved["stop_asked_since"] is None
+    assert saved["stop_tries"] == 0  # no tries are stored without a stop

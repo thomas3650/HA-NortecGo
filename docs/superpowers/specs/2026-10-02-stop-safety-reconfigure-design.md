@@ -33,8 +33,7 @@ Date: 2026-10-02 · Branch: `feat/stop-safety-reconfigure` · Issues: #85, #32, 
 
 ## Decisions
 
-Answered by the owner on 2026-10-02, in the brainstorm and in the questions the spec review raised. The two
-rows marked *proposed* are put to the owner with this spec.
+Answered by the owner on 2026-10-02, in the brainstorm and in the questions the spec review raised.
 
 | Topic | Decision |
 |---|---|
@@ -48,8 +47,8 @@ rows marked *proposed* are put to the owner with this spec.
 | The log | A warning for every failed try, with its number; an error when the control gives up |
 | Which turn-offs | Every one, not only those asked during a pending start. A turn-off whose call fails raises no error, except a rejected session |
 | Which charge | The stop is not tied to one charge; its age is the guard (below) |
-| The notice after giving up (proposed) | It stays until the charge is seen off, *Charge* is turned on, or the owner dismisses it; a new turn-off doesn't remove it |
-| A store that can't be read (proposed) | A stop held in it is lost; the notice about the store says so |
+| The notice after giving up | It stays until the charge is seen off, *Charge* is turned on, or the owner dismisses it; a new turn-off doesn't remove it |
+| A store that can't be read | A stop held in it is lost; the notice about the store says so |
 | #26, corrupt store file | Fix: starts are blocked to be safe |
 | #26, block reason | Fix: stored with the block |
 | #26, stop lost across a reload | Fixed by the stored stop |

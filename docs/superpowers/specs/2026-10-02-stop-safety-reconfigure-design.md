@@ -411,13 +411,12 @@ module gives the control:
 - **Date:** 2026-10-02 · **Status:** active
 - **Decision:** Turning *Charge* off stores the stop until a read shows the charge off (stopping, or
   not open on a charger whose state is known), or *Charge* is turned on. Meanwhile the stop is sent, at
-  the turn-off or when a read shows the charge stoppable, never to a charge that is stopping and never while a start is pending, with at least 2 minutes between
-  two stop calls; a try
-  fails when the call fails or when the charge is still on 2 minutes after the charger accepted it. A
-  failed try raises no error (a rejected session aside). After 10 tries or 30 minutes from the ask,
-  whichever is first, the control gives up, logs an error and raises a repair issue that a new turn-off
-  doesn't remove. The charger is read
-  every 30 s while a stop is stored, within D31's limits. A start is still never retried.
+  the turn-off or when a read shows the charge stoppable, never to a charge that is stopping and never
+  while a start is pending, with at least 2 minutes between two stop calls; a try fails when the call
+  fails or when the charge is still on 2 minutes after the charger accepted it. A failed try raises no
+  error (a rejected session aside). After 10 tries or 30 minutes from the ask, whichever is first, the
+  control gives up, logs an error and raises a repair issue that a new turn-off doesn't remove. The
+  charger is read every 30 s while a stop is stored, within D31's limits. A start is still never retried.
 - **Why:** A stop tied to the pending start was lost whenever that ended first (#85, #32, #26), and an
   unattended stop from EV Smart Charging must actually stop the car. The stop isn't tied to one charge, so
   its age bounds the chance of stopping a later one.

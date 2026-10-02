@@ -156,7 +156,7 @@ accepted stop is judged 2 minutes after the charger accepted it.
 | `NoActiveChargeError` | The charger had no charge to stop when the client looked. That doesn't end the stop: the client gives this answer for an open charger without a charge object too. The stop stays stored, a read is requested, and that read decides: off ends the stop, anything else has it wait. No warning; the try is counted like any call |
 | `ChargeNotStoppableError`, or any other `NortecGoError` | The try has failed. The stop stays stored, and the wait runs its 2 minutes |
 | `AuthError` | The try has failed and the stop stays stored. Reauth starts at once. A turn-off raises the translated `auth_failed` error, as today |
-| Cancelled (a failed setup, Home Assistant stopping, a cancelled turn-off call) | The stop stays stored and the try stays counted. The 2 minutes run from when the call was made |
+| Cancelled (a failed setup, Home Assistant stopping, a cancelled turn-off call) | The stop stays stored and the try stays counted. The 2 minutes run from the cancellation |
 
 A queued try that ends up making no call, because the check under the lock fails, ends its own wait.
 

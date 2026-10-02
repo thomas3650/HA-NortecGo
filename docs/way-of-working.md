@@ -23,7 +23,10 @@ and skills point here rather than copying it. Hard rules live in `CLAUDE.md`, an
    ([Parallel waves](#parallel-waves)).
 6. **Draft PR:** once the spec and plan are both Ready, commit them, push, and open a **draft** PR with
    `Closes #n` and links to the spec and plan. Its title follows [`releasing.md`](releasing.md#pr-titles).
-   The owner reviews the spec and plan there.
+   The owner reviews the spec and plan there. Each of the two links names the pushed commit that holds the
+   file's current text, by its full SHA (`https://github.com/<owner>/<repo>/blob/<full sha>/<path>`): a link
+   to the branch breaks when the merge deletes the branch. A commit link doesn't follow the branch, so when a
+   later commit changes the spec or the plan, update the links to that commit.
 7. **Execute:** `superpowers:subagent-driven-development`. For each task:
    - write the task's `Guarded files:` paths, if any, to the allowlist of the worktree the task runs in:
      `$(git -C <worktree> rev-parse --absolute-git-dir)/subagent-guard-allow` (in the main checkout, that is

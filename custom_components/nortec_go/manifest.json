@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/thomas3650/HA-NortecGo/issues",
   "loggers": ["pynortecgo"],
   "requirements": ["pynortecgo==0.8.0"],
-  "version": "0.5.0"
+  "version": "0.6.0"
 }

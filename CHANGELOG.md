@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-02
+
 ### Added
 
 - Reconfigure: change the account's email or password from the integration's page, without removing the

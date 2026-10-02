@@ -108,10 +108,9 @@ it brings it up to date. A head moves with a push the PO asked for, in a resume 
 (**Behind `main`**, a failed required check, a requested change); that push follows the resume's rule, which
 ends with a new checked head. A later session sees that such a resume is open by the team lead's issue
 worktree, which is in place only then. Any other moved head is escalated at once, on an owner-merge PR too,
-and until the owner answers the PO checks nothing on the PR and resumes no team lead for it. After the
+and until the owner answers the PO runs no check on the PR and resumes no team lead for it. After the
 owner's go-ahead the PR goes through *From branch ready to PR ready* again on the new head (without
-`gh pr ready`), and the PO records the new checked head; a PR the PO may merge then rejoins the queue at the
-front.
+`gh pr ready`), and the PO records the new checked head.
 ```
 
 - [ ] **Step 3: Step 3 of the merge points to A moved head**
@@ -151,10 +150,11 @@ it: not a new checked head, and not a team lead's fix alone.
 
 - [ ] **Step 5: The queue loses its slot sentence, and the new paragraph Free slots**
 
-The paragraph **The queue** ends with a sentence on the free slot, and the paragraph on owner-merge PRs
-follows it:
+The paragraph **The queue** ends with its rule for rejoining the queue and a sentence on the free slot, and
+the paragraph on owner-merge PRs follows it:
 
 ```text
+at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4), or once the fix
 for a failed required check (step 2 of the merge) has been through *From branch ready to PR ready* again. A
 resume for a PR that is first in the queue, or has stepped out of it, takes a free team-lead slot before a
 new issue is picked.
@@ -164,11 +164,13 @@ the owner says they are about to merge it; the PO then brings it up to date (**B
 merge) and tells the owner.
 ```
 
-Change them to this: the slot sentence is gone, the owner-merge paragraph is as it was, and a new
-paragraph follows it (one blank line before `### After a merge`, as there is today):
+Change them to this: the rejoin rule names a moved head, the slot sentence is gone, the owner-merge
+paragraph is as it was, and a new paragraph follows it (one blank line before `### After a merge`, as there is today):
 
 ```text
-for a failed required check (step 2 of the merge) has been through *From branch ready to PR ready* again.
+at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4; for a moved head,
+once the PR has then been through *From branch ready to PR ready* again), or once the fix for a failed
+required check (step 2 of the merge) has been through *From branch ready to PR ready* again.
 
 Owner-merge PRs are not in the queue and block nothing. One that falls behind `main` stays as it is until
 the owner says they are about to merge it; the PO then brings it up to date (**Behind `main`**, without the
@@ -302,14 +304,14 @@ Expected: two hits, D47 before D48, and the last line of the file is D48's `- **
 git diff --numstat
 ```
 
-Expected: `11	0	docs/decisions.md` and `39	15	docs/way-of-working.md`, and no other file.
+Expected: `11	0	docs/decisions.md` and `40	16	docs/way-of-working.md`, and no other file.
 
 ```bash
 git diff -- docs/way-of-working.md | grep -c '^-[^-]'
 git diff -- docs/decisions.md | grep -c '^-[^-]'
 ```
 
-Expected: `15` and `0`. Every removed line is from a "today" block of Steps 1 to 8; nothing is removed from
+Expected: `16` and `0`. Every removed line is from a "today" block of Steps 1 to 8; nothing is removed from
 `docs/decisions.md`.
 
 ```bash

@@ -29,7 +29,7 @@ every point with the alternatives, so the owner can change any of them before me
 
 | # | Point | Proposed decision | Alternatives not chosen |
 |---|---|---|---|
-| 1 | #90: a ready PR's head is no longer the checked head | A push the PO asked for (a resume it started) follows that resume's rule, and the PO records the new checked head. Any other moved head is escalated at once, on an owner-merge PR too; the PO checks nothing until the owner answers, and after the go-ahead the PR goes through *From branch ready to PR ready* again on the new head. Said once, in a paragraph the PO applies before step 1 of the merge; step 3 keeps its head test as the last check and points there | Re-check only, then merge without asking (the PO would merge commits nobody in the flow asked for). Re-check and always ask for a go-ahead (adds a go-ahead to every **Behind `main`** round, which D45 doesn't have) |
+| 1 | #90: a ready PR's head is no longer the checked head | A push the PO asked for (a resume it started) follows that resume's rule, and the PO records the new checked head. Any other moved head is escalated at once, on an owner-merge PR too; the PO runs no check on the PR until the owner answers, and after the go-ahead the PR goes through *From branch ready to PR ready* again on the new head. Said once, in a paragraph the PO applies before step 1 of the merge; step 3 keeps its head test as the last check and points there | Re-check only, then merge without asking (the PO would merge commits nobody in the flow asked for). Re-check and always ask for a go-ahead (adds a go-ahead to every **Behind `main`** round, which D45 doesn't have) |
 | 2 | #90: a resume slot for an owner-merge PR the owner is about to merge | The same priority as the resumes for the queue: it takes a free slot before a new issue is picked, as every resume for a ready PR does | No priority (the owner, who has said they are about to merge, waits behind new work) |
 | 3 | #97: which goes first when a slot frees | One order, in one place: a resume for a ready PR, then a team lead that isn't running and is to be resumed (gone, or exited while waiting with its reply there, or found exited at the PO's start), then a new issue. *Picking and starting an issue* still lets the PO start a new issue while an exited team lead waits for its reply | The exited team lead keeps its slot (changes what "fewer than 2 team leads run" means, and a slot stays empty for as long as an owner answer takes). A new issue first (a half-done issue can wait behind any number of new ones) |
 | 4 | #97: the "nothing new in `claude logs <id>` for 2 loops" line | It applies to a running team lead only, and not to one that waits for the PO's reply to one of its messages | Exclude only the one that exited (a running, waiting one is still escalated, with an answer the PO already knows). No change |
@@ -101,9 +101,27 @@ it brings it up to date. A head moves with a push the PO asked for, in a resume 
 `main`**, a failed required check, a requested change); that push follows the resume's rule, which ends with
 a new checked head. A later session sees that such a resume is open by the team lead's issue worktree, which
 is in place only then. Any other moved head is escalated at once, on an owner-merge PR too, and until the
-owner answers the PO checks nothing on the PR and resumes no team lead for it. After the owner's go-ahead
+owner answers the PO runs no check on the PR and resumes no team lead for it. After the owner's go-ahead
 the PR goes through *From branch ready to PR ready* again on the new head (without `gh pr ready`), and the
-PO records the new checked head; a PR the PO may merge then rejoins the queue at the front.
+PO records the new checked head.
+```
+
+When such a PR rejoins the queue is said in **The queue**, which holds the rule for rejoining (§7, *No
+duplication*). Its sentence
+
+```text
+A PR that waits for the owner's answer or for a team lead's fix steps out of the queue, and rejoins it
+at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4), or once the fix
+for a failed required check (step 2 of the merge) has been through *From branch ready to PR ready* again.
+```
+
+becomes
+
+```text
+A PR that waits for the owner's answer or for a team lead's fix steps out of the queue, and rejoins it
+at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4; for a moved head,
+once the PR has then been through *From branch ready to PR ready* again), or once the fix for a failed
+required check (step 2 of the merge) has been through *From branch ready to PR ready* again.
 ```
 
 In step 3 of the merge, the first bullet

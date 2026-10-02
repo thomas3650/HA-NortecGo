@@ -91,9 +91,10 @@ async def test_delayed_save_lands(
     states = [StoredControl(), StoredControl(stop_asked_since=_time(T2))]
     store.async_delay_save(lambda: states[-1])
     assert KEY not in hass_storage
+    states.append(StoredControl(stop_asked_since=_time(T3)))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert hass_storage[KEY]["data"] == {**EMPTY, "stop_asked_since": T2}
+    assert hass_storage[KEY]["data"] == {**EMPTY, "stop_asked_since": T3}
 
 
 async def test_remove(hass: HomeAssistant, hass_storage: dict[str, Any]) -> None:
@@ -217,6 +218,32 @@ async def test_corrupt_file_is_unreadable(
     ):
         await ChargeControlStore(hass, ENTRY_ID).async_load()
     assert exists.call_args.args[0].endswith(KEY)
+
+
+async def test_file_check_comes_before_the_load(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """The file is looked for before the load: the load renames a corrupt file away (#26)."""
+    store = ChargeControlStore(hass, ENTRY_ID)
+    calls: list[str] = []
+
+    def exists(_path: str) -> bool:
+        calls.append("exists")
+        return True
+
+    async def load() -> None:
+        calls.append("load")
+
+    with (
+        patch(
+            "custom_components.nortec_go.charge_control_store._file_exists",
+            side_effect=exists,
+        ),
+        patch.object(store._store, "async_load", side_effect=load),  # noqa: SLF001
+        pytest.raises(UnreadableStoreError),
+    ):
+        await store.async_load()
+    assert calls == ["exists", "load"]
 
 
 async def test_a_file_on_disk_that_loads_is_read(

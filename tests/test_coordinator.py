@@ -411,12 +411,21 @@ async def test_failed_setup_car_read_keeps_a_stop_asked(
     The setup that then works sends the stop the owner asked for, once.
     """
     key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    now = dt_util.utcnow().isoformat()
     stored = {
         "blocked_since": None,
-        "start_pending_since": dt_util.utcnow().isoformat(),
-        "stop_asked": True,
+        "block_reason": None,
+        "start_pending_since": now,
+        "stop_asked_since": now,
+        "stop_tries": 0,
+        "stop_tried_at": None,
     }
-    hass_storage[key] = {"version": 1, "key": key, "data": dict(stored)}
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": key,
+        "data": dict(stored),
+    }
     mock_client.get_charger.return_value = make_charger(
         is_connected=True, charge_state=ChargeState.CHARGING
     )

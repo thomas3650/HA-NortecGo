@@ -220,7 +220,7 @@
         "step": {
           "confirm": {
             "title": "Allow charge starts again on {name}",
-            "description": "The saved start guard couldn't be read, so starts are blocked to be safe.\n\nCheck the charger in the Nortec Go app. Then unplug and replug the cable, or select **Submit** to allow starts again."
+            "description": "The saved start guard couldn't be read, so starts are blocked to be safe. A stop you asked for earlier may not have been sent.\n\nCheck the charger in the Nortec Go app. Then unplug and replug the cable, or select **Submit** to allow starts again."
           }
         },
         "abort": {

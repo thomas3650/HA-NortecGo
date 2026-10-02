@@ -1190,24 +1190,25 @@ async def test_background_stop_without_success_ends_pending_stop(
     assert control.state == IDLE
 
 
-async def test_pending_stop_is_not_stored(
+async def test_stored_shape(
     hass: HomeAssistant,
     entry: MockConfigEntry,
     control: ChargeControl,
     hass_storage: dict[str, Any],
 ) -> None:
-    """The stored shape keeps its three keys; the pending stop never reaches it (Review Focus 5)."""
+    """The stored shape has the six keys of minor version 2; the pending stop never reaches it."""
     control.on_charger_read(CHARGING, control.start_attempts)
     await control.async_stop()
-    async_fire_time_changed(hass)  # any delayed save's timer
-    await hass.async_block_till_done()
-    assert STORE_KEY.format(entry.entry_id) not in hass_storage
     await control.async_shutdown()
-    saved = hass_storage[STORE_KEY.format(entry.entry_id)]["data"]
-    assert saved == {
+    stored = hass_storage[STORE_KEY.format(entry.entry_id)]
+    assert stored["minor_version"] == 2
+    assert stored["data"] == {
         "blocked_since": None,
+        "block_reason": None,
         "start_pending_since": None,
-        "stop_asked": False,
+        "stop_asked_since": None,
+        "stop_tries": 0,
+        "stop_tried_at": None,
     }
     again = ChargeControl(
         hass, entry, AsyncMock(), on_change=MagicMock(), request_refresh=AsyncMock()
@@ -1246,6 +1247,7 @@ async def test_store_round_trip(
     await hass.async_block_till_done()
     saved = hass_storage[STORE_KEY.format(entry.entry_id)]["data"]
     assert saved["blocked_since"] is not None
+    assert saved["block_reason"] == "start_blocked"
     ir.async_delete_issue(hass, DOMAIN, f"start_blocked_{entry.entry_id}")
     again = ChargeControl(
         hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
@@ -1290,6 +1292,100 @@ async def test_wrong_shape_store_blocks(
     issue = _issue(hass, entry)
     assert issue is not None
     assert issue.translation_key == "start_blocked_store"
+
+
+async def test_corrupt_store_blocks(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    client: AsyncMock,
+    hass_storage: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A store file that was there and loads as nothing blocks starts, and the block is saved (#26)."""
+    control = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    with patch(
+        "custom_components.nortec_go.charge_control_store._file_exists",
+        return_value=True,
+    ):
+        await control.async_load()
+    assert control.state == BLOCKED
+    issue = _issue(hass, entry)
+    assert issue is not None
+    assert issue.translation_key == "start_blocked_store"
+    assert "The saved start guard couldn't be read" in caplog.text
+    async_fire_time_changed(hass)  # the delayed save's timer
+    await hass.async_block_till_done()
+    saved = hass_storage[STORE_KEY.format(entry.entry_id)]["data"]
+    assert saved["block_reason"] == "start_blocked_store"
+    with pytest.raises(ServiceValidationError):
+        await control.async_start()
+    client.start_charge.assert_not_awaited()
+
+
+async def test_missing_store_does_not_block(
+    hass: HomeAssistant, entry: MockConfigEntry, client: AsyncMock
+) -> None:
+    """No store file is a first setup: nothing is blocked."""
+    control = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await control.async_load()
+    assert control.state == IDLE
+    assert _issue(hass, entry) is None
+
+
+@pytest.mark.parametrize("reason", ["start_blocked", "start_blocked_store"])
+async def test_block_reason_survives_a_reload(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    client: AsyncMock,
+    hass_storage: dict[str, Any],
+    reason: str,
+) -> None:
+    """The repair issue comes back with the text of the block's own reason (#26)."""
+    key = STORE_KEY.format(entry.entry_id)
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": key,
+        "data": {
+            "blocked_since": "2026-09-26T20:00:00+00:00",
+            "block_reason": reason,
+            "start_pending_since": None,
+            "stop_asked_since": None,
+            "stop_tries": 0,
+            "stop_tried_at": None,
+        },
+    }
+    control = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+    )
+    await control.async_load()
+    assert control.state == BLOCKED
+    issue = _issue(hass, entry)
+    assert issue is not None
+    assert issue.translation_key == reason
+    await control.async_shutdown()
+    assert hass_storage[key]["data"]["block_reason"] == reason
+
+
+async def test_unexpected_start_error_is_translated_without_a_block(
+    control: ChargeControl,
+    client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An exception that isn't the client's own is logged, raised as start_failed, and sets no block (#26)."""
+    client.start_charge.side_effect = RuntimeError("boom")
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_start()
+    assert exc_info.value.translation_key == "start_failed"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
+    assert control.state == IDLE
+    assert "Unexpected error while starting a charge" in caplog.text
+    client.start_charge.assert_awaited_once()
 
 
 async def test_remove_charge_control(

@@ -11,7 +11,6 @@ from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from pynortecgo import (
     AuthError,
@@ -33,9 +32,12 @@ from pynortecgo import (
     VehicleNotFoundError,
 )
 
+from .charge_control_store import (
+    ChargeControlStore,
+    StoredControl,
+    UnreadableStoreError,
+)
 from .const import (
-    CHARGE_CONTROL_STORE_KEY,
-    CHARGE_CONTROL_STORE_VERSION,
     DOMAIN,
     START_BLOCKED_ISSUE_ID,
     START_CONFIRM_TIMEOUT,
@@ -133,36 +135,9 @@ def charge_status(charger: Charger, control: ChargeControlState) -> str | None:
     return "idle"
 
 
-def _parse_time(value: object) -> datetime | None:
-    """A stored ISO time, or None; raises TypeError or ValueError on a wrong shape."""
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise TypeError("not a string")
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        raise ValueError("no time zone")
-    return parsed
-
-
-def _parse_bool(value: object) -> bool:
-    """A stored bool; raises TypeError on a wrong shape."""
-    if not isinstance(value, bool):
-        raise TypeError("not a bool")
-    return value
-
-
-def _store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
-    return Store(
-        hass,
-        CHARGE_CONTROL_STORE_VERSION,
-        CHARGE_CONTROL_STORE_KEY.format(entry_id=entry_id),
-    )
-
-
 async def async_remove_charge_control(hass: HomeAssistant, entry_id: str) -> None:
     """Delete an entry's stored charge control and its repair issue."""
-    await _store(hass, entry_id).async_remove()
+    await ChargeControlStore(hass, entry_id).async_remove()
     ir.async_delete_issue(
         hass, DOMAIN, START_BLOCKED_ISSUE_ID.format(entry_id=entry_id)
     )
@@ -186,11 +161,15 @@ class ChargeControl:
         self._client = client
         self._on_change = on_change
         self._request_refresh = request_refresh
-        self._store = _store(hass, entry.entry_id)
+        self._store = ChargeControlStore(hass, entry.entry_id)
         self._lock = asyncio.Lock()
         self._blocked_since: datetime | None = None
+        self._block_reason: str | None = None
         self._pending_since: datetime | None = None
-        self._stop_asked = False
+        self._stop_asked_since: datetime | None = None
+        # Carried from the load to the save here; the stop's tries are Task 4's.
+        self._stop_tries = 0
+        self._stop_tried_at: datetime | None = None
         self._stop_pending_since: datetime | None = None
         self._start_timer: CALLBACK_TYPE | None = None
         self._stop_timer: CALLBACK_TYPE | None = None
@@ -207,35 +186,36 @@ class ChargeControl:
         return ChargeControlState(
             blocked=self._blocked_since is not None,
             start_pending=self._pending_since is not None,
-            stop_asked=self._stop_asked,
+            stop_asked=self._stop_asked_since is not None,
             stop_pending=self._stop_pending_since is not None,
         )
 
     async def async_load(self) -> None:
-        """Load the stored state; a wrong shape blocks starts to be safe (§3.5)."""
-        data = await self._store.async_load()
-        if data is None:
-            return
+        """Load the stored state; a store that can't be read blocks starts to be safe (§3.5)."""
         try:
-            blocked_since = _parse_time(data["blocked_since"])
-            pending_since = _parse_time(data["start_pending_since"])
-            stop_asked = _parse_bool(data["stop_asked"])
-        except KeyError, TypeError, ValueError:
+            stored = await self._store.async_load()
+        except UnreadableStoreError:
             _LOGGER.warning(
-                "The saved start guard has an unexpected shape; blocking starts to be safe"
+                "The saved start guard couldn't be read; blocking starts to be safe"
             )
             self._set_block("start_blocked_store")
             self._save()
             return
-        self._blocked_since = blocked_since
-        self._stop_asked = stop_asked and pending_since is not None
+        if stored is None:
+            return
+        self._blocked_since = stored.blocked_since
+        self._block_reason = stored.block_reason
+        self._stop_tries = stored.stop_tries
+        self._stop_tried_at = stored.stop_tried_at
+        pending_since = stored.start_pending_since
         if pending_since is not None:
+            self._stop_asked_since = stored.stop_asked_since
             left = START_CONFIRM_TIMEOUT - (dt_util.utcnow() - pending_since)
             self._set_start_pending(
                 pending_since, min(max(left, START_LOAD_GRACE), START_CONFIRM_TIMEOUT)
             )
-        if blocked_since is not None:
-            self._create_issue("start_blocked")
+        if stored.block_reason is not None:
+            self._create_issue(stored.block_reason)
 
     async def async_start(self) -> None:
         """Start a charge once, unless one is on, pending or blocked (§3.1)."""
@@ -246,8 +226,8 @@ class ChargeControl:
                     translation_domain=DOMAIN, translation_key="stop_pending"
                 )
             if self._pending_since is not None:
-                if self._stop_asked:
-                    self._stop_asked = False
+                if self._stop_asked_since is not None:
+                    self._stop_asked_since = None
                     self._changed()
                 return
             charger = self._last_charger
@@ -303,8 +283,15 @@ class ChargeControl:
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="start_failed"
                 ) from None
+            except Exception:
+                # Not the client's own error, so nothing after the payment request raised it:
+                # the client wraps all of that in ChargeStartError. No hold, so no block.
+                _LOGGER.exception("Unexpected error while starting a charge")
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="start_failed"
+                ) from None
             self._set_start_pending(dt_util.utcnow())
-            self._stop_asked = False
+            self._stop_asked_since = None
             self._changed()
             self._request_read()
 
@@ -318,8 +305,8 @@ class ChargeControl:
             if self._pending_since is not None and (
                 charger is None or not charge_is_open(charger)
             ):
-                if not self._stop_asked:
-                    self._stop_asked = True
+                if self._stop_asked_since is None:
+                    self._stop_asked_since = dt_util.utcnow()
                     self._changed()
                 self._request_read()
                 return
@@ -400,7 +387,7 @@ class ChargeControl:
             return  # a stale read: it began before the latest start attempt
         changed = False
         if self._pending_since is not None:
-            if self._stop_asked and charge_is_open(charger):
+            if self._stop_asked_since is not None and charge_is_open(charger):
                 self._end_start_pending()
                 self._set_stop_pending()
                 changed = True
@@ -440,7 +427,7 @@ class ChargeControl:
         async with self._lock:
             self._closed = True
             self._cancel_timers()
-            await self._store.async_save(self._data_to_save())
+            await self._store.async_save(self._stored())
 
     def _raise_if_closed(self) -> None:
         if self._closed:
@@ -476,7 +463,7 @@ class ChargeControl:
 
     def _end_start_pending(self) -> None:
         self._pending_since = None
-        self._stop_asked = False
+        self._stop_asked_since = None
         self._cancel_start_timer()
 
     async def _async_start_due(self, since: datetime) -> None:
@@ -544,11 +531,13 @@ class ChargeControl:
 
     def _set_block(self, issue_key: str) -> None:
         self._blocked_since = dt_util.utcnow()
+        self._block_reason = issue_key
         self._remembered = None
         self._create_issue(issue_key)
 
     def _clear_block(self) -> None:
         self._blocked_since = None
+        self._block_reason = None
         self._remembered = None
         ir.async_delete_issue(
             self._hass,
@@ -576,18 +565,17 @@ class ChargeControl:
         self._on_change()
 
     def _save(self) -> None:
-        self._store.async_delay_save(self._data_to_save, 0)
+        self._store.async_delay_save(self._stored)
 
-    def _data_to_save(self) -> dict[str, Any]:
-        return {
-            "blocked_since": None
-            if self._blocked_since is None
-            else self._blocked_since.isoformat(),
-            "start_pending_since": None
-            if self._pending_since is None
-            else self._pending_since.isoformat(),
-            "stop_asked": self._stop_asked,
-        }
+    def _stored(self) -> StoredControl:
+        return StoredControl(
+            blocked_since=self._blocked_since,
+            block_reason=self._block_reason,
+            start_pending_since=self._pending_since,
+            stop_asked_since=self._stop_asked_since,
+            stop_tries=self._stop_tries,
+            stop_tried_at=self._stop_tried_at,
+        )
 
     def _request_read(self) -> None:
         self._entry.async_create_task(

@@ -105,12 +105,13 @@ All of this is in `charge_control.py`, except the read interval (*What the owner
 
 In this section:
 - **open** is the existing `charge_is_open`;
-- **stoppable** is a read with a charge object that says it can be stopped (`can_stop`) and isn't
-  `STOPPING` or `COMPLETED`. An open charger without a charge object, which is seen right after a start, is not
+- **stoppable** is a read with a charge object that says it can be stopped (`can_stop`) and isn't `STOPPING`
+  or `COMPLETED`. An open charger without a charge object, which is seen right after a start, is not
   stoppable. Today's code sends the stop in that state; that is fixed on purpose;
 - **off** is a read that shows the charge `STOPPING` or `COMPLETED`, or shows no charge open on a charger
-  whose state is known. A completed charge that the read still carries ends the pending stop today too. A charger in an unknown state with no charge object has the stop wait, as it has a start
-  refused; with a stoppable charge object it is tried like any other;
+  whose state is known. A completed charge that the read still carries ends the pending stop today too. A
+  charger in an unknown state with no charge object has the stop wait, as it has a start refused; with a
+  stoppable charge object it is tried like any other;
 - a **stale read** is one begun before the latest start attempt (the existing `start_attempts` check).
 
 ### When a try may be made
@@ -145,9 +146,9 @@ from the owner that the charge doesn't stop.
 
 ### A try's outcome
 
-The try is counted, and the count and the time saved, when the call is made; the time is saved again at
-the answer. The 2 minutes run from the call's answer, not from its start: a call can take a while, and an accepted stop is judged 2 minutes after
-the charger accepted it.
+The try is counted, and the count and the time saved, when the call is made; the time is saved again at the
+answer. The 2 minutes run from the call's answer, not from its start: a call can take a while, and an
+accepted stop is judged 2 minutes after the charger accepted it.
 
 | The call | What happens |
 |---|---|
@@ -166,7 +167,8 @@ a charge that opens inside them waits out the rest. That is intended: the rule i
 whatever the call led to.
 
 - A failed try logs a warning with its number ("try 3 of 10") and what failed: the error's type and text
-  (for a rejected session only that it was rejected), or that the charge was still on after the 2 minutes. Credentials are never part of it (hard rule 5).
+  (for a rejected session only that it was rejected), or that the charge was still on after the 2 minutes.
+  Credentials are never part of it (hard rule 5).
 - When the 10th try has failed, the control gives up (*The limits*).
 - A turn-off no longer raises `charge_not_stoppable` or `stop_failed`: the stop is tried again instead, and
   the owner hears of it only if it can't be done. The two translations are removed (§6).

@@ -2115,7 +2115,7 @@ and delete the line `self._stop_asked_since = None` after `self._set_start_pendi
             self._set_wait()
             self._save()
         # A read isn't under the lock: it may have ended the stop while the call was in flight.
-        # Then there is no stop to wait for or to give up on.
+        # Then there is no stop to wait for, to warn about or to give up on.
         still_asked = self._stop_asked_since is not None
         if accepted and still_asked:
             self._stop_pending_since = self._stop_tried_at
@@ -2123,7 +2123,7 @@ and delete the line `self._stop_asked_since = None` after `self._set_start_pendi
             self._entry.async_start_reauth(self._hass)
         if failed is None:
             self._request_read()
-        else:
+        elif still_asked:
             _LOGGER.warning(
                 "Stopping the charge failed (try %d of %d): %s",
                 tries,
@@ -3144,14 +3144,14 @@ _TOO_OLD = f"it was asked for more than {STOP_ASKED_MAX_AGE} ago"
 ```text
         if failed is None:
             self._request_read()
-        else:
+        elif still_asked:
             _LOGGER.warning(
                 "Stopping the charge failed (try %d of %d): %s",
                 tries,
                 STOP_MAX_TRIES,
                 failed,
             )
-            if still_asked and tries >= STOP_MAX_TRIES:
+            if tries >= STOP_MAX_TRIES:
                 self._give_up(_NO_STOP_SEEN)
 ```
 

@@ -1,6 +1,6 @@
 ## What and why
 
-<!-- One or two sentences. Link the spec/plan in docs/superpowers/ for non-trivial work. -->
+<!-- One or two sentences. For non-trivial work, link the spec and plan (docs/way-of-working.md §1 step 6). -->
 
 Closes #
 

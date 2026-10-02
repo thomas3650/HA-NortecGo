@@ -165,8 +165,8 @@ A turn-off on an idle charger makes a call too, as today, and so starts the 2 mi
 a charge that opens inside them waits out the rest. That is intended: the rule is one call per 2 minutes,
 whatever the call led to.
 
-- A failed try logs a warning with its number ("try 3 of 10") and what failed: the error's type and text,
-  or that the charge was still on after the 2 minutes. Credentials are never part of it (hard rule 5).
+- A failed try logs a warning with its number ("try 3 of 10") and what failed: the error's type and text
+  (for a rejected session only that it was rejected), or that the charge was still on after the 2 minutes. Credentials are never part of it (hard rule 5).
 - When the 10th try has failed, the control gives up (*The limits*).
 - A turn-off no longer raises `charge_not_stoppable` or `stop_failed`: the stop is tried again instead, and
   the owner hears of it only if it can't be done. The two translations are removed (§6).

@@ -380,10 +380,9 @@ it brings it up to date. A head moves with a push the PO asked for, in a resume 
 (**Behind `main`**, a failed required check, a requested change); that push follows the resume's rule, which
 ends with a new checked head. A later session sees that such a resume is open by the team lead's issue
 worktree, which is in place only then. Any other moved head is escalated at once, on an owner-merge PR too,
-and until the owner answers the PO checks nothing on the PR and resumes no team lead for it. After the
+and until the owner answers the PO runs no check on the PR and resumes no team lead for it. After the
 owner's go-ahead the PR goes through *From branch ready to PR ready* again on the new head (without
-`gh pr ready`), and the PO records the new checked head; a PR the PO may merge then rejoins the queue at the
-front.
+`gh pr ready`), and the PO records the new checked head.
 
 The merge, after a `git fetch`:
 1. **Up to date:** `origin/main` is merged into the PR's head (the test in *From branch ready to PR ready*,
@@ -432,8 +431,9 @@ step 1.
 time: the first, then *After a merge* including its release check, and only then the next. Only the next PR
 in the queue is brought up to date; the ones behind it wait, since the next merge would leave them behind
 again. A PR that waits for the owner's answer or for a team lead's fix steps out of the queue, and rejoins it
-at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4), or once the fix
-for a failed required check (step 2 of the merge) has been through *From branch ready to PR ready* again.
+at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4; for a moved head,
+once the PR has then been through *From branch ready to PR ready* again), or once the fix for a failed
+required check (step 2 of the merge) has been through *From branch ready to PR ready* again.
 
 Owner-merge PRs are not in the queue and block nothing. One that falls behind `main` stays as it is until
 the owner says they are about to merge it; the PO then brings it up to date (**Behind `main`**, without the

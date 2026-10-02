@@ -125,5 +125,5 @@ charge control.
 
 `curl -L` reports 200 for a URL that redirects to the login page, so check the page title or the final URL
 too (`curl -s <url> | grep -o '<title>[^<]*</title>'`): a file's page names the file. A relative link in a
-PR description or an issue is such a URL: GitHub keeps the `href` as written, and the browser resolves it
-against the page (`/pull/<n>`), not the repo. Found in #101.
+PR description is such a URL: GitHub keeps the `href` as written, and the browser resolves it against the
+page (`/pull/<n>`), not the repo. Found in #101.

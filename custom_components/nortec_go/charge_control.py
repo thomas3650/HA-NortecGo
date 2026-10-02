@@ -379,8 +379,9 @@ class ChargeControl:
     async def _async_try_stop(self, *, from_turn_off: bool) -> None:
         """One stop_charge() call, under the lock, with the try already marked as queued.
 
-        Only a read ends the stop as done: the call's answer never does (D50). An exception
-        that isn't the client's own escapes untranslated, as it does today.
+        Only a read ends the stop as done: the call's answer never does (D50). So every answer
+        but a rejected session asks for a read. An exception that isn't the client's own
+        escapes untranslated, as it does today.
         """
         self._stop_tries += 1
         tries = self._stop_tries
@@ -412,11 +413,7 @@ class ChargeControl:
         still_asked = self._stop_asked_since is not None
         if accepted and still_asked:
             self._stop_pending_since = self._stop_tried_at
-        if rejected:
-            self._entry.async_start_reauth(self._hass)
-        if failed is None:
-            self._request_read()
-        elif still_asked:
+        if failed is not None and still_asked:
             _LOGGER.warning(
                 "Stopping the charge failed (try %d of %d): %s",
                 tries,
@@ -425,6 +422,15 @@ class ChargeControl:
             )
             if tries >= STOP_MAX_TRIES:
                 self._give_up(_NO_STOP_SEEN)
+        if rejected:
+            # No read: it would be rejected too, and reauth takes over.
+            self._entry.async_start_reauth(self._hass)
+        else:
+            # After a failed call too. The stored stop sets the 30 s interval, but a new
+            # interval only applies from the next read: without this one the next try would
+            # wait for a read up to an hour away. The wait keeps this read from calling again.
+            # After a give-up it shows the charger's state.
+            self._request_read()
         self._on_change()
         if rejected and from_turn_off:
             raise HomeAssistantError(

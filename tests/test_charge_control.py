@@ -815,8 +815,9 @@ async def test_stop_auth_error_starts_reauth(
     entry: MockConfigEntry,
     control: ChargeControl,
     client: AsyncMock,
+    request_refresh: AsyncMock,
 ) -> None:
-    """AuthError starts reauth and raises auth_failed, from None."""
+    """AuthError starts reauth and raises auth_failed, from None; no read is asked for."""
     control.on_charger_read(CHARGING, control.start_attempts)
     client.stop_charge.side_effect = AuthError("x")
     with pytest.raises(HomeAssistantError) as exc_info:
@@ -829,6 +830,7 @@ async def test_stop_auth_error_starts_reauth(
     flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
     assert any(flow["context"]["source"] == "reauth" for flow in flows)
     assert control.state == STOP_ASKED_ONLY
+    request_refresh.assert_not_awaited()  # reauth takes over: a read would be rejected too
 
 
 async def test_stop_sets_pending_stop(
@@ -1475,7 +1477,7 @@ async def test_failed_stop_is_tried_again_after_the_wait(
     caplog: pytest.LogCaptureFixture,
     error: Exception,
 ) -> None:
-    """A failed call raises nothing, logs its number, keeps the stop, and the next call waits 2 minutes."""
+    """A failed call raises nothing, logs its number, keeps the stop and asks for a read; the next call waits 2 minutes."""
     control.on_charger_read(CHARGING, control.start_attempts)
     client.stop_charge.side_effect = error
     await control.async_stop()
@@ -1486,7 +1488,8 @@ async def test_failed_stop_is_tried_again_after_the_wait(
         f"Stopping the charge failed (try 1 of 10): {type(error).__name__}"
         in caplog.text
     )
-    request_refresh.assert_not_awaited()
+    # The read starts the 30 s reads: a new interval only applies from the next read.
+    request_refresh.assert_awaited_once()
 
     client.stop_charge.side_effect = None
     await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT - timedelta(seconds=1))
@@ -2278,6 +2281,38 @@ async def test_gives_up_after_the_10th_failed_call(
     assert saved["stop_tries"] == 0
     assert saved["stop_tried_at"] is not None  # the wait between calls runs on
     client.start_charge.assert_not_awaited()
+
+
+async def test_failed_10th_call_gives_up_before_it_asks_for_its_read(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The read asked for after the 10th failed call comes after the give-up: one that shows the charge off removes the notice."""
+    made: list[ChargeControl] = []
+
+    async def read_now() -> None:
+        # The read after each failed call: the charge is on, until the 10th call has been made.
+        made_all = client.stop_charge.await_count >= STOP_MAX_TRIES
+        made[0].on_charger_read(
+            CONNECTED if made_all else CHARGING, made[0].start_attempts
+        )
+
+    control = ChargeControl(
+        hass, entry, client, on_change=MagicMock(), request_refresh=read_now
+    )
+    made.append(control)
+    await control.async_load()
+    await _fail_10_times(
+        hass, control, client, freezer, last=NortecGoConnectionError("x")
+    )
+    await hass.async_block_till_done()
+    assert "Giving up on the stop asked for" in caplog.text
+    assert control.state == IDLE
+    assert _stop_issue(hass, entry) is None  # the read saw the charge off
+    await control.async_shutdown()
 
 
 @pytest.mark.parametrize("last", [None, NoActiveChargeError("x")])

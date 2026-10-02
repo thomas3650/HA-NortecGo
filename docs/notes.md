@@ -127,3 +127,23 @@ charge control.
 too (`curl -s <url> | grep -o '<title>[^<]*</title>'`): a file's page names the file. A relative link in a
 PR description is such a URL: GitHub keeps the `href` as written, and the browser resolves it against the
 page (`/pull/<n>`), not the repo. Found in #101.
+
+## 2026-10-02: What the Claude session listings show
+
+`claude agents --json` lists the running sessions of every project on the machine, with a `cwd` per row;
+`claude agents --cwd <path>` covers background sessions only. `ListAgents` shows no directory, and its
+`[ref]` is not part of the session id, so an agent can't tell from it which project a session belongs to.
+`scripts/sessions.py` decides that (`way-of-working.md` §8, *Roles and start modes*). Found in #53.
+
+## 2026-10-02: git prints a path, and `GIT_DIR` beats `-C`
+
+`git -C <dir> …` writes the directory's path to stderr when the directory doesn't exist, so a script whose
+output can end up in a PR captures git's stderr (hard rule 3). With `GIT_DIR` inherited from the
+environment, `git -C <dir> rev-parse --git-common-dir` answers for that `GIT_DIR`, not for the directory, so
+a script that asks which repository a directory is in drops the git variables first. Found in #53.
+
+## 2026-10-02: A test that runs a script copy with `uv run`
+
+A test can copy a script into a temporary repository and run it there, also when the script calls
+`uv run python`: under `uv run pytest` the inner `uv run` uses the same environment (`VIRTUAL_ENV`), in a
+directory without a project too, on macOS and in CI. `tests/test_sessions.py` does it. Found in #53.

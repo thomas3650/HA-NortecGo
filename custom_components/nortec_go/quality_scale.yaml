@@ -86,9 +86,7 @@ rules:
   icon-translations:
     status: done
     comment: "icons.json gives an icon to every entity that has no device class or the enum device class, with one per state for Charge status; every other entity shows its device class's icon."
-  reconfiguration-flow:
-    status: todo
-    comment: "No reconfigure step; the config flow has only the user and reauth steps."
+  reconfiguration-flow: done
   repair-issues: done
   stale-devices:
     status: todo

@@ -45,7 +45,6 @@ CHECKED_STATUSES = {
     "dynamic-devices": "todo",
     "stale-devices": "todo",
     "icon-translations": "done",
-    "reconfiguration-flow": "todo",
 }
 
 

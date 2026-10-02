@@ -42,6 +42,7 @@ from .conftest import (
 )
 
 USER_INPUT = {CONF_EMAIL: FAKE_EMAIL, CONF_PASSWORD: FAKE_PASSWORD}
+NEW_EMAIL = "other@example.com"  # fake, like FAKE_EMAIL
 
 # (method that raises, exception, error key)
 FLOW_ERRORS = [
@@ -329,6 +330,97 @@ async def test_reauth_errors(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
     assert mock_client.login.await_count == 2
+
+
+async def test_reconfigure(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client_class: MagicMock,
+    mock_client: AsyncMock,
+) -> None:
+    """Reconfigure signs in once with the new email and the stored device ID, and stores the new sign-in."""
+    mock_config_entry.add_to_hass(hass)
+    mock_client.tokens = NEW_TOKENS
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    assert _suggested(result, CONF_EMAIL) == FAKE_EMAIL
+    assert _suggested(result, CONF_PASSWORD) is None
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_EMAIL: f"  {NEW_EMAIL} ", CONF_PASSWORD: FAKE_PASSWORD},
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_config_entry.data[CONF_EMAIL] == NEW_EMAIL
+    assert tokens_from_data(mock_config_entry.data) == NEW_TOKENS
+    assert mock_config_entry.data[CONF_DEVICE_ID] == FAKE_DEVICE_ID
+    assert CONF_PASSWORD not in mock_config_entry.data
+    assert mock_config_entry.title == FAKE_CHARGER_NAME
+    assert mock_config_entry.unique_id == str(FAKE_CHARGER_ID)
+    assert mock_client_class.call_args_list[0].kwargs["device_id"] == FAKE_DEVICE_ID
+    mock_client.login.assert_awaited_once_with(NEW_EMAIL, FAKE_PASSWORD)
+
+
+async def test_reconfigure_wrong_account(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """Signing in to an account with another charger aborts and keeps the old sign-in."""
+    mock_config_entry.add_to_hass(hass)
+    mock_client.get_charger.return_value = make_charger(OTHER_CHARGER_ID)
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_EMAIL: NEW_EMAIL, CONF_PASSWORD: FAKE_PASSWORD}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "wrong_account"
+    assert mock_config_entry.data[CONF_EMAIL] == FAKE_EMAIL
+    assert tokens_from_data(mock_config_entry.data) == FAKE_TOKENS
+
+
+@pytest.mark.parametrize(("method", "error", "key"), FLOW_ERRORS)
+async def test_reconfigure_errors(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+    method: str,
+    error: Exception,
+    key: str,
+) -> None:
+    """Each error shows its key, keeps the typed email, logs in once and logs no credentials; a retry succeeds."""
+    mock_config_entry.add_to_hass(hass)
+    getattr(mock_client, method).side_effect = error
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+    user_input = {CONF_EMAIL: NEW_EMAIL, CONF_PASSWORD: FAKE_PASSWORD}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    assert result["errors"] == {"base": key}
+    assert _suggested(result, CONF_EMAIL) == NEW_EMAIL
+    assert _suggested(result, CONF_PASSWORD) is None
+    assert mock_client.login.await_count == 1
+    assert mock_config_entry.data[CONF_EMAIL] == FAKE_EMAIL
+    assert NEW_EMAIL not in caplog.text
+    assert FAKE_PASSWORD not in caplog.text
+
+    getattr(mock_client, method).side_effect = None
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_client.login.await_count == 2
+    assert mock_config_entry.data[CONF_EMAIL] == NEW_EMAIL
 
 
 async def test_setup_auth_error_opens_reauth(

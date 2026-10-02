@@ -13,6 +13,18 @@
           "password": "Your Nortec Go password. It is used once to sign in and is not stored."
         }
       },
+      "reconfigure": {
+        "title": "Change the Nortec Go sign-in",
+        "description": "Sign in with the email and password of the Nortec Go account that has this charger. Signing in to an account with another charger is refused.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The email address of your Nortec Go account.",
+          "password": "Your Nortec Go password. It is used once to sign in and is not stored."
+        }
+      },
       "reauth_confirm": {
         "title": "Sign in to Nortec Go again",
         "description": "The Nortec Go session for {email} was rejected. Enter your password to sign in again.",
@@ -36,6 +48,7 @@
       "already_configured": "This charger is already set up.",
       "already_in_progress": "This charger is already being set up or signed in again.",
       "reauth_successful": "Signed in again.",
+      "reconfigure_successful": "The sign-in was changed.",
       "wrong_account": "This account's charger isn't the one this integration was set up for. Sign in with the same account."
     }
   },

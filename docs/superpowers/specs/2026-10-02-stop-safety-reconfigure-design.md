@@ -146,8 +146,8 @@ from the owner that the charge doesn't stop.
 
 ### A try's outcome
 
-The try is counted, and the count and the time saved, when the call is made. The 2 minutes run from the
-call's answer, not from its start: a call can take a while, and an accepted stop is judged 2 minutes after
+The try is counted, and the count and the time saved, when the call is made; the time is saved again at
+the answer. The 2 minutes run from the call's answer, not from its start: a call can take a while, and an accepted stop is judged 2 minutes after
 the charger accepted it.
 
 | The call | What happens |
@@ -161,6 +161,10 @@ the charger accepted it.
 A queued try that ends up making no call, because the check under the lock fails, ends its own wait.
 
 So only a read ends a stop as done: never a call's answer.
+
+A turn-off on an idle charger makes a call too, as today, and so starts the 2 minutes. A stop asked for
+a charge that opens inside them waits out the rest. That is intended: the rule is one call per 2 minutes,
+whatever the call led to.
 
 - A failed try logs a warning with its number ("try 3 of 10") and what failed: the error's type and text,
   or that the charge was still on after the 2 minutes. Credentials are never part of it (hard rule 5).
@@ -210,7 +214,8 @@ without a charge object, it runs its 2 minutes, and the try has then failed.
   10th try, one answered "no active charge", and a stop that is loaded with 10 tries made (at once, if
   nothing is left of its wait).
 - **The wait's timer** fires 2 minutes after the answer whether or not the charger is read. It ends the
-  wait and the pending stop, and marks an accepted try as failed. It replaces today's stop timer.
+  wait, and when the stop it was made for is still stored with its pending stop under way, it ends that
+  pending stop and marks the accepted try as failed. It replaces today's stop timer.
 - **30 minutes:** a timer set when the stop is stored, which fires whether or not the charger is read, as
   D31 requires of the start and stop deadlines.
   - At load, the timer is set for what is left of the 30 minutes, and never for more than 30 minutes (a
@@ -312,8 +317,8 @@ The charge control's store keeps version 1 and gets minor version 2, with a migr
   issue that isn't `car_gone` the start block's flow, so confirming this one must not clear a start block.
 - **Deleted without the owner** when a read that isn't stale shows the charge off and no start is pending
   (§1, *On a read*), when *Charge* is turned on, and when the entry is removed. A turn-off doesn't delete
-  it (§1, *Turning Charge off*). Deleting an issue
-  that isn't there does nothing, so the control doesn't keep track of whether it is up.
+  it (§1, *Turning Charge off*). Deleting an issue that isn't there does nothing, so the control doesn't
+  keep track of whether it is up.
 
 ## 5. Reconfigure (#44)
 

@@ -49,7 +49,7 @@
       "already_in_progress": "This charger is already being set up or signed in again.",
       "reauth_successful": "Signed in again.",
       "reconfigure_successful": "The sign-in was changed.",
-      "wrong_account": "This account's charger isn't the one this integration was set up for. Sign in with the same account."
+      "wrong_account": "This account's charger isn't the one this integration was set up for. Sign in with an account that has this charger."
     }
   },
   "device": {

@@ -961,7 +961,7 @@ async def test_read_without_the_charge_ends_the_stop_timer(
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A read that sees the charge off ends the pending stop; its timer does nothing later."""
+    """A read that sees the charge off ends the pending stop; the wait's timer does nothing later."""
     control.on_charger_read(CHARGING, control.start_attempts)
     await control.async_stop()
     control.on_charger_read(CONNECTED, control.start_attempts)
@@ -977,7 +977,7 @@ async def test_stop_timer_does_nothing_after_shutdown(
     on_change: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """After unload the stop timer changes nothing."""
+    """After unload the wait's timer changes nothing."""
     control.on_charger_read(CHARGING, control.start_attempts)
     await control.async_stop()
     await control.async_shutdown()
@@ -994,7 +994,7 @@ async def test_stop_timer_after_the_stop_ended_does_nothing(
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A stop timer whose work waits for the lock while a read ends the pending stop does nothing."""
+    """A wait timer whose work waits for the lock while a read ends the pending stop does nothing."""
     control.on_charger_read(CHARGING, control.start_attempts)
     await control.async_stop()
     async with control._lock:  # noqa: SLF001

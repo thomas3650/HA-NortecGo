@@ -92,7 +92,9 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - A `Store` also has a minor version (a file without one counts as minor 1). A stored minor version other
   than the code's goes through `_async_migrate_func` too, and what that returns is saved straight back under
   the code's own version. Code without a migrate function that meets a newer minor version of the same major
-  version loads the data unchanged, so after a downgrade the older code gets the newer shape as it is.
+  version loads the data unchanged, so after a downgrade the older code gets the newer shape as it is. It
+  also saves that data straight back under its own minor version, so the file no longer says it holds the
+  newer shape.
 - `Store.async_load` renames a file with a JSON decode error, raises HA's own `storage_corruption` repair
   issue and returns `None`, the same as for a missing file. To tell the two apart, look for the file
   (`Store.path`, in the executor) before the load: afterwards it is gone. `hass_storage` replaces the store's

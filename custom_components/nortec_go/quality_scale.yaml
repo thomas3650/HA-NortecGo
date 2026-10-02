@@ -40,7 +40,7 @@ rules:
   # Silver
   action-exceptions:
     status: done
-    comment: "Turning Charge on and the Refresh button raise translated errors when their action fails. A turn-off that can't stop the charge is tried again and ends in a repair issue (D50); it raises only for a rejected session or while the integration reloads."
+    comment: "Turning Charge on and the Refresh button raise translated errors when their action fails. A turn-off that can't stop the charge is tried again and ends in a repair issue (D50); a rejected session and a reload raise translated errors."
   config-entry-unloading: done
   docs-configuration-parameters:
     status: exempt

@@ -160,9 +160,12 @@ The 10-minute limit also applies while the charger can't be read; the block clea
 
 After you turn *Charge* off, the switch shows off until Home Assistant has seen the charge stop. Home
 Assistant sends the stop when the charger says the charge can be stopped, so a turn-off right after a start
-waits for the charge to open. *Charge status* shows *Stopping* in two cases: while a turn-off waits for a
-starting charge to open, and for up to 2 minutes after the charger has accepted a stop. Turning *Charge* on
-is refused only in the second.
+waits for the charge to open.
+
+*Charge status* shows *Stopping* while a turn-off waits for a starting charge to open, for up to 2 minutes
+after the charger has accepted a stop, and while the charger reports the charge as stopping. Turning
+*Charge* on is refused only in the 2 minutes after an accepted stop. While a turn-off waits for a starting
+charge, turning *Charge* on cancels that turn-off; while the charge is stopping, it does nothing.
 
 If a stop fails, or the charge is still running 2 minutes after the charger accepted it, Home Assistant
 tries again, at most once every 2 minutes. After 10 tries, or 30 minutes after you turned *Charge* off,

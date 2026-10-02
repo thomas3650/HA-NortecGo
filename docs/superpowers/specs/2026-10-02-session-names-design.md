@@ -43,7 +43,7 @@ owner is away, and this PR is owner-merge: it edits `.claude/agents/`).
 | The start scripts | Refuse only for a session named `po` or `team-lead` *of this repo*; the message and the header comment say so |
 | The team lead's send to `po` | Before each `SendMessage` to `po`, the team lead checks that exactly one running session on the machine is named `po` and that it is this repo's. If not, the message counts as failed: keep it and wait, as for a PO that is down. It re-sends what it holds, with the same check, on any message from the PO, not only `hello`: the check can also fail on the team lead's side alone (a failing `claude agents --json`, say), and the PO's status ask (§8) then releases the messages |
 | The PO's start | The `team-lead` check uses the script instead of `ListAgents`, and the PO rebuilds its picture of the running sessions from the script and the raw JSON |
-| Held messages | The PO checks at its start and in every round of its loop that its own name can be messaged (`reachable po`). When the check starts to fail, it tells the owner. While it fails, the PO starts and resumes no team lead (their first `hello` would be held). When it passes again, the PO sends `hello` to its team leads as at its start (so whatever §8 says about the start's `hello` holds here too, also for a team lead that has exited), and they re-send what they held. At a start where the check fails, the `hello` is still sent: team leads hold again, which does no harm |
+| Held messages | The PO checks at its start and in every round of its loop that its own name can be messaged (`reachable po`). When the check starts to fail, it tells the owner. While it fails, the PO starts and resumes no team lead (their first `hello` would be held). When it passes again, the PO sends `hello` to its team leads as at its start (so whatever §8 says about the start's `hello` holds here too, including PR #103's rule for a team lead that has exited, once that is merged), and they re-send what they held. At a start where the check fails, the `hello` is still sent: team leads hold again, which does no harm |
 | Decision log | D49, last in `decisions.md` |
 | Title | `process: the PO flow tells its sessions from other projects' (#53)`; non-releasing, so no `CHANGELOG.md` entry and no bump |
 
@@ -58,8 +58,8 @@ Options that were not chosen:
 While another project's session named `po` runs, this repo's team leads hold their messages; none is
 delivered to the wrong PO. The PO sees this at its start or in the next round of its loop, tells the
 owner, and starts no team lead until the other session is gone; its next round after that sends `hello`
-as at its start, and the team leads re-send. A repo prefix (option B) is the next step if two flows at once are ever
-wanted.
+as at its start, and the team leads re-send. A repo prefix (option B) is the next step if two flows at
+once are ever wanted.
 
 ## Facts used
 
@@ -193,8 +193,8 @@ Seven edits; the plan fixes the line breaks.
      team leads hold their messages: two projects can't both run a PO flow with these names at once. The
      PO runs the same check at its start and in every round of its loop. When it starts to fail, the PO
      tells the owner; while it fails, the PO starts and resumes no team lead; when it passes again, the PO
-     sends `hello` to its team leads as at its start. A team lead re-sends what it holds, with the check,
-     on any message from the PO.
+     sends `hello` to its team leads as at its start (*After ready, the loop, and failures* has the
+     re-sending).
    ```
 3. *After ready, the loop, and failures*, **State**: "`claude agents --json` shows the running sessions,
    interactive and background" becomes "`claude agents --json` shows the running sessions of every
@@ -214,7 +214,7 @@ Seven edits; the plan fixes the line breaks.
    any later message from the PO, each team lead re-sends the messages that failed, in order".
 
 PR #103, not merged yet, edits the same section and adds a bullet at its end. The sentences quoted in
-edits 1 and 3 to 7 are at HEAD and #103 doesn't change them, but its changes are near edits 3 to 7, so a
+edits 1 and 3 to 7 are at HEAD and #103 doesn't change them, but its changes are near edits 3 to 5 and 7, so a
 merge of `origin/main` can conflict there; it is resolved by keeping both texts.
 
 ### `docs/decisions.md`
@@ -290,7 +290,8 @@ sessions the team lead knew of.
 
 - **The live sessions.** The PO and the team leads running at merge time have the old agent files in
   their context. Nothing they rely on changes: the names, the messages and `.git/po-sessions.json` stay.
-  They get the new checks at their next start.
+  A session gets the new checks once the checkout it runs in holds this change: the PO at its next start
+  after the merge, a team lead when its issue branch has `main` merged in.
 - **A resumed session in a worktree that is gone.** Its `cwd` no longer exists, so it is not counted as
   ours. The PO re-creates the issue worktree before it resumes a team lead (§8), so a running team lead's
   directory exists.

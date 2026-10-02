@@ -53,15 +53,17 @@ Each line names the test or check that pins it.
 
 1. **A path prefix is taken for the rule.** The issue worktrees are next to the main checkout, and their
    directory's name starts with the main checkout's. Pinned by Task 1's fixture: the worktree is `repo-wt`
-   next to `repo`, and the other repository is its sibling too
-   (`test_ours_in_the_main_checkout_…`, `test_not_ours_elsewhere`).
+   next to `repo`, and the other repository is `repo-other` next to both, so neither a path-prefix rule
+   nor a string-prefix rule passes (`test_ours_in_the_main_checkout_…`, `test_not_ours_elsewhere`).
 2. **`git` prints a missing directory's path, and it reaches the terminal.** Pinned by
    `test_no_directory_or_session_id_is_printed`, which runs the script as a program with a session in a
    directory that doesn't exist.
 3. **An inherited `GIT_DIR` makes every directory look like this repo.** Pinned by
    `test_an_inherited_git_dir_does_not_make_a_directory_ours`.
 4. **`claude agents --json` fails or changes shape, and a start goes through anyway.** Pinned by
-   `test_exit_2_…` (three tests) and `test_start_script_refuses_when_the_sessions_cannot_be_listed`.
+   `test_exit_2_on_output_that_is_not_an_array_of_objects`,
+   `test_exit_2_when_claude_fails_and_its_stderr_is_not_passed_on`, `test_exit_2_when_claude_is_missing`
+   and `test_start_script_refuses_when_the_sessions_cannot_be_listed`.
 5. **Both `po` and `team-lead` run, and the refusal message breaks over two lines.** Pinned by
    `test_start_script_refuses_for_a_session_of_this_repo`, which compares the whole of stderr.
 6. **The docs state a rule twice, or cite the new bullet as a section.** No test reads the docs; pinned by
@@ -127,6 +129,7 @@ import sys
 from typing import Any
 
 import pytest
+
 import sessions
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -179,7 +182,7 @@ class World:
         self.ours = make_repo(tmp_path / "repo")
         self.worktree = tmp_path / "repo-wt"
         git(self.ours, "worktree", "add", "-q", str(self.worktree), "-b", "topic")
-        self.other = make_repo(tmp_path / "other")
+        self.other = make_repo(tmp_path / "repo-other")
         self.plain = tmp_path / "plain"
         self.plain.mkdir()
         self.gone = tmp_path / "gone"
@@ -238,18 +241,22 @@ def test_ours_in_the_main_checkout_a_worktree_a_subdirectory_and_through_a_symli
     world: World,
 ) -> None:
     """A session is ours wherever in a checkout of the repository it runs."""
-    sub = world.worktree / "docs"
-    sub.mkdir()
+    main_sub = world.ours / "docs"
+    main_sub.mkdir()
+    worktree_sub = world.worktree / "docs"
+    worktree_sub.mkdir()
     rows = [
         row("in-main", world.ours, 1),
         row("in-worktree", world.worktree, 2),
-        row("in-subdirectory", sub, 3),
-        row("through-symlink", world.link, 4),
+        row("in-main-subdirectory", main_sub, 3),
+        row("in-worktree-subdirectory", worktree_sub, 4),
+        row("through-symlink", world.link, 5),
     ]
     assert sessions.running(rows, anchor=world.ours) == [
         "in-main",
-        "in-subdirectory",
+        "in-main-subdirectory",
         "in-worktree",
+        "in-worktree-subdirectory",
         "through-symlink",
     ]
     assert sessions.running(rows, anchor=world.worktree) == sessions.running(
@@ -518,8 +525,8 @@ def test_start_script_refuses_when_the_sessions_cannot_be_listed(
 ```
 
 How the tests work, for the reader:
-- `World` builds two repositories (`repo` and `other`), a linked worktree `repo-wt` of the first, a plain
-  directory, the path of a directory that doesn't exist, and a symlink to `repo`. It writes the stub
+- `World` builds two repositories (`repo` and `repo-other`), a linked worktree `repo-wt` of the first, a
+  plain directory, the path of a directory that doesn't exist, and a symlink to `repo`. It writes the stub
   `claude` and puts it first on `PATH`.
 - The stub prints the file named by `STUB_JSON` for `agents --json`, fails when `STUB_FAIL` is set (and
   writes that value to its stderr), and records any other call's arguments, one per line, in the file
@@ -713,8 +720,8 @@ sessions and has the old message); `refuses_in_a_linked_worktree` passes.
 
 - [ ] **Step 6: Change `scripts/po`**
 
-The file becomes exactly this (line 3's comment, the `running=` line and the message change; the rest
-stays):
+Edit the file in place with the Edit tool; don't re-create it (it must stay executable). It becomes exactly
+this (line 3's comment, the `running=` line and the message change; the rest stays):
 
 ```bash
 #!/usr/bin/env bash
@@ -743,7 +750,7 @@ stops the script with that exit code, and the script's one line is on stderr.
 
 - [ ] **Step 7: Change `scripts/team-lead`**
 
-The file becomes exactly this:
+Edit it in place too. The file becomes exactly this:
 
 ```bash
 #!/usr/bin/env bash
@@ -1003,13 +1010,13 @@ Expected: `docs/way-of-working.md:4` (the bullet itself, and the pointers in *Me
 and the "If the PO session ends" bullet) and `.claude/agents/po.md:1`.
 
 ```bash
-git grep -n -F '*Sessions of this repo*' -- docs/way-of-working.md .claude/agents
+git grep -n -E '(^|[^*])\*Sessions of this repo\*([^*]|$)' -- docs/way-of-working.md .claude/agents
 ```
 
 Expected: no hit (the bullet is cited in bold, after its section in italics).
 
 ```bash
-git grep -n -e 'session named `po` or' -e 'session named `team-lead` runs' -e 'Run `ListAgents`' -- docs/way-of-working.md .claude/agents
+git grep -n -e 'session named `po` or' -e 'session named `team-lead` runs' -e 'no session named$' -e 'Run `ListAgents`' -- docs/way-of-working.md .claude/agents
 ```
 
 Expected: no hit (the old wordings are gone).
@@ -1024,13 +1031,14 @@ Expected: `docs/way-of-working.md:1` (the re-send rule has one home in §8).
 git grep -n -e '^### D4[89]' -- docs/decisions.md
 ```
 
-Expected: one hit, D49, and `tail -8 docs/decisions.md` shows it as the last entry.
+Expected: one hit, D49, and `tail -11 docs/decisions.md` shows the whole entry as the file's end.
 
 ```bash
 git grep -n -e 'sessions.py running' -e 'sessions.py reachable' -- docs/way-of-working.md .claude/agents
 ```
 
-Expected: every hit names a command from Task 1's *Interfaces* block, spelled as there.
+Expected: every hit names `running` or `reachable` with the arguments from Task 1's *Interfaces* block.
+The agent files give the whole command, with `uv run python`; §8 names it without.
 
 Then run the gates from *Global Constraints*. Expected: all pass.
 

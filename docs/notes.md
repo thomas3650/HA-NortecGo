@@ -120,3 +120,10 @@ tests. To check them, change each moved line in a way that alters behaviour (a m
 mutant that survives is a behaviour no test pins. Add that test before the change, on the old code, so it
 pins today's behaviour, and see it fail against the mutant. In #81, 2 of 15 mutants survived, both in the
 charge control.
+
+## 2026-10-02: A 200 isn't proof that a GitHub link works
+
+`curl -L` reports 200 for a URL that redirects to the login page, so check the page title or the final URL
+too (`curl -s <url> | grep -o '<title>[^<]*</title>'`): a file's page names the file. A relative link in a
+PR description or an issue is such a URL: GitHub keeps the `href` as written, and the browser resolves it
+against the page (`/pull/<n>`), not the repo. Found in #101.

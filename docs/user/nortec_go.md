@@ -224,8 +224,7 @@ same reads. While a charge runs it grows with *Energy this charge*. When the cha
 the charge's final energy at the read that first lists the charge as completed (see *Known limitations* for
 when that doesn't happen).
 
-Turning *Charge* on reads the charger right away when it starts a charge. Turning it off does too, unless
-the stop call fails or the charge is already stopping. To read the charger, the car and the prices now,
+Turning *Charge* on or off reads the charger right away. To read the charger, the car and the prices now,
 press the *Refresh* button. From an automation, the `homeassistant.update_entity` action on any Nortec Go
 entity reads the charger, and the car if it wasn't read in the last few minutes, but not the prices (see
 *Automation examples*).

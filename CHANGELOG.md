@@ -6,6 +6,26 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+
+- Reconfigure: change the account's email or password from the integration's page, without removing the
+  integration. The account must have the same charger.
+
+### Changed
+
+- Turning *Charge* off now holds until the charge is seen to stop. A stop that fails is tried again, at
+  most once every 2 minutes, instead of raising an error. After 10 tries or 30 minutes a repair issue tells
+  you that the charge may still be running.
+- The charger is read every 30 seconds while a stop is waiting.
+
+### Fixed
+
+- A stop asked for right after a start could be lost: at a restart, at a reload, when the start took too
+  long to show, or when the charger refused the stop. The car then kept charging.
+- A stop is no longer sent to a charger that is busy but has no charge yet.
+- A damaged saved start guard now blocks starts, to be safe, instead of being read as "nothing saved".
+- The repair issue for blocked starts keeps the right text after a restart.
+
 ## [0.5.0] - 2026-10-01
 
 ### Added

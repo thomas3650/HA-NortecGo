@@ -5,7 +5,7 @@ rules:
     comment: "The integration registers no service actions."
   appropriate-polling:
     status: done
-    comment: "30 s only while a charge is starting or stopping, bounded while reads fail (10 min after a start, 2 min after a stop or the last good read); 5 min while charging, 60 min otherwise (D29, D31)."
+    comment: "30 s only while a charge is starting or stopping or a stop asked for hasn't gone through (at most 30 minutes per stop, D50), bounded while reads fail (10 min after a start, 2 min after a stop or the last good read); 5 min while charging, 60 min otherwise (D29, D31)."
   brands:
     status: done
     comment: "Local brand/ folder (HA >= 2026.3), accepted by HACS; moves to home-assistant/brands for a core submission."
@@ -40,7 +40,7 @@ rules:
   # Silver
   action-exceptions:
     status: done
-    comment: "The Charge switch and the Refresh button raise translated errors when their action fails."
+    comment: "Turning Charge on and the Refresh button raise translated errors when their action fails. A turn-off that can't stop the charge is tried again and ends in a repair issue (D50); it raises only for a rejected session or while the integration reloads."
   config-entry-unloading: done
   docs-configuration-parameters:
     status: exempt

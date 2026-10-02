@@ -90,6 +90,8 @@ Each item says what to look at; the linked section of the user docs says what is
   *Who does what* for how to check).
 - [ ] **Owner** Reload the entry: the same.
 - [ ] Reauthentication isn't tested by hand; the automated tests cover it.
+- [ ] **Owner** Reconfigure, only when the sign-in really has to change: every submit signs in. The
+  automated tests cover its errors.
 
 ### Entities (#8)
 
@@ -153,6 +155,8 @@ its OK; trying again needs a new one.** Agents never do them.
 - [ ] Start: turn *Charge* on; the switch and *Charge status* follow
   [Starting a charge](user/nortec_go.md#starting-a-charge).
 - [ ] Stop: turn *Charge* off; the same section describes a stop.
+- [ ] A stop that doesn't go through, and its repair issue, are checked only if one happens; there is no
+  way here to cause one.
 - [ ] After a stop: the replug rule in the same section.
 - [ ] A start that should be refused (for example with the cable unplugged) may still be a real start
   request: it counts as a start and uses its OK; trying again needs a new one.

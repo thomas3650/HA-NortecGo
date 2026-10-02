@@ -37,7 +37,7 @@ class NortecGoChargeSwitch(NortecGoChargerEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        """On for an open, not ending charge, or our pending start; off while our stop is pending."""
+        """On for an open, not ending charge, or our pending start; off while a stop asked for is stored."""
         data = self.coordinator.data
         return is_charge_on(data.charger, data.control)
 

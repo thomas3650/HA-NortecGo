@@ -39,13 +39,20 @@ ENERGY_STORE_KEY: Final = "nortec_go.{entry_id}.energy"
 
 # The charge switch's start guard (D26).
 START_CONFIRM_TIMEOUT: Final = timedelta(minutes=10)
-# How long the switch shows off after a stop while the charger still reports the charge (D29).
+# How long the switch shows off after an accepted stop while the charger still reports the charge
+# (D29). Also the least time between two stop calls (D50).
 STOP_CONFIRM_TIMEOUT: Final = timedelta(minutes=2)
+# A stop asked for is tried at most this many times, and for at most this long from the ask (D50).
+STOP_MAX_TRIES: Final = 10
+STOP_ASKED_MAX_AGE: Final = timedelta(minutes=30)
 # At a restart a pending start waits at least this long, so the setup's charger read and car read (D44)
-# decide first (D31). If the two take longer, the deadline ends it and forgets a stop asked for (#85).
+# decide first (D31).
 START_LOAD_GRACE: Final = timedelta(minutes=2)
 CHARGE_CONTROL_STORE_VERSION: Final = 1
+CHARGE_CONTROL_STORE_MINOR_VERSION: Final = 2
 CHARGE_CONTROL_STORE_KEY: Final = "nortec_go.{entry_id}.charge_control"
 START_BLOCKED_ISSUE_ID: Final = "start_blocked_{entry_id}"
+# The repair issue for a stop the control gave up on (D50).
+STOP_FAILED_ISSUE_ID: Final = "stop_failed_{entry_id}"
 # The repair issue for a car that went from the account while running (D44).
 CAR_GONE_ISSUE_ID: Final = "car_gone_{entry_id}"

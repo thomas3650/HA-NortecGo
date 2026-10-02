@@ -13,6 +13,18 @@
           "password": "Your Nortec Go password. It is used once to sign in and is not stored."
         }
       },
+      "reconfigure": {
+        "title": "Change the Nortec Go sign-in",
+        "description": "Sign in with the email and password of the Nortec Go account that has this charger. Signing in to an account with another charger is refused.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The email address of your Nortec Go account.",
+          "password": "Your Nortec Go password. It is used once to sign in and is not stored."
+        }
+      },
       "reauth_confirm": {
         "title": "Sign in to Nortec Go again",
         "description": "The Nortec Go session for {email} was rejected. Enter your password to sign in again.",
@@ -36,7 +48,8 @@
       "already_configured": "This charger is already set up.",
       "already_in_progress": "This charger is already being set up or signed in again.",
       "reauth_successful": "Signed in again.",
-      "wrong_account": "This account's charger isn't the one this integration was set up for. Sign in with the same account."
+      "reconfigure_successful": "The sign-in was changed.",
+      "wrong_account": "This account's charger isn't the one this integration was set up for. Sign in with an account that has this charger."
     }
   },
   "device": {
@@ -149,12 +162,6 @@
     "auth_failed": {
       "message": "The Nortec Go session was rejected. Sign in again from the repair notice."
     },
-    "charge_not_stoppable": {
-      "message": "The charge can't be stopped right now."
-    },
-    "stop_failed": {
-      "message": "Stopping the charge failed; it may have stopped anyway. Check the charger."
-    },
     "stop_pending": {
       "message": "A stop is under way. Try again when it has ended."
     },
@@ -207,11 +214,22 @@
         "step": {
           "confirm": {
             "title": "Allow charge starts again on {name}",
-            "description": "The saved start guard couldn't be read, so starts are blocked to be safe.\n\nCheck the charger in the Nortec Go app. Then unplug and replug the cable, or select **Submit** to allow starts again."
+            "description": "The saved start guard couldn't be read, so starts are blocked to be safe. A stop you asked for earlier may not have been sent.\n\nCheck the charger in the Nortec Go app. Then unplug and replug the cable, or select **Submit** to allow starts again."
           }
         },
         "abort": {
           "not_loaded": "The Nortec Go integration isn't loaded. Reload it and try again."
+        }
+      }
+    },
+    "stop_failed": {
+      "title": "A charge stop on {name} couldn't be confirmed",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "The charge on {name} may still be running",
+            "description": "You turned Charge off, but Home Assistant couldn't stop the charge or see it stop, and has stopped trying. The charge may still be running.\n\nCheck the charger in the Nortec Go app and stop the charge there if needed. Turning Charge off again makes Home Assistant try again. Select **Submit** to dismiss this notice."
+          }
         }
       }
     },

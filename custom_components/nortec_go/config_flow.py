@@ -108,6 +108,34 @@ class NortecGoConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for the email and password again, and store the new sign-in for the same charger."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        suggested: dict[str, Any] = {CONF_EMAIL: entry.data[CONF_EMAIL]}
+        if user_input is not None:
+            email = user_input[CONF_EMAIL].strip()
+            client = create_client(self.hass, device_id=entry.data[CONF_DEVICE_ID])
+            result = await _async_sign_in(client, email, user_input[CONF_PASSWORD])
+            if isinstance(result, str):
+                errors["base"] = result
+                suggested = {CONF_EMAIL: email}
+            else:
+                charger, tokens = result
+                await self.async_set_unique_id(str(charger.id))
+                self._abort_if_unique_id_mismatch(reason="wrong_account")
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={CONF_EMAIL: email, **tokens_to_data(tokens)},
+                )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, suggested),
+            errors=errors,
+        )
+
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:

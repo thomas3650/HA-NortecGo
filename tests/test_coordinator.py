@@ -155,6 +155,21 @@ _PENDING = ChargeControlState(start_pending=True)
             ChargeControlState(blocked=True),
             INTERVAL_IDLE,
         ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_asked=True),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.PAUSED),
+            ChargeControlState(stop_asked=True),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True),
+            ChargeControlState(blocked=True, stop_asked=True),
+            INTERVAL_CHANGING,
+        ),
     ],
 )
 def test_interval_for(
@@ -411,12 +426,21 @@ async def test_failed_setup_car_read_keeps_a_stop_asked(
     The setup that then works sends the stop the owner asked for, once.
     """
     key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    now = dt_util.utcnow().isoformat()
     stored = {
         "blocked_since": None,
-        "start_pending_since": dt_util.utcnow().isoformat(),
-        "stop_asked": True,
+        "block_reason": None,
+        "start_pending_since": now,
+        "stop_asked_since": now,
+        "stop_tries": 0,
+        "stop_tried_at": None,
     }
-    hass_storage[key] = {"version": 1, "key": key, "data": dict(stored)}
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": key,
+        "data": dict(stored),
+    }
     mock_client.get_charger.return_value = make_charger(
         is_connected=True, charge_state=ChargeState.CHARGING
     )
@@ -1763,6 +1787,24 @@ _STOPPING = make_charger(is_connected=True, charge_state=ChargeState.STOPPING)
             timedelta(hours=5),
             INTERVAL_IDLE,
         ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_asked=True),
+            timedelta(minutes=1, seconds=50),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_asked=True),
+            timedelta(minutes=2),
+            INTERVAL_CHARGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_asked=True, stop_pending=True),
+            timedelta(minutes=3),
+            INTERVAL_CHANGING,
+        ),
     ],
 )
 def test_interval_for_by_read_age(
@@ -1795,13 +1837,40 @@ async def test_charger_stopping_during_an_outage_slows_down(
     assert coordinator.update_interval == INTERVAL_CHARGING
 
 
+async def test_failed_stop_call_reads_the_charger_right_away(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A failed stop call is followed by a read at once, so the 30 s reads start (#32).
+
+    The stored stop sets the 30 s interval, but a new interval only applies from the next
+    read: without this one the retry would wait for a read up to 5 minutes away.
+    """
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        state=ChargerState.BUSY_CHARGING,
+    )
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.update_interval == INTERVAL_CHARGING
+    reads = mock_client.get_charger.await_count
+    mock_client.stop_charge.side_effect = NortecGoConnectionError("network down")
+    await coordinator.charge_control.async_stop()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert mock_client.get_charger.await_count == reads + 1
+    assert coordinator.update_interval == INTERVAL_CHANGING
+    assert coordinator.data.control.stop_asked
+    # The read saw a charge it could stop, but the 2 minutes since the call still run.
+    mock_client.stop_charge.assert_awaited_once()
+
+
 async def test_pending_stop_during_an_outage_ends_at_2_minutes(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """With reads failing, the pending stop ends at 2 minutes: the switch shows the last read, reads every 5 min."""
+    """With reads failing, the pending stop ends at 2 minutes: the switch stays off while the stop is stored, reads every 5 min."""
     mock_client.get_charger.return_value = make_charger(
         is_connected=True,
         charge_state=ChargeState.CHARGING,
@@ -1818,7 +1887,7 @@ async def test_pending_stop_during_an_outage_ends_at_2_minutes(
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert not coordinator.data.control.stop_pending
-    assert _switch(hass) == "on"
+    assert _switch(hass) == "off"
     assert coordinator.update_interval == INTERVAL_CHARGING
 
 

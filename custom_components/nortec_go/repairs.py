@@ -1,12 +1,20 @@
-"""The Nortec Go repair fix flows: allow charge starts again (§3.5), and remove a car that is gone (D44)."""
+"""The Nortec Go repair fix flows.
+
+Allow charge starts again (§3.5), remove a car that is gone (D44), and dismiss the notice
+about a stop that couldn't be confirmed (D50).
+"""
 
 from typing import Any
 
-from homeassistant.components.repairs import RepairsFlow, RepairsFlowResult
+from homeassistant.components.repairs import (
+    ConfirmRepairFlow,
+    RepairsFlow,
+    RepairsFlowResult,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
-from .const import CAR_GONE_ISSUE_ID
+from .const import CAR_GONE_ISSUE_ID, STOP_FAILED_ISSUE_ID
 from .entry import NortecGoConfigEntry
 
 
@@ -71,9 +79,12 @@ class CarGoneRepairFlow(RepairsFlow):
 async def async_create_fix_flow(
     hass: HomeAssistant, issue_id: str, data: dict[str, Any] | None
 ) -> RepairsFlow:
-    """Create the fix flow for a car_gone or a start_blocked issue."""
+    """Create the fix flow for a car_gone, a stop_failed or a start_blocked issue."""
     assert data is not None  # every issue is created with its entry ID
     entry_id = str(data["entry_id"])
     if issue_id == CAR_GONE_ISSUE_ID.format(entry_id=entry_id):
         return CarGoneRepairFlow(entry_id)
+    if issue_id == STOP_FAILED_ISSUE_ID.format(entry_id=entry_id):
+        # Only a notice to dismiss: confirming it must never clear a start block.
+        return ConfirmRepairFlow()
     return StartBlockedRepairFlow(entry_id)

@@ -61,7 +61,8 @@ has no name.
 
 ## Configuration options
 
-The integration has no options to change after setup.
+The integration has no options to change after setup. To change the email or the password it signs in with,
+see *Changing the sign-in* under *Troubleshooting*.
 
 ## Supported functionality
 
@@ -75,7 +76,7 @@ integration starts (see *Known limitations*).
 | Current price | Sensor | The total price (spot, fees and grid tariff) for the current 15 minutes, per kWh, incl. VAT, in the currency of the price data (Home Assistant's currency until price data has named one). Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
 | Cable connected | Binary sensor | On when a cable is connected to the charger |
 | Charging | Binary sensor | On while the car draws power |
-| Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it; off right after a stop until the charger shows it |
+| Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it; off after you turn it off, until the charger shows the stop (see *Starting a charge*) |
 | Charge status | Sensor | Start blocked, Starting, Charging, Paused, Stopping, Waiting for replug, Unplugged or Idle |
 | Energy this charge | Sensor | The energy the open charge has delivered so far, in kWh. Unknown when no charge is open. For the Energy dashboard, use *Total energy* |
 | Total energy | Sensor | The energy the charger has delivered since the sensor was added, in kWh, kept across restarts. Use it for the Energy dashboard (see *Use cases*) |
@@ -148,8 +149,8 @@ the cable, Home Assistant sees a charge start (for example one started in the No
 confirm in the repair issue that Home Assistant creates. Find it under **Settings** > **System** >
 **Repairs**. *Charge status* shows *Start blocked* while this applies.
 
-Starts are also blocked, to be safe, if Home Assistant can't read its saved start guard. This clears the
-same way.
+Starts are also blocked, to be safe, if Home Assistant can't read its saved start guard, for example
+because the saved file is damaged. This clears the same way.
 
 After you turn *Charge* on, it shows on for up to 10 minutes while Home Assistant waits to see the charge
 start. If no charge is seen by then, starts are blocked. After a stop, the charger needs the cable unplugged
@@ -157,9 +158,21 @@ and replugged before the next start.
 
 The 10-minute limit also applies while the charger can't be read; the block clears the same way.
 
-After you turn *Charge* off, it shows off for up to 2 minutes, even while the charger can't be read, and
-*Charge status* shows *Stopping* while Home Assistant waits for the charger to show the stop. Turning
-*Charge* on in that time is refused.
+After you turn *Charge* off, the switch shows off until Home Assistant has seen the charge stop. Home
+Assistant sends the stop when the charger says the charge can be stopped, so a turn-off right after a start
+waits for the charge to open.
+
+*Charge status* shows *Stopping* while a turn-off waits for a starting charge to open, for up to 2 minutes
+after the charger has accepted a stop, and while the charger reports the charge as stopping. Turning
+*Charge* on is refused only in the 2 minutes after an accepted stop. While a turn-off waits for a starting
+charge, turning *Charge* on cancels that turn-off; while the charge is stopping, it does nothing.
+
+If a stop fails, or the charge is still running 2 minutes after the charger accepted it, Home Assistant
+tries again, at most once every 2 minutes. After 10 tries, or 30 minutes after you turned *Charge* off,
+it gives up: the switch shows the charger's state again, and a repair issue tells you that the charge may
+still be running (see *Troubleshooting*). Turning *Charge* on cancels a stop that hasn't gone through.
+
+A stop also holds across a restart of Home Assistant, within the same 30 minutes.
 
 ## Actions, conditions and triggers
 
@@ -194,12 +207,12 @@ Replace `person.me` and the entity ID with your own.
 The integration reads the charger:
 
 - every 30 seconds while a charge is starting or stopping, including right after you turn *Charge* on or
-  off,
+  off, and while a stop you asked for hasn't gone through,
 - every 5 minutes while a charge is running,
 - every 60 minutes otherwise.
 
 While the charger can't be read, the 30-second reads stop after about 2 minutes, or about 10 minutes after
-you turn *Charge* on.
+you turn *Charge* on. Reads then come every 5 minutes while a stop is waiting.
 
 It reads the car with the charger, but at most about every 5 minutes, and on every *Refresh*. It reads the
 price forecast when it starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. If a price read at start-up or at
@@ -258,6 +271,11 @@ step on *Refresh* fails then too.
   follows a very short one, or that is first read late, can be missed there.
 - A hold that led to no charge is expected to expire by itself within about 7 days and can't be cancelled
   from Home Assistant.
+- A stop you asked for more than 30 minutes before Home Assistant came back from a restart or an outage is
+  not sent; a repair issue tells you instead.
+- A stop that is waiting is sent to whatever charge is open. If the charge it was meant for has ended and
+  another one was started outside Home Assistant in the same 30 minutes, that one is stopped.
+- If Home Assistant can't read its saved start guard, a stop that was waiting is lost with it.
 - After a stop, the charger needs the cable unplugged and replugged before the next start, so an EV Smart
   Charging plan with more than one session needs a replug between them too.
 - EV Smart Charging logs the integration's start errors as its own failed action.
@@ -276,6 +294,12 @@ When the stored session is rejected, Home Assistant shows a **Reauthentication r
 Go. Select it and enter your password. You sign in to the same account; signing in to an account with
 another charger is refused.
 
+### Changing the sign-in
+
+To sign in with another email or a new password, go to **Settings** > **Devices & services** > **Nortec
+Go**, open the entry's menu (⋮) and select **Reconfigure**. You must sign in to the account that has the
+same charger; another charger is refused. The entities and their history are kept.
+
 ### "The charger is no longer on the Nortec Go account"
 
 The charger you added is no longer on your Nortec Go account. Remove the integration and add it again.
@@ -287,6 +311,16 @@ The Nortec Go service limits sign-ins. Wait a while before you try again.
 ### "Starts are blocked"
 
 See *Starting a charge*.
+
+### "A charge stop … couldn't be confirmed"
+
+You turned *Charge* off, and Home Assistant couldn't stop the charge or see it stop, and has stopped trying
+(see *Starting a charge*). The charge may still be running. Check the charger in the Nortec Go app and stop
+the charge there if needed. Turning *Charge* off again makes Home Assistant try again.
+
+The notice goes away by itself when Home Assistant sees that the charge is stopping or that no charge is
+running, or when you turn *Charge* on. A turn-on that is refused because the charger has just accepted a
+stop leaves it. Selecting **Submit** in the notice only dismisses it.
 
 ### "The Nortec Go account … no longer has exactly one car"
 

@@ -69,7 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> None:
-    """Delete the entry's stored prices, energy ledger and charge control, and its repair issue."""
+    """Delete the entry's stored prices, energy ledger and charge control, and its repair issues."""
     await PriceStore(hass, entry.entry_id).async_remove()
     await EnergyStore(hass, entry.entry_id).async_remove()
     await async_remove_charge_control(hass, entry.entry_id)

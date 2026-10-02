@@ -281,9 +281,10 @@ to the owner (D35, D45). The agent files `.claude/agents/po.md` and `team-lead.m
 
 ### Picking and starting an issue
 
-When fewer than 2 team leads run, the PO picks an open issue without `active`: all `v1` first, then `v2`,
-then `v3`, the most important first within a label. It skips issues without an urgency label, issues in the
-same area as one in progress, and issues that depend on an unfinished one. Then it:
+When fewer than 2 team leads run and no resume waits for the slot (*Merging*, **Free slots**), the PO picks
+an open issue without `active`: all `v1` first, then `v2`, then `v3`, the most important first within a
+label. It skips issues without an urgency label, issues in the same area as one in progress, and issues that
+depend on an unfinished one. Then it:
 1. runs `git fetch`, labels the issue `active`, creates `<type>/<topic>` from `origin/main` and the issue
    worktree `../HA-NortecGo-wt/<topic>`, and runs `uv sync` there (never `pre-commit install`);
 2. starts the team lead there with `claude --bg --permission-mode auto --agent team-lead -n tl-<topic>
@@ -374,8 +375,17 @@ auth (§5) is a sign. Below 90% sure, the PR is owner-merge.
 `.git/po-sessions.json`: that it is ready, who merges it (`po` or `owner`), the *checked head* (the head
 commit the smoke test ran on), the *cleared time*, and what the PR waits for, if anything (the owner's
 go-ahead, or a team lead's fix and for which comment or check). A later session reads it there. If the entry
-or the checked head is missing, or the PR's head is a different commit, the PR goes through *From branch
-ready to PR ready* again before any merge.
+or the checked head is missing, the PR goes through *From branch ready to PR ready* again before any merge.
+
+**A moved head.** The PO compares a ready PR's head with its checked head before it does anything else with
+the PR: before step 1 of the merge, before it resumes a team lead for it, and for an owner-merge PR before
+it brings it up to date. A head moves with a push the PO asked for, in a resume it started
+(**Behind `main`**, a failed required check, a requested change); that push follows the resume's rule, which
+ends with a new checked head. A later session sees that such a resume is open by the team lead's issue
+worktree, which is in place only then. Any other moved head is escalated at once, on an owner-merge PR too,
+and until the owner answers the PO runs no check on the PR and resumes no team lead for it. After the
+owner's go-ahead the PR goes through *From branch ready to PR ready* again on the new head (without
+`gh pr ready`), and the PO records the new checked head.
 
 The merge, after a `git fetch`:
 1. **Up to date:** `origin/main` is merged into the PR's head (the test in *From branch ready to PR ready*,
@@ -386,8 +396,8 @@ The merge, after a `git fetch`:
    counts a skipped check as passed, and its real run starts only after `gh pr ready`. A failed check goes
    back to the resumed team lead with the finding.
 3. **Nothing waits for the owner:**
-   - the head is still the checked head, and no review has the state `CHANGES_REQUESTED`
-     (`gh pr view <n> --json headRefOid,reviews,comments`);
+   - the head is still the checked head (if not: **A moved head**), and no review has the state
+     `CHANGES_REQUESTED` (`gh pr view <n> --json headRefOid,reviews,comments`);
    - no review thread is unresolved (`gh api graphql`, the PR's `reviewThreads { isResolved }`; threads from
      the owner's review of the spec and plan on the draft count too);
    - no review, PR comment or reply in a review thread is newer than the cleared time (the same query gives
@@ -408,9 +418,9 @@ The merge, after a `git fetch`:
 Then *After a merge*.
 
 **The cleared time** is in UTC and ISO 8601, as GitHub's timestamps are: first the time the PO marked the PR
-ready. When the owner gives a go-ahead in step 3 of the merge, the PO sets it to the time of that answer, so
-the comments the owner has dealt with no longer stop the merge. Nothing else moves it: not a new checked
-head, and not a team lead's fix alone.
+ready. When the owner gives a go-ahead in step 3 of the merge, or for a moved head, the PO sets it to the
+time of that answer, so the comments the owner has dealt with no longer stop the merge. Nothing else moves
+it: not a new checked head, and not a team lead's fix alone.
 
 **Behind `main`.** The PO resumes the team lead (*After ready*). The team lead merges `origin/main` in, for a
 releasing PR runs the bump step again ([`releasing.md`](releasing.md#two-releasing-prs-at-once)), pushes, and
@@ -424,14 +434,18 @@ step 1.
 time: the first, then *After a merge* including its release check, and only then the next. Only the next PR
 in the queue is brought up to date; the ones behind it wait, since the next merge would leave them behind
 again. A PR that waits for the owner's answer or for a team lead's fix steps out of the queue, and rejoins it
-at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4), or once the fix
-for a failed required check (step 2 of the merge) has been through *From branch ready to PR ready* again. A
-resume for a PR that is first in the queue, or has stepped out of it, takes a free team-lead slot before a
-new issue is picked.
+at the front: after the owner's go-ahead (step 3 of the merge, or a refusal in its step 4; for a moved head,
+once the PR has then been through *From branch ready to PR ready* again), or once the fix for a failed
+required check (step 2 of the merge) has been through *From branch ready to PR ready* again.
 
 Owner-merge PRs are not in the queue and block nothing. One that falls behind `main` stays as it is until
 the owner says they are about to merge it; the PO then brings it up to date (**Behind `main`**, without the
 merge) and tells the owner.
+
+**Free slots.** A free team-lead slot goes first to a resume for a ready PR, an owner-merge PR's included
+(*After ready, the loop, and failures* says which those are). Then to a team lead that isn't running and is
+to be resumed: one that is gone, one that exited while it waited and whose reply is there, or one the PO
+found exited at its start. Only then is a new issue picked.
 
 ### After a merge
 
@@ -470,7 +484,8 @@ merges):
   Conflicts are fixed by merging `origin/main` in, never by a force-push. A resumed team lead starts without
   its old SDD ledger. The `-n` keeps its name: without it the resumed session gets a generated `ListAgents`
   name, and messages to `tl-<topic>` no longer reach it. Every resume in this section uses this resume
-  command, run in the team lead's issue worktree.
+  command, run in the team lead's issue worktree, and only for a team lead `claude agents --json` no longer
+  shows: `--bg` with `--resume` starts a copy of a session that is still running.
 - The PO's `/loop` (every 10 to 20 minutes) checks GitHub for merged PRs (*After a merge*), ready PRs the PO
   may merge that aren't merged yet (*Merging*: checks still running when a session ended, an escalation since
   answered, a PR waiting for its turn), answers to open `PO question`s, and review comments or conflicts on
@@ -480,7 +495,8 @@ merges):
   record (*Merging*, **What the PO records**). `claude agents --json` shows the running sessions, interactive
   and background; `ListAgents` the names to message.
 - A team lead that is gone is resumed once; if that fails, the PO escalates and leaves the issue `active`.
-  One with nothing new in `claude logs <id>` for 2 loops is asked for its status, then escalated.
+  A running team lead that isn't waiting for the PO's reply to one of its messages, with nothing new in
+  `claude logs <id>` for 2 loops, is asked for its status, then escalated.
 - A background team lead that is idle while it waits for the PO's reply to one of its messages can exit
   (`claude agents --json` no longer shows it). Nothing is lost: its issue worktree is still in place. When
   the reply is there and a slot is free, the PO resumes it with the resume command, the reply as the prompt
@@ -491,3 +507,11 @@ merges):
   poll for the PO). The next `scripts/po` rebuilds its state from the above, sends `hello` to every team lead
   in `.git/po-sessions.json`, and carries on; on that `hello`, each team lead re-sends the messages that
   failed, in order.
+- A `hello` to a team lead that exited while the PO was down reaches nothing. At its start the PO gives the
+  `hello` as the prompt of the resume command to each team lead in `.git/po-sessions.json` that
+  `claude agents --json` doesn't show and whose issue worktree is still in place (the PO removes it when it
+  stops a team lead), when a slot is free (*Merging*, **Free slots**); the team lead then re-sends its kept
+  messages as above. The PO can't tell whether it exited while it waited or failed, so this is the one
+  resume of a team lead that is gone. The exception is a team lead with an open `PO question` on its issue:
+  the PO knows it waits for that reply, and the bullet on a waiting team lead that exited applies, with the
+  `hello` ahead of the reply in the prompt.

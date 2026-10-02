@@ -425,3 +425,14 @@ superseded. How to add one:
   with every charge, so the Energy dashboard can miss charges. This replaces the owner's earlier answer on
   #75 to wait for the client.
 - **Source:** [total energy spec](superpowers/specs/2026-10-01-total-energy-design.md), Decisions and §2
+
+### D48: The PO flow's open points: a moved head, free slots, and a team lead that exited
+- **Date:** 2026-10-02 · **Status:** active
+- **Decision:** A ready PR whose head moved without the PO asking for the push is escalated, not re-checked
+  and merged. A free team-lead slot goes first to a resume for a ready PR (an owner-merge PR's included),
+  then to a team lead that isn't running and is to be resumed, then to a new issue. The check on a team lead
+  with nothing new for 2 loops skips one that waits for the PO's reply, and a team lead a new PO finds
+  exited, its issue worktree still in place, is resumed with `hello`, as its one resume.
+- **Why:** Each case had two instructions or none (#90, #97). These keep the owner in control of what
+  nobody planned, put started work before new work, and need no new state.
+- **Source:** [PO open points spec](superpowers/specs/2026-10-02-po-open-points-design.md), Decisions

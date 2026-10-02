@@ -89,6 +89,15 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 - A `Store` version bump needs a `Store` subclass that overrides `_async_migrate_func`; without it, loading
   an older version raises `NotImplementedError`. The migrated data is saved straight back. `hass_storage`
   loads through HA's real `Store` load, so the migration runs in tests too.
+- A `Store` also has a minor version (a file without one counts as minor 1). A stored minor version other
+  than the code's goes through `_async_migrate_func` too, and what that returns is saved straight back under
+  the code's own version. Code without a migrate function that meets a newer minor version of the same major
+  version loads the data unchanged, so after a downgrade the older code gets the newer shape as it is.
+- `Store.async_load` renames a file with a JSON decode error, raises HA's own `storage_corruption` repair
+  issue and returns `None`, the same as for a missing file. To tell the two apart, look for the file
+  (`Store.path`, in the executor) before the load: afterwards it is gone. `hass_storage` replaces the store's
+  file access and no file is on disk in tests, so that check needs its own seam to patch
+  (`charge_control_store._file_exists`), and a test that pins the order of the check and the load.
 - Setup reads the coordinator's data before it forwards the platforms, so a test that only looks after
   setup can't tell a value set once in the entity's `__init__` from a property. To show a value is live,
   change it in a read after setup.
@@ -136,6 +145,10 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
   (`ConfigEntry.async_create_background_task`). So in the first refresh, whatever can still fail setup comes
   before work that saves or queues something; otherwise a failed setup leaves that work half done (in this
   integration: the car is read before the charge control gets the charger read, D44).
+  The order is: the on-unload callbacks first, then the cancelling. A cancelled task still runs its `finally`,
+  so an object that such a task belongs to is closed in its on-unload callback, not only its timers
+  cancelled. Otherwise the `finally` can arm a timer on an object the next setup has replaced (the charge
+  control's `_async_close`, D50).
 - A coordinator schedules its next read at whole loop seconds plus a random 0.05–0.5 s, so a read can come
   up to about 1 s before one full interval has passed. A time threshold compared with the interval needs a
   margin, and a test that fires the timer ticks a second more than the interval.

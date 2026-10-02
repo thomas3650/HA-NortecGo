@@ -147,3 +147,13 @@ a script that asks which repository a directory is in drops the git variables fi
 A test can copy a script into a temporary repository and run it there, also when the script calls
 `uv run python`: under `uv run pytest` the inner `uv run` uses the same environment (`VIRTUAL_ENV`), in a
 directory without a project too, on macOS and in CI. `tests/test_sessions.py` does it. Found in #53.
+
+## 2026-10-02: Full coverage doesn't show that a guard is tested
+
+Line and branch coverage count an `if a or b:` as covered once the line ran both ways: one operand that no
+test needs is invisible, and so is a call whose effect another call repeats. In #109 the task reviews found
+four such rules in the charge control at 100% coverage (a closed check in a timer's work, a notification
+after giving up, the place of a delete next to a refusal, a registration with the entry), each by removing
+the rule on a scratch copy and seeing that every test still passed. A reviewer of code where a missing
+guard is costly does the same for the guards the task adds, and a new test for a guard is seen to fail
+without it. See also *Mutate the moved lines to test "behaviour unchanged"* above.

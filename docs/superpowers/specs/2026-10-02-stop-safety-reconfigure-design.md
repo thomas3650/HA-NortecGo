@@ -106,10 +106,10 @@ All of this is in `charge_control.py`, except the read interval (*What the owner
 In this section:
 - **open** is the existing `charge_is_open`;
 - **stoppable** is a read with a charge object that says it can be stopped (`can_stop`) and isn't
-  `STOPPING`. An open charger without a charge object, which is seen right after a start, is not
+  `STOPPING` or `COMPLETED`. An open charger without a charge object, which is seen right after a start, is not
   stoppable. Today's code sends the stop in that state; that is fixed on purpose;
-- **off** is a read that shows the charge `STOPPING`, or shows no charge open on a charger whose state is
-  known. A charger in an unknown state with no charge object has the stop wait, as it has a start
+- **off** is a read that shows the charge `STOPPING` or `COMPLETED`, or shows no charge open on a charger
+  whose state is known. A completed charge that the read still carries ends the pending stop today too. A charger in an unknown state with no charge object has the stop wait, as it has a start
   refused; with a stoppable charge object it is tried like any other;
 - a **stale read** is one begun before the latest start attempt (the existing `start_attempts` check).
 
@@ -413,12 +413,12 @@ module gives the control:
 ### D50: A stop is stored until the charge is seen off
 
 - **Date:** 2026-10-02 · **Status:** active
-- **Decision:** Turning *Charge* off stores the stop until a read shows the charge off (stopping, or
-  not open on a charger whose state is known), or *Charge* is turned on. Meanwhile the stop is sent, at
-  the turn-off or when a read shows the charge stoppable, never to a charge that is stopping and never
-  while a start is pending, with at least 2 minutes between two stop calls; a try fails when the call
-  fails or when the charge is still on 2 minutes after the charger accepted it. A failed try raises no
-  error (a rejected session aside). After 10 tries or 30 minutes from the ask, whichever is first, the
+- **Decision:** Turning *Charge* off stores the stop until a read shows the charge off (stopping,
+  completed, or not open on a charger whose state is known), or *Charge* is turned on. Meanwhile the stop
+  is sent, at the turn-off or when a read shows the charge stoppable, never to a charge that is stopping
+  and never while a start is pending, with at least 2 minutes between two stop calls; a try fails when the
+  call fails or when the charge is still on 2 minutes after the charger accepted it. A failed try raises
+  no error (a rejected session aside). After 10 tries or 30 minutes from the ask, whichever is first, the
   control gives up, logs an error and raises a repair issue that a new turn-off doesn't remove. The
   charger is read every 30 s while a stop is stored, within D31's limits. A start is still never retried.
 - **Why:** A stop tied to the pending start was lost whenever that ended first (#85, #32, #26), and an

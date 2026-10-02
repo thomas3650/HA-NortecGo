@@ -425,3 +425,15 @@ superseded. How to add one:
   with every charge, so the Energy dashboard can miss charges. This replaces the owner's earlier answer on
   #75 to wait for the client.
 - **Source:** [total energy spec](superpowers/specs/2026-10-01-total-energy-design.md), Decisions and §2
+
+### D49: The PO flow's sessions are told apart by their directory
+- **Date:** 2026-10-02 · **Status:** active
+- **Decision:** The session names stay `po`, `team-lead` and `tl-<topic>`, and a session belongs to this
+  repo when its `cwd` is in the main checkout or one of its worktrees (`scripts/sessions.py` decides it).
+  The start scripts count only this repo's sessions, a team lead sends to `po` only when exactly one
+  running session has that name and it is this repo's, and the PO runs that check in every round of its
+  loop and sends `hello` again once it passes.
+- **Why:** The names are not unique on the machine (#53). Filtering by directory changes no name, so
+  running sessions keep working; a repo prefix needs a transition and is the next step if two projects
+  ever run a PO flow at once.
+- **Source:** [session names spec](superpowers/specs/2026-10-02-session-names-design.md), Decisions

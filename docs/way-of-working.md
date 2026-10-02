@@ -271,10 +271,21 @@ to the owner (D35, D45). The agent files `.claude/agents/po.md` and `team-lead.m
 - **Workers:** the team lead's subagents, as in §2; at most 3 active per team lead.
 - **Team lead mode**, for hard problems: the owner runs `scripts/team-lead` in the foreground in the main
   checkout (session name `team-lead`, no PO named), and is the PO. **PO mode and team lead mode never run at
-  the same time:** `scripts/po` and `scripts/team-lead` refuse to start while a session named `po` or
-  `team-lead` runs, or in a linked worktree, and the PO also checks at start that no session named
-  `team-lead` runs. Team leads (`tl-*`) still running while the PO is down count as PO mode: the owner
-  doesn't start `scripts/team-lead` then.
+  the same time:** `scripts/po` and `scripts/team-lead` refuse to start while a session of this repo named
+  `po` or `team-lead` runs, or in a linked worktree, and the PO also checks at start that no session of this
+  repo named `team-lead` runs. Team leads (`tl-*`) still running while the PO is down count as PO mode: the
+  owner doesn't start `scripts/team-lead` then.
+- **Sessions of this repo:** the session names are not unique on the machine: `claude agents --json` and
+  `ListAgents` list the sessions of every project. A session is this repo's when it runs in the main
+  checkout or one of its worktrees; `scripts/sessions.py` is the one place that decides it (D49). The
+  start scripts count only this repo's sessions. A team lead sends to `po` only when
+  `scripts/sessions.py reachable po` passes (exactly one running session is named `po`, and it is this
+  repo's); otherwise the message counts as failed. So while another project's session named `po` runs,
+  team leads hold their messages: two projects can't both run a PO flow with these names at once. The
+  PO runs the same check at its start and in every round of its loop. When it starts to fail, the PO
+  tells the owner; while it fails, the PO starts and resumes no team lead; when it passes again, the PO
+  sends `hello` to its team leads as at its start (*After ready, the loop, and failures* has the
+  re-sending).
 - Owner only: merging what *Merging* doesn't give the PO, anything that starts or stops a real charge,
   pushing a tag, re-running a workflow run on `main`, the permission setup for team leads, and
   `.claude/settings.json`.
@@ -308,7 +319,8 @@ The team lead talks only to the PO, with `SendMessage`:
 | `blocked` | Decides, or escalates. |
 | `branch ready`, with `visible: yes/no` (proposed; the PO decides) | Runs *From branch ready to PR ready*. |
 
-The PO also sends `hello` to its team leads when it starts (see *After ready, the loop, and failures*).
+The PO also sends `hello` to its team leads when it starts (see *After ready, the loop, and failures*), and
+when its own name can be messaged again (*Roles and start modes*, **Sessions of this repo**).
 
 ### Escalation
 
@@ -474,11 +486,12 @@ merges):
 - The PO's `/loop` (every 10 to 20 minutes) checks GitHub for merged PRs (*After a merge*), ready PRs the PO
   may merge that aren't merged yet (*Merging*: checks still running when a session ended, an escalation since
   answered, a PR waiting for its turn), answers to open `PO question`s, and review comments or conflicts on
-  ready PRs.
+  ready PRs. Each round it also runs the check in *Roles and start modes*, **Sessions of this repo**.
 - **State:** GitHub is the source of truth; `.git/po-sessions.json` maps each team lead's session id and
   `ListAgents` name to its issue, branch and worktree, and holds the D-numbers handed out and each ready PR's
-  record (*Merging*, **What the PO records**). `claude agents --json` shows the running sessions, interactive
-  and background; `ListAgents` the names to message.
+  record (*Merging*, **What the PO records**). `claude agents --json` shows the running sessions of every
+  project, interactive and background (`scripts/sessions.py running` those of this repo); `ListAgents` the
+  names to message.
 - A team lead that is gone is resumed once; if that fails, the PO escalates and leaves the issue `active`.
   One with nothing new in `claude logs <id>` for 2 loops is asked for its status, then escalated.
 - A background team lead that is idle while it waits for the PO's reply to one of its messages can exit
@@ -487,7 +500,8 @@ merges):
   after the options. This is not the one resume of a team lead that is gone: that one is still there if the
   team lead fails later.
 - If the PO session ends, team leads keep running. A `SendMessage` to a PO that is down fails at once; it
-  isn't queued. The team lead keeps every message whose `SendMessage` to `po` failed, and waits (it doesn't
+  isn't queued. One that the check in *Roles and start modes*, **Sessions of this repo** stops counts as
+  failed too. The team lead keeps every message whose `SendMessage` to `po` failed, and waits (it doesn't
   poll for the PO). The next `scripts/po` rebuilds its state from the above, sends `hello` to every team lead
-  in `.git/po-sessions.json`, and carries on; on that `hello`, each team lead re-sends the messages that
-  failed, in order.
+  in `.git/po-sessions.json`, and carries on; on that `hello`, or on any later message from the PO, each
+  team lead re-sends the messages that failed, in order.

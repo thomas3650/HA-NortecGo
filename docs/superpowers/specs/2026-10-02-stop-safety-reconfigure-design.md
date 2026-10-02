@@ -25,6 +25,7 @@ Date: 2026-10-02 · Branch: `feat/stop-safety-reconfigure` · Issues: #85, #32, 
     the stop stored on its own, the deadline no longer loses the stop, so it stays as it is (§1, *The start
     deadline*).
   - The setup order (D44). The stop survives a failed setup because it is stored until it is done.
+  - Tying a stop to one charge by the charge's ID (Decisions, *Which charge*).
   - An options flow, and any setting for the limits in §1.
 - **Closes:** #85, #32, #26 and #44, each with its own `Closes #n` line in the PR description.
 - **Done when:** the cases in §1 to §5 hold in tests with `pynortecgo` mocked, the docs in §8 are updated,
@@ -38,12 +39,14 @@ Answered by the owner in the brainstorm on 2026-10-02.
 |---|---|
 | A stop that can't be done at once | It is stored and tried again; when that fails too, a repair issue tells the owner |
 | When a try has failed | Judged by the result: the call failed, or the charger accepted it and the charge is still on 2 minutes later |
-| How many tries | At most 10 `stop_charge()` calls for one stop asked |
+| How many tries | At most 10 `stop_charge()` calls for one stop asked; the count is stored with the stop |
+| Between tries | At least 2 minutes from one call to the next, whatever the first one's outcome |
 | How long | At most 30 minutes from when the stop was asked, also across a restart |
 | Whichever limit comes first | The control gives up: an error in the log, the repair issue, and the switch shows the charger's state again |
 | A charge that is stopping | No stop is sent to it, and seeing it ends the stored stop |
 | The log | A warning for every failed try, with its number; an error when the control gives up |
-| Which turn-offs | Every one, not only those asked during a pending start |
+| Which turn-offs | Every one, not only those asked during a pending start. A turn-off whose call fails raises no error, except a rejected session |
+| Which charge | The stop is not tied to one charge; its age is the guard (below) |
 | #26, corrupt store file | Fix: starts are blocked to be safe |
 | #26, block reason | Fix: stored with the block |
 | #26, stop lost across a reload | Fixed by the stored stop |
@@ -51,18 +54,26 @@ Answered by the owner in the brainstorm on 2026-10-02.
 | #44 | Done here, as the issue describes it |
 | Release level | Releasing: the title is `feat: …`, with a CHANGELOG entry and the bump step |
 
+**Which charge.** A read's open charge has an ID, and a start returns its charge's ID, so the control
+could store which charge a stop was asked for and send it only to that one. It doesn't. A stored stop is
+sent to whatever charge is open and stoppable, and the 30 minutes bound how old it can be. Stopping a
+charge other than the one meant takes a stop that isn't done, a first charge that ends, and a second one
+that starts outside Home Assistant, all inside those 30 minutes. Tying the stop to an ID would add stored
+state and rules for the cases where no ID is known (a pending start from before a restart, no good read
+yet) to close that.
+
 Facts used, from the installed Home Assistant source and `pynortecgo` 0.8.0's public models:
 
-- A read's open charge says whether it can be stopped (`can_stop`). It has no start time, so the control
-  can't tell the charge its own start made from a later one. The stop's age is the only guard against
-  stopping the wrong charge.
+- A read's open charge says whether it can be stopped (`can_stop`).
 - `Store.async_load` renames a file with a JSON decode error, raises Home Assistant's own
   `storage_corruption` repair issue, and returns `None`, the same as for a missing file. `Store.path` is
   the file's path.
 - A `Store` has a minor version. A stored minor version other than the code's goes through
-  `_async_migrate_func`, and the migrated data is saved straight back. Code without a migrate function
-  that meets a newer minor version of the same major version loads the data unchanged.
-- An entry's background tasks are cancelled when its setup fails and when it unloads.
+  `_async_migrate_func`, and what that returns is saved straight back under the code's own version. Code
+  without a migrate function that meets a newer minor version of the same major version loads the data
+  unchanged, and saves it back the same way.
+- An entry's background tasks are cancelled when its setup fails and when it unloads. At an unload the
+  control's `async_shutdown` runs first, so a try in flight finishes.
 - `ConfirmRepairFlow` is Home Assistant's fix flow with one confirm step and no side effect. Finishing a
   fix flow deletes the issue.
 - A config flow's `reconfigure` step is offered on the integration's page. `_get_reconfigure_entry()` gives
@@ -74,19 +85,34 @@ All of this is in `charge_control.py`, except the read interval (*What the owner
 
 ### State
 
-- `stop_asked_since`, a time, replaces the `stop_asked` flag. It is stored, and it no longer depends on the
-  pending start: ending the pending start leaves it alone.
-- The number of tries is kept in memory only. A restart or reload starts it at zero; the 30 minutes, which
-  are stored, bound that.
+- **`stop_asked_since`**, a time, replaces the `stop_asked` flag. It is stored, and it no longer depends
+  on the pending start: ending the pending start leaves it alone.
+- **`stop_tries`**, the number of `stop_charge()` calls made for this stop. It is stored with the stop, so
+  a restart or a reload doesn't start it again.
+- **The wait:** from a try until 2 minutes later (`STOP_CONFIRM_TIMEOUT`), no other try is made. It is
+  kept in memory, and it starts when the try is queued, so two reads can't queue two tries.
+- **The pending stop** (D29) is the wait after a try the charger accepted: the switch shows off and
+  *Charge status* shows *Stopping*. It is still not stored, and now exists only while a stop is stored.
 - `ChargeControlState.stop_asked` stays a flag for the entities and the coordinator: true while a stop is
   stored.
-- The pending stop (D29: the 2 minutes after an accepted stop) is unchanged and still not stored. It now
-  exists only while a stop is stored.
 
 In this section:
 - **open** is the existing `charge_is_open`;
-- **stoppable** is an open charge that the read says can be stopped (`can_stop`) and that isn't `STOPPING`;
+- **stoppable** is a read with a charge object that says it can be stopped (`can_stop`) and isn't
+  `STOPPING`. An open charger without a charge object, which is seen right after a start, is not
+  stoppable. Today's code sends the stop in that state; that is fixed on purpose;
+- **off** is a read that shows the charge `STOPPING` or not open;
 - a **stale read** is one begun before the latest start attempt (the existing `start_attempts` check).
+
+### When a try may be made
+
+A try is one `stop_charge()` call. It is made only when all of these hold, checked under the lock right
+before the call:
+
+- a stop is stored and the control is open (not unloading);
+- no start is pending;
+- no wait is running from an earlier try (this try's own wait aside);
+- fewer than 10 tries have been made.
 
 ### Turning *Charge* off
 
@@ -94,32 +120,31 @@ In this order, under the lock:
 
 1. The control is closed (unloading): the translated `unloading` error, as today.
 2. The repair issue of §4 is deleted: this is a new ask.
-3. A pending stop is under way, or the last read shows the charge `STOPPING`: nothing, as today.
-4. A start is pending and the last read shows no charge open: the stop is stored and a read is requested,
-   as today.
-5. The last read shows a charge that is open and not stoppable: the stop is stored and a read is
-   requested. No call is made.
-6. Otherwise the stop is stored and `stop_charge()` is called now (a try, see below). As today, this also
-   covers a last read that shows no charge, or no read yet: the read may be old.
+3. A pending stop is under way, or the last read shows the charge `STOPPING`: nothing more, as today.
+4. The stop is stored, unless one already is. A stop that is already stored keeps its time and its count,
+   so an automation that repeats the turn-off can't keep a failing stop alive past the limits.
+5. A try is made now when one may be made (above) and the last read doesn't show an open charge that
+   isn't stoppable. As today, that includes a last read that shows no charge, and no read yet: the read
+   may be old. Otherwise a read is requested and the stop waits for it.
 
-Storing a stop that is already stored changes nothing: its time and its count of tries stay. So an
-automation that repeats the turn-off can't keep a failing stop alive past the limits.
+So during a pending start no call is made, whatever the last read shows: the read that sees the charge
+ends the pending start and then tries.
 
-### A try
+### A try's outcome
 
-A try is one `stop_charge()` call, from a turn-off (step 6) or from a read (below). Its outcomes:
+The try is counted and the count saved when the call is made.
 
 | The call | What happens |
 |---|---|
-| Accepted | The pending stop starts (D29). The stop stays stored. If a read shows the charge `STOPPING` or not open within the 2 minutes, the stop is done. If the 2 minutes pass first, the try has failed |
+| Accepted | The pending stop starts. If a read shows the charge off within the 2 minutes, the stop is done. If the 2 minutes pass first, the try has failed |
 | `NoActiveChargeError` | The stop is done: there is nothing to stop |
-| `ChargeNotStoppableError`, or any other `NortecGoError` | The try has failed. The stop stays stored. A read is requested |
-| `AuthError` | The try has failed and the stop stays stored. Reauth starts at once, and a turn-off raises the translated `auth_failed` error, as today |
-| Cancelled (a failed setup, an unload) | Not counted. The stop stays stored |
+| `ChargeNotStoppableError`, or any other `NortecGoError` | The try has failed. The stop stays stored, and the wait runs on |
+| `AuthError` | The try has failed and the stop stays stored. Reauth starts at once. A turn-off raises the translated `auth_failed` error, as today |
+| Cancelled (a failed setup) | The stop stays stored. The try is counted, and the next setup may try again at once |
 
-- A failed try logs a warning with its number ("try 3 of 10") and the error's type and text. Credentials
-  are never part of it (hard rule 5).
-- After the 10th failed try the control gives up (below).
+- A failed try logs a warning with its number ("try 3 of 10") and what failed: the error's type and text,
+  or that the charge was still on after the 2 minutes. Credentials are never part of it (hard rule 5).
+- When the 10th try has failed, the control gives up (*The limits*).
 - A turn-off no longer raises `charge_not_stoppable` or `stop_failed`: the stop is tried again instead, and
   the owner hears of it only if it can't be done. The two translations are removed (§6).
 - Sending a stop twice is harmless: a charge that is already stopping or closed answers
@@ -127,38 +152,53 @@ A try is one `stop_charge()` call, from a turn-off (step 6) or from a read (belo
 
 ### On a read
 
-`on_charger_read` keeps its order: the pending stop first, then the stale-read check, then the pending
-start, then the block. The stored stop is handled after the pending start:
+`on_charger_read` keeps the read as the last read, as today, and then:
 
-- **A start is still pending:** the stop waits. A read that sees a charge happened or the cable unplugged
-  ends the pending start as today, and the next two points then apply to the same read.
-- **The read shows the charge `STOPPING` or not open:** the stop is done. A stale read doesn't count here:
-  it can't know what the latest start led to.
-- **The read shows the charge stoppable, and no pending stop is under way:** a try is made, as a background
-  task under the lock, as today. A stale read may do this: its evidence is the charge it saw. One try runs
-  at a time, and the task checks again under the lock that the stop is still stored and the control is
-  open.
-- **Otherwise** (open but not stoppable, or a pending stop under way): the stop waits.
+1. **A stale read changes nothing more.** Today the pending stop is checked before this; it moves after,
+   so the stop and its pending stop follow one rule. D26's "reads begun before the latest start attempt
+   change nothing" holds for the stop too.
+2. **The pending start**, as today: a read that sees a charge happened or the cable unplugged ends it. It
+   no longer clears the stop.
+3. **The stop:**
+   - **The read shows the charge off, and no start is pending:** a stored stop is done, and the repair
+     issue of §4 is deleted, whether or not a stop is stored.
+   - **A start is still pending:** the stop waits.
+   - **The read shows the charge stoppable, and a try may be made:** the wait starts and the try is queued
+     as a background task, which checks again under the lock (*When a try may be made*).
+   - **Otherwise** (open but not stoppable, or a wait running): the stop waits.
+4. **The block**, as today.
 
-A done stop is cleared and saved, its timers are cancelled, and the repair issue of §4 is deleted.
+A done stop is cleared with its count, its pending stop and its wait; the timers are cancelled and the
+state is saved.
+
+The pending stop today ends on any charge state other than starting, charging and paused. It now ends on
+the same evidence as the stop: the charge off. For an open charge in an unknown state, or an open charger
+without a charge object, it runs its 2 minutes, and the try has then failed.
 
 ### Turning *Charge* on
 
-- While a pending stop is under way, the turn-on is refused with `stop_pending`, as today.
+- While a pending stop is under way, the turn-on is refused with `stop_pending`, as today (D29). With
+  stops that are accepted but don't take effect, that refuses a turn-on for 2 minutes at a time until the
+  control gives up. That is accepted: the charger has just been told to stop.
 - Every other turn-on clears a stored stop first and deletes the repair issue of §4, whatever the start
   then does (today it clears the stop only while a start is pending). The owner has asked for a charge.
 
 ### The limits
 
-- **10 tries:** counted as above.
+- **10 tries:** counted as above. A failed call gives up when it was the 10th; an accepted 10th try gives
+  up when its 2 minutes pass.
+- **The wait's timer** fires after 2 minutes whether or not the charger is read. It ends the wait and the
+  pending stop, and marks an accepted try as failed. It replaces today's stop timer.
 - **30 minutes:** a timer set when the stop is stored, which fires whether or not the charger is read, as
   D31 requires of the start and stop deadlines.
-  - At load, the timer is set for what is left of the 30 minutes. A stop that is already past them gives
-    up at once.
+  - At load, the timer is set for what is left of the 30 minutes, and never for more than 30 minutes (a
+    stored time in the future, after a clock change). A stop that is already past them gives up at once.
   - There is no grace at load, unlike the start's. A stop from before a long outage can't be trusted to
     belong to the charge that is open now, and the owner is told instead.
-- **Giving up:** the stored stop and a pending stop are cleared and saved, an error is logged, and the
-  repair issue of §4 is raised. The switch then shows the charger's state again.
+- **Giving up:** the stop is cleared as a done one is, an error is logged, and the repair issue of §4 is
+  raised. The switch then shows the charger's state again.
+
+With 2 minutes between tries, 10 tries take about 20 minutes, inside the 30.
 
 ### The start deadline
 
@@ -173,11 +213,11 @@ sent.
 
 - **The switch** shows off while a stop is stored, as today's `is_charge_on` already does.
 - ***Charge status*** is unchanged in code: *Stopping* while a start is pending and no charge is open, and
-  while a pending stop is under way. Between tries it shows the charge's own state (*Starting*, *Charging*,
-  *Paused*).
+  while a pending stop is under way. Otherwise it shows the charge's own state (*Starting*, *Charging*,
+  *Paused*), also while a stop waits for its next try.
 - **The reads:** `interval_for` treats a stored stop like the charger's own starting and stopping states:
   30 s while a start or a stop is pending or the last good read is under 2 minutes old
-  (`FAST_READ_MAX_AGE`), 5 minutes after that. So a stored stop is tried within 30 s of the charge becoming
+  (`FAST_READ_MAX_AGE`), 5 minutes after that. So the first try comes within 30 s of the charge becoming
   stoppable, and an outage doesn't read every 30 s (D31).
 
 ### The cases this closes
@@ -186,22 +226,21 @@ sent.
 |---|---|---|
 | #85, case 1: the setup fails after the stop is queued | The stop is cleared and saved, then its task is cancelled | The stop is still stored; the next setup's read sends it |
 | #85, case 2: the deadline fires before the first read | The stop is cleared and saved | The stop outlives the deadline; the first read sends it or ends it |
-| #32: the charger refuses the stop | A warning in the log | Tried again when the charge is stoppable; the repair issue after 10 tries or 30 minutes |
+| #32: the charger refuses the stop | A warning in the log | Not sent while the read says it can't be stopped; tried again every 2 minutes when a call fails; the repair issue after 10 tries or 30 minutes |
 | #26: a reload between the read and the stop | The stop is skipped | `async_shutdown` saves the stop, and the reloaded control sends it |
 
 ## 2. Start guard hardening (#26)
 
-- **A corrupt store file.** `async_load` checks, before it loads, whether the store's file exists. A file
-  that existed and loaded as nothing was corrupt (or empty), and the control can't know what it held: it
+- **A corrupt store file.** The load checks, before it loads, whether the store's file exists. A file that
+  existed and loaded as nothing was corrupt (or empty), and the control can't know what it held: it
   blocks starts with the existing `start_blocked_store` issue and saves, as it does today for a wrong
   shape. A missing file is still a first setup.
 - **The block's reason.** It is stored with the block, as the issue's translation key (`start_blocked` or
-  `start_blocked_store`). `async_load` raises the issue again with the stored reason. A stored reason that
-  is neither of the two is a wrong shape.
+  `start_blocked_store`). `async_load` raises the issue again with the stored reason.
 - **An unexpected exception from a start.** Anything `start_charge()` raises that isn't a `NortecGoError`
   (and isn't a cancellation, which keeps its block) is logged with its traceback and raised as the
-  translated `start_failed` error, with no block. The client wraps everything after the payment request in
-  `ChargeStartError`, so no card hold can be behind it.
+  translated `start_failed` error, with no block. The client wraps everything from the first payment
+  request on in `ChargeStartError`, so no card hold can be behind it.
 
 ## 3. The stored format
 
@@ -210,18 +249,22 @@ The charge control's store keeps version 1 and gets minor version 2, with a migr
 | Key | Minor 1 | Minor 2 |
 |---|---|---|
 | `blocked_since` | A time or null | The same |
-| `block_reason` | Not there | The issue key, or null without a block |
+| `block_reason` | Not there | The issue key with a block, null without one |
 | `start_pending_since` | A time or null | The same |
 | `stop_asked` | A flag | Gone |
 | `stop_asked_since` | Not there | A time or null |
+| `stop_tries` | Not there | A whole number, 0 or more; 0 without a stop |
 
+- **Wrong shapes**, which block starts as today: a missing key, a value of the wrong type, a block with a
+  null or unknown reason, a reason without a block.
 - **Migration from minor 1:**
   - A set `stop_asked` flag becomes `stop_asked_since` with the pending start's time: the flag was only
     ever set during a pending start. That time is earlier than the real one, so the stop only expires
-    sooner.
+    sooner. A flag without a pending start becomes null.
+  - `stop_tries` is 0.
   - A block gets the reason `start_blocked`: the text every stored block had after a restart until now.
-  - Data that doesn't have the old shape is passed on unchanged, so `async_load`'s shape check blocks
-    starts, as today. The migration itself never fails a setup.
+  - Data that doesn't have the old shape is passed on unchanged, so the shape check blocks starts, as
+    today. The migration itself never fails a setup.
 - **A newer minor version** than the code knows is passed on unchanged too.
 - **A downgrade** to a release before this one loads the new data unchanged, misses `stop_asked`, and
   blocks starts to be safe, with the "couldn't be read" issue. The owner clears it there. Nothing is done
@@ -230,21 +273,22 @@ The charge control's store keeps version 1 and gets minor version 2, with a migr
 ## 4. The repair issue
 
 - **ID and key:** its own issue per entry, `stop_failed_<entry id>`, with the translation key
-  `stop_failed`. Severity error, not persistent across a Home Assistant restart (after one, the switch
-  shows the charger's state anyway).
+  `stop_failed`. Severity error, and persistent, so it survives a Home Assistant restart while the charge
+  may still be running. Nothing about it is stored by the control.
 - **Raised** when the control gives up (§1, *The limits*).
 - **Fix flow:** Home Assistant's `ConfirmRepairFlow`: one confirm step that dismisses the notice and does
-  nothing else. `async_create_fix_flow` in `repairs.py` picks it by the issue ID.
-- **Deleted without the owner** when a read that isn't stale shows the charge `STOPPING` or not open, when
-  *Charge* is turned on or off, and when the entry is removed. Deleting an issue that isn't there does
-  nothing, so the control doesn't keep track of whether it is up.
+  nothing else. `async_create_fix_flow` in `repairs.py` picks it by the issue ID; today it gives every
+  issue that isn't `car_gone` the start block's flow, so confirming this one must not clear a start block.
+- **Deleted without the owner** when a read that isn't stale shows the charge off and no start is pending
+  (§1, *On a read*), when *Charge* is turned on or off, and when the entry is removed. Deleting an issue
+  that isn't there does nothing, so the control doesn't keep track of whether it is up.
 
 ## 5. Reconfigure (#44)
 
 A `reconfigure` step in `config_flow.py`:
 
 - It shows the user step's form (email and password), with the entry's current email filled in, and after
-  a failed try the email just typed.
+  a failed try the email just typed. The email is trimmed, as in the user step.
 - It signs in once with `_async_sign_in`, never retried, with a client that has the entry's stored device
   ID, as reauth does. An error shows on the form with the user step's error texts.
 - A charger other than the entry's aborts with `wrong_account`, as reauth does
@@ -275,7 +319,8 @@ The exact wording is settled in the plan.
 
 | File | Change |
 |---|---|
-| `charge_control.py` | §1 to §3, and raising and deleting the issue of §4. `async_remove_charge_control` deletes that issue too |
+| `charge_control.py` | §1 and §2, and raising and deleting the issue of §4. `async_remove_charge_control` deletes that issue too |
+| `charge_control_store.py` (new) | §3, and the corrupt-file check of §2 |
 | `const.py` | The two limits, the store's minor version, the new issue ID; the `START_LOAD_GRACE` comment no longer names #85 |
 | `coordinator.py` | `interval_for` (§1, *What the owner sees*); the comment on the setup's car read, which describes the stop being forgotten |
 | `repairs.py` | The fix flow for the new issue (§4) |
@@ -286,10 +331,17 @@ The exact wording is settled in the plan.
 `switch.py` and `__init__.py` don't change. `diagnostics.py` doesn't either: it gives the control's state
 as it is.
 
-`charge_control.py` is 595 lines today and grows with this. The store's shape, its parsing and its
-migration move to a module of their own, `charge_control_store.py`, which the control uses through a
-small interface: load (with the corrupt-file check) and save of one stored-state object. That keeps the
-control to the rules, and lets the format be tested without a control.
+**The store module.** `charge_control.py` is 595 lines today and grows with this. The store's shape, its
+parsing and its migration move to `charge_control_store.py`, as the prices and the energy ledger have
+their stores. The control keeps the rules, and the format can be tested without a control. What the
+module gives the control:
+
+- **Load**, with three results the control tells apart: nothing stored (a first setup), unreadable (a
+  corrupt file or a wrong shape, which blocks starts), and the stored state. The file check runs in the
+  executor, before the load, because the load renames a corrupt file.
+- **Two saves,** both used today: the delayed one from callbacks, which isn't awaited, and the awaited
+  one at shutdown.
+- **Remove,** for `async_remove_charge_control`.
 
 ## 8. Docs, the quality scale and D50
 
@@ -299,32 +351,41 @@ control to the rules, and lets the format be tested without a control.
   - *Data updates*: the 30-second reads also run while a stop waits.
   - *Troubleshooting*: the new repair issue, and what to do. A corrupt saved start guard blocks starts.
   - A reconfigure section next to *Asked to sign in again*.
-  - *Known limitations*: a stop asked more than 30 minutes before Home Assistant comes back is not sent.
+  - *Known limitations*: a stop asked more than 30 minutes before Home Assistant comes back is not sent,
+    and a stored stop is sent to whatever charge is open.
+- **`docs/manual-testing.md`:** a reconfigure check, for the owner only, since it takes credentials.
 - **`CHANGELOG.md`**, under *Unreleased*: *Added* (reconfigure), *Changed* (a turn-off is tried again and
   ends in a repair issue instead of an error), *Fixed* (the lost stops of #85, #32 and #26; the corrupt
   store; the block's text after a restart).
-- **`quality_scale.yaml`:** `reconfiguration-flow` becomes `done`, without a comment. The
-  `action-exceptions` comment says that a turn-off that fails is tried again and ends in a repair issue
-  (D50), and that the other actions raise translated errors.
+- **`quality_scale.yaml`:**
+  - `reconfiguration-flow` becomes `done`, without a comment; it leaves the list of rules that
+    `tests/test_quality_scale.py` requires a comment for.
+  - The `action-exceptions` comment says that a turn-off that fails is tried again and ends in a repair
+    issue (D50), and that the other actions raise translated errors.
+  - The `appropriate-polling` comment says that the 30 s reads also run while a stop is stored, for at
+    most 30 minutes (D50).
 - **`docs/ha-notes.md`:** what the work teaches about `Store` (the corrupt file, the minor version), if it
   isn't there yet; decided in the learnings step.
 - **`docs/decisions.md`:** D50 below, and D29's status becomes `active; the 30 s reads while the charger
-  can't be read superseded by D31; what follows the 2 minutes superseded by D50`. D26 and D31 stand as
-  they are: the stop asked for during a pending start was never part of their text.
+  can't be read superseded by D31; what follows the 2 minutes, and the reads while a stop is stored,
+  superseded by D50`. D26 and D31 stand as they are: the stop asked for during a pending start was never
+  part of their text, and a stale read still changes nothing.
 
 ### D50: A stop is stored until the charge is seen off
 
 - **Date:** 2026-10-02 · **Status:** active
 - **Decision:** Turning *Charge* off stores the stop until a read shows the charge stopping or not open, or
   *Charge* is turned on. Meanwhile the stop is sent when a read shows the charge stoppable, never to a
-  charge that is stopping; a try fails when the call fails or when the charge is still on 2 minutes after
-  the charger accepted it. After 10 tries or 30 minutes from the ask, whichever is first, the control gives
-  up, logs an error and raises a repair issue. The charger is read every 30 s while a stop is stored,
-  within D31's limits. A start is still never retried.
+  charge that is stopping and never while a start is pending, with at least 2 minutes between tries; a try
+  fails when the call fails or when the charge is still on 2 minutes after the charger accepted it. A
+  failed try raises no error (a rejected session aside). After 10 tries or 30 minutes from the ask,
+  whichever is first, the control gives up, logs an error and raises a repair issue. The charger is read
+  every 30 s while a stop is stored, within D31's limits. A start is still never retried.
 - **Why:** A stop tied to the pending start was lost whenever that ended first (#85, #32, #26), and an
-  unattended stop from EV Smart Charging must actually stop the car. A charge has no start time, so the
-  stop's age is the only guard against stopping a later charge.
-- **Source:** this spec, Decisions and §1.
+  unattended stop from EV Smart Charging must actually stop the car. The stop isn't tied to one charge, so
+  its age bounds the chance of stopping a later one.
+- **Source:** [stop safety spec](superpowers/specs/2026-10-02-stop-safety-reconfigure-design.md),
+  Decisions and §1
 
 ## 9. Tests
 
@@ -335,22 +396,29 @@ stops a real charge.
   - one test per row of *The cases this closes*; for #85 that is a setup whose price read is rejected
     after the stop was queued, and a setup try that is slow, lets the deadline fire, and then fails, each
     followed by a setup that sends the stop;
-  - each row of the try table, with the warning and its number;
-  - every step of *Turning Charge off*, including a repeated turn-off that keeps the time and the count;
-  - every branch of *On a read*, including a stale read that may send but not end;
+  - each row of the outcome table, with the warning and its number;
+  - every step of *Turning Charge off*, including a repeated turn-off that keeps the time and the count,
+    and a turn-off during a pending start with a last read that shows a charge: no call;
+  - every branch of *On a read*, including a stale read, which neither sends nor ends, and an open
+    charger without a charge object, which gets no call;
+  - two reads in a row, and a turn-off followed by a read, make one call;
+  - a call that fails while the reads work makes the next call no sooner than 2 minutes later;
   - turning *Charge* on with a stop stored, on each path;
-  - the 10th failed try, and the 30 minutes with and without reads, at load with time left and at load
-    past the limit: the error, the issue, the switch's state;
+  - the 10th failed try, by a failed call and by an accepted one; the count across a reload;
+  - the 30 minutes with and without reads, at load with time left, at load past the limit, and at load
+    with a time in the future: the error, the issue, the switch's state;
   - no call is ever made to a charge that is `STOPPING` or not stoppable;
   - no test expects a second `start_charge()` call.
 - **The read interval** (`test_coordinator.py`): a stored stop gives 30 s reads, and 5 minutes once the
   last good read is 2 minutes old.
 - **Hardening** (`test_charge_control.py`): a corrupt file blocks, a missing file doesn't; the reason
   survives a reload for both keys; an unexpected exception from a start is translated and sets no block.
-- **The stored format:** minor 1 data with and without the flag and a block, data of a wrong shape, and
-  data of a newer minor version.
-- **The repair issue** (`test_repairs.py`): the confirm flow dismisses it; each way it is deleted without
-  the owner; it goes with the entry.
+  `hass_storage` replaces the store's load, and no file is on disk in tests, so the file check gets its
+  own seam; the plan picks it.
+- **The stored format** (`test_charge_control_store.py`, new): minor 1 data with and without the flag and
+  a block, each wrong shape of §3, and data of a newer minor version.
+- **The repair issue** (`test_repairs.py`): the confirm flow dismisses it and leaves a start block in
+  place; each way it is deleted without the owner; it goes with the entry.
 - **Reconfigure** (`test_config_flow.py`): success with a new email, each sign-in error and the recovery
   from it, another charger, one login call per submit, and that the device ID is the stored one.
 - **Texts and scale:** the existing checks on `strings.json` against `translations/en.json` and on

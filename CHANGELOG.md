@@ -22,8 +22,9 @@ All notable changes to this project are documented in this file. The format is b
 
 - A stop asked for right after a start could be lost: at a restart, at a reload, when the start took too
   long to show, or when the charger refused the stop. The car then kept charging.
-- A stop is no longer sent to a charger that is busy but has no charge yet.
+- A stop is no longer sent while the charger shows as busy but has no charge yet.
 - A damaged saved start guard now blocks starts, to be safe, instead of being read as "nothing saved".
+- An unexpected error at a start now shows the "Starting the charge failed" message instead of a raw error.
 - The repair issue for blocked starts keeps the right text after a restart.
 
 ## [0.5.0] - 2026-10-01

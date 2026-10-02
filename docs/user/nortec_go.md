@@ -149,8 +149,8 @@ the cable, Home Assistant sees a charge start (for example one started in the No
 confirm in the repair issue that Home Assistant creates. Find it under **Settings** > **System** >
 **Repairs**. *Charge status* shows *Start blocked* while this applies.
 
-Starts are also blocked, to be safe, if Home Assistant can't read its saved start guard. That also happens
-when the saved file is damaged. This clears the same way.
+Starts are also blocked, to be safe, if Home Assistant can't read its saved start guard, for example
+because the saved file is damaged. This clears the same way.
 
 After you turn *Charge* on, it shows on for up to 10 minutes while Home Assistant waits to see the charge
 start. If no charge is seen by then, starts are blocked. After a stop, the charger needs the cable unplugged
@@ -158,10 +158,11 @@ and replugged before the next start.
 
 The 10-minute limit also applies while the charger can't be read; the block clears the same way.
 
-After you turn *Charge* off, the switch shows off until Home Assistant has seen the charge stop. It sends
-the stop when the charger says the charge can be stopped, so a turn-off right after a start waits for the
-charge to open. *Charge status* shows *Stopping* for up to 2 minutes after the charger has accepted a stop,
-and turning *Charge* on in that time is refused.
+After you turn *Charge* off, the switch shows off until Home Assistant has seen the charge stop. Home
+Assistant sends the stop when the charger says the charge can be stopped, so a turn-off right after a start
+waits for the charge to open. *Charge status* shows *Stopping* in two cases: while a turn-off waits for a
+starting charge to open, and for up to 2 minutes after the charger has accepted a stop. Turning *Charge* on
+is refused only in the second.
 
 If a stop fails, or the charge is still running 2 minutes after the charger accepted it, Home Assistant
 tries again, at most once every 2 minutes. After 10 tries, or 30 minutes after you turned *Charge* off,
@@ -223,7 +224,8 @@ same reads. While a charge runs it grows with *Energy this charge*. When the cha
 the charge's final energy at the read that first lists the charge as completed (see *Known limitations* for
 when that doesn't happen).
 
-Turning *Charge* on or off reads the charger right away. To read the charger, the car and the prices now,
+Turning *Charge* on reads the charger right away when it starts a charge. Turning it off does too, unless
+the stop call fails or the charge is already stopping. To read the charger, the car and the prices now,
 press the *Refresh* button. From an automation, the `homeassistant.update_entity` action on any Nortec Go
 entity reads the charger, and the car if it wasn't read in the last few minutes, but not the prices (see
 *Automation examples*).
@@ -267,9 +269,8 @@ step on *Refresh* fails then too.
   follows a very short one, or that is first read late, can be missed there.
 - A hold that led to no charge is expected to expire by itself within about 7 days and can't be cancelled
   from Home Assistant.
-- A stop is given up after 10 tries or 30 minutes (see *Starting a charge*). A stop you asked for more than
-  30 minutes before Home Assistant came back from a restart or an outage is not sent; a repair issue tells
-  you instead.
+- A stop you asked for more than 30 minutes before Home Assistant came back from a restart or an outage is
+  not sent; a repair issue tells you instead.
 - A stop that is waiting is sent to whatever charge is open. If the charge it was meant for has ended and
   another one was started outside Home Assistant in the same 30 minutes, that one is stopped.
 - If Home Assistant can't read its saved start guard, a stop that was waiting is lost with it.
@@ -311,10 +312,13 @@ See *Starting a charge*.
 
 ### "A charge stop … couldn't be confirmed"
 
-You turned *Charge* off, and Home Assistant couldn't stop the charge or see it stop within 10 tries or 30
-minutes. The charge may still be running. Check the charger in the Nortec Go app and stop the charge there
-if needed. Turning *Charge* off again makes Home Assistant try again. The notice goes away by itself when
-Home Assistant sees that no charge is running, or when you turn *Charge* on.
+You turned *Charge* off, and Home Assistant couldn't stop the charge or see it stop, and has stopped trying
+(see *Starting a charge*). The charge may still be running. Check the charger in the Nortec Go app and stop
+the charge there if needed. Turning *Charge* off again makes Home Assistant try again.
+
+The notice goes away by itself when Home Assistant sees that the charge is stopping or that no charge is
+running, or when you turn *Charge* on. A turn-on that is refused because the charger has just accepted a
+stop leaves it. Selecting **Submit** in the notice only dismisses it.
 
 ### "The Nortec Go account … no longer has exactly one car"
 

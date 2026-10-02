@@ -33,22 +33,23 @@ Date: 2026-10-02 · Branch: `feat/stop-safety-reconfigure` · Issues: #85, #32, 
 
 ## Decisions
 
-Answered by the owner on 2026-10-02, in the brainstorm and in the questions the spec review raised.
+Answered by the owner on 2026-10-02, in the brainstorm and in the questions the spec review raised. The two
+rows marked *proposed* are put to the owner with this spec.
 
 | Topic | Decision |
 |---|---|
 | A stop that can't be done at once | It is stored and tried again; when that fails too, a repair issue tells the owner |
 | When a try has failed | Judged by the result: the call failed, or the charger accepted it and the charge is still on 2 minutes later |
 | How many tries | At most 10 `stop_charge()` calls for one stop asked; the count is stored with the stop |
-| Between tries | At least 2 minutes from one call's answer to the next call, whatever the outcome, also across a restart |
+| Between calls | At least 2 minutes from one `stop_charge()` call's answer to the next call, whatever the outcome, also across a restart and from one stop asked to the next |
 | How long | At most 30 minutes from when the stop was asked, also across a restart |
 | Whichever limit comes first | The control gives up: an error in the log, the repair issue, and the switch shows the charger's state again |
 | A charge that is stopping | No stop is sent to it, and seeing it ends the stored stop |
 | The log | A warning for every failed try, with its number; an error when the control gives up |
 | Which turn-offs | Every one, not only those asked during a pending start. A turn-off whose call fails raises no error, except a rejected session |
 | Which charge | The stop is not tied to one charge; its age is the guard (below) |
-| The notice after giving up | It stays until the charge is seen off, *Charge* is turned on, or the owner dismisses it; a new turn-off doesn't remove it |
-| A store that can't be read | A stop held in it is lost; the notice about the store says so |
+| The notice after giving up (proposed) | It stays until the charge is seen off, *Charge* is turned on, or the owner dismisses it; a new turn-off doesn't remove it |
+| A store that can't be read (proposed) | A stop held in it is lost; the notice about the store says so |
 | #26, corrupt store file | Fix: starts are blocked to be safe |
 | #26, block reason | Fix: stored with the block |
 | #26, stop lost across a reload | Fixed by the stored stop |
@@ -91,11 +92,13 @@ All of this is in `charge_control.py`, except the read interval (*What the owner
   on the pending start: ending the pending start leaves it alone.
 - **`stop_tries`**, the number of `stop_charge()` calls made for this stop. It is stored with the stop, so
   a restart or a reload doesn't start it again.
-- **`stop_tried_at`**, the time of the last try: set when the call is made and again when it is answered.
-  It is stored too, so the wait holds across a restart, a reload and a failed setup.
+- **`stop_tried_at`**, the time of the last `stop_charge()` call: set when the call is made and again when
+  it is answered. It is stored, and it belongs to the control, not to one stop: it stays when a stop is
+  done, given up or cleared.
 - **The wait:** from when a try is queued until 2 minutes after its answer (`STOP_CONFIRM_TIMEOUT`), no
-  other try is made. Starting it at the queueing keeps two reads from queueing two tries. At load, what is
-  left of the 2 minutes since `stop_tried_at` is waited out, and never more than 2 minutes.
+  other try is made, for this stop or a new one. Starting it at the queueing keeps two reads from queueing
+  two tries. At load, what is left of the 2 minutes since `stop_tried_at` is waited out, and never more
+  than 2 minutes.
 - **The pending stop** (D29) is the wait after a try the charger accepted: the switch shows off and
   *Charge status* shows *Stopping*. It is still not stored, and now exists only while a stop is stored.
 - `ChargeControlState.stop_asked` stays a flag for the entities and the coordinator: true while a stop is
@@ -107,7 +110,8 @@ In this section:
   `STOPPING`. An open charger without a charge object, which is seen right after a start, is not
   stoppable. Today's code sends the stop in that state; that is fixed on purpose;
 - **off** is a read that shows the charge `STOPPING`, or shows no charge open on a charger whose state is
-  known. A charger in an unknown state has the stop wait, as it has a start refused;
+  known. A charger in an unknown state with no charge object has the stop wait, as it has a start
+  refused; with a stoppable charge object it is tried like any other;
 - a **stale read** is one begun before the latest start attempt (the existing `start_attempts` check).
 
 ### When a try may be made
@@ -135,7 +139,8 @@ In this order, under the lock:
 So during a pending start no call is made, whatever the last read shows: the read that sees the charge
 ends the pending start and then tries.
 
-A turn-off after the control has given up is a new ask: a new stop with its own 10 tries and 30 minutes.
+A turn-off after the control has given up is a new ask: a new stop with its own 10 tries and 30 minutes,
+whose first try waits out what is left of the last call's 2 minutes.
 It doesn't delete the repair issue of §4, so an automation that keeps turning *Charge* off can't hide
 from the owner that the charge doesn't stop.
 
@@ -148,12 +153,14 @@ the charger accepted it.
 | The call | What happens |
 |---|---|
 | Accepted | The pending stop starts, and a read is requested, as today. If a read shows the charge off within the 2 minutes, the stop is done. If the 2 minutes pass first, the try has failed |
-| `NoActiveChargeError` | The stop is done: there is nothing to stop. A read is requested, as today |
+| `NoActiveChargeError` | The charger had no charge to stop when the client looked. That doesn't end the stop: the client gives this answer for an open charger without a charge object too. The stop stays stored, a read is requested, and that read decides: off ends the stop, anything else has it wait. No warning; the try is counted like any call |
 | `ChargeNotStoppableError`, or any other `NortecGoError` | The try has failed. The stop stays stored, and the wait runs its 2 minutes |
 | `AuthError` | The try has failed and the stop stays stored. Reauth starts at once. A turn-off raises the translated `auth_failed` error, as today |
 | Cancelled (a failed setup, Home Assistant stopping, a cancelled turn-off call) | The stop stays stored and the try stays counted. The 2 minutes run from when the call was made |
 
 A queued try that ends up making no call, because the check under the lock fails, ends its own wait.
+
+So only a read ends a stop as done: never a call's answer.
 
 - A failed try logs a warning with its number ("try 3 of 10") and what failed: the error's type and text,
   or that the charge was still on after the 2 minutes. Credentials are never part of it (hard rule 5).
@@ -181,8 +188,8 @@ A queued try that ends up making no call, because the check under the lock fails
    - **Otherwise** (open but not stoppable, or a wait running): the stop waits.
 4. **The block**, as today.
 
-A done stop is cleared with its count, its pending stop and its wait; the timers are cancelled and the
-state is saved.
+A done stop is cleared with its count and its pending stop; the 30-minute timer is cancelled and the
+state is saved. The wait runs on, so a stop asked right afterwards waits out what is left of it.
 
 The pending stop today ends on any charge state other than starting, charging and paused. It now ends on
 the same evidence as the stop: the charge off. For an open charge in an unknown state, or an open charger
@@ -198,9 +205,10 @@ without a charge object, it runs its 2 minutes, and the try has then failed.
 
 ### The limits
 
-- **10 tries:** counted as above. A failed call gives up when it was the 10th. An accepted 10th try gives
-  up when its 2 minutes pass. A stop that is loaded with 10 tries made gives up when what is left of its
-  wait has passed, at once if nothing is left.
+- **10 tries:** counted as above. A failed call gives up when it was the 10th. Otherwise a stop with 10
+  tries made gives up when the wait after the 10th has passed and the stop is still stored: an accepted
+  10th try, one answered "no active charge", and a stop that is loaded with 10 tries made (at once, if
+  nothing is left of its wait).
 - **The wait's timer** fires 2 minutes after the answer whether or not the charger is read. It ends the
   wait and the pending stop, and marks an accepted try as failed. It replaces today's stop timer.
 - **30 minutes:** a timer set when the stop is stored, which fires whether or not the charger is read, as
@@ -215,7 +223,8 @@ without a charge object, it runs its 2 minutes, and the try has then failed.
   same stop, as today's timers check their `since`. Both timers are cancelled with the others when a setup
   fails and at unload, so an old control can't clear what a new one has loaded.
 
-With 2 minutes between tries, 10 tries take about 20 minutes, inside the 30.
+Each try waits 2 minutes from its answer, and the next comes with a read up to 30 s later, so 10 tries
+take 20 to 25 minutes, inside the 30.
 
 ### The start deadline
 
@@ -241,7 +250,7 @@ sent.
 
 | Case | Today | With this |
 |---|---|---|
-| #85, case 1: the setup fails after the stop is queued | The stop is cleared and saved, then its task is cancelled | The stop is still stored; the next setup's read sends it |
+| #85, case 1: the setup fails after the stop is queued | The stop is cleared and saved, then its task is cancelled | The stop is still stored; the next setup's read sends it, once what is left of the 2 minutes has passed |
 | #85, case 2: the deadline fires before the first read | The stop is cleared and saved | The stop outlives the deadline; the first read sends it or ends it |
 | #32: the charger refuses the stop | A warning in the log | Not sent while the read says it can't be stopped; tried again every 2 minutes when a call fails; the repair issue after 10 tries or 30 minutes |
 | #26: a reload between the read and the stop | The stop is skipped | `async_shutdown` saves the stop, and the reloaded control sends it |
@@ -274,10 +283,11 @@ The charge control's store keeps version 1 and gets minor version 2, with a migr
 | `stop_asked` | A flag | Gone |
 | `stop_asked_since` | Not there | A time or null |
 | `stop_tries` | Not there | A whole number from 0 to 10; 0 without a stop |
-| `stop_tried_at` | Not there | A time or null; null without a stop or before its first try |
+| `stop_tried_at` | Not there | A time or null; null until the first stop call |
 
 - **Wrong shapes**, which block starts as today: a missing key, a value of the wrong type, a block with a
-  null or unknown reason, a reason without a block, tries or a try's time without a stop, tries above 10.
+  null or unknown reason, a reason without a block, tries above 0 without a stop or without a try's time,
+  tries above 10.
 - **Migration from minor 1:**
   - A set `stop_asked` flag becomes `stop_asked_since` with the pending start's time: the flag was only
     ever set during a pending start. That time is earlier than the real one, so the stop only expires
@@ -388,21 +398,21 @@ module gives the control:
   - The `action-exceptions` comment says that a turn-off that fails is tried again and ends in a repair
     issue (D50), and that the other actions raise translated errors.
   - The `appropriate-polling` comment says that the 30 s reads also run while a stop is stored, for at
-    most 30 minutes (D50).
+    most 30 minutes per stop asked (D50).
 - **`docs/ha-notes.md`:** what the work teaches about `Store` (the corrupt file, the minor version), if it
   isn't there yet; decided in the learnings step.
 - **`docs/decisions.md`:** D50 below, and D29's status becomes `active; the 30 s reads while the charger
-  can't be read superseded by D31; what ends the pending stop, what follows the 2 minutes, and the reads while a stop
-  is stored, superseded by D50`. D26 and D31 stand as they are: the stop asked for during a pending start was never
-  part of their text, and a stale read still changes nothing.
+  can't be read superseded by D31; what ends the pending stop, what follows the 2 minutes, and the reads
+  while a stop is stored, superseded by D50`. D26 and D31 stand as they are: the stop asked for during a
+  pending start was never part of their text, and a stale read still changes nothing.
 
 ### D50: A stop is stored until the charge is seen off
 
 - **Date:** 2026-10-02 · **Status:** active
-- **Decision:** Turning *Charge* off stores the stop until a read shows the charge stopping or not open, or
-  *Charge* is turned on. Meanwhile the stop is sent, at the turn-off or when a read shows the charge stoppable,
-  never to a charge that is stopping and never while a start is pending, with at least 2 minutes between
-  tries; a try
+- **Decision:** Turning *Charge* off stores the stop until a read shows the charge off (stopping, or
+  not open on a charger whose state is known), or *Charge* is turned on. Meanwhile the stop is sent, at
+  the turn-off or when a read shows the charge stoppable, never to a charge that is stopping and never while a start is pending, with at least 2 minutes between
+  two stop calls; a try
   fails when the call fails or when the charge is still on 2 minutes after the charger accepted it. A
   failed try raises no error (a rejected session aside). After 10 tries or 30 minutes from the ask,
   whichever is first, the control gives up, logs an error and raises a repair issue that a new turn-off
@@ -423,7 +433,10 @@ stops a real charge.
   - one test per row of *The cases this closes*; for #85 that is a setup whose price read is rejected
     after the stop was queued, and a setup try that is slow, lets the deadline fire, and then fails, each
     followed by a setup that sends the stop;
-  - each row of the outcome table, with the warning and its number;
+  - each row of the outcome table, with the warning and its number; "no active charge" followed by a
+    read that shows an open charger keeps the stop, and by a read that shows the charge off ends it;
+  - a turn-off right after a give-up, and a turn-on then a turn-off right after a failed call, make no
+    call before the 2 minutes have passed;
   - every step of *Turning Charge off*, including a repeated turn-off that keeps the time and the count,
     and a turn-off during a pending start with a last read that shows a charge: no call;
   - every branch of *On a read*, including a stale read, which neither sends nor ends, and an open

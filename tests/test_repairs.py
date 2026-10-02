@@ -1,5 +1,6 @@
 """Tests for the Nortec Go repair fix flows."""
 
+from datetime import timedelta
 from http import HTTPStatus
 import json
 from pathlib import Path
@@ -14,11 +15,16 @@ from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.setup import async_setup_component
-from pynortecgo import VehicleNotFoundError
+from homeassistant.util import dt as dt_util
+from pynortecgo import ChargerState, ChargeState, VehicleNotFoundError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
-from custom_components.nortec_go.const import CAR_GONE_ISSUE_ID, DOMAIN
+from custom_components.nortec_go.const import (
+    CAR_GONE_ISSUE_ID,
+    DOMAIN,
+    STOP_FAILED_ISSUE_ID,
+)
 from custom_components.nortec_go.coordinator import car_device_identifier
 
 from .conftest import FAKE_CHARGER_ID, make_charger, setup_integration
@@ -183,6 +189,113 @@ async def test_car_gone_fix_aborts_without_the_entry(
     flow = await _start_fix(client, issue_id)
     assert flow["type"] == "abort"
     assert flow["reason"] == "entry_not_found"
+
+
+def _given_up(
+    hass_storage: dict[str, Any], entry: MockConfigEntry, *, blocked: bool = False
+) -> None:
+    """A stored stop past its 30 minutes: the control gives up at load and raises the issue."""
+    key = f"nortec_go.{entry.entry_id}.charge_control"
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": key,
+        "data": {
+            "blocked_since": "2026-09-26T20:00:00+00:00" if blocked else None,
+            "block_reason": "start_blocked" if blocked else None,
+            "start_pending_since": None,
+            "stop_asked_since": (dt_util.utcnow() - timedelta(minutes=31)).isoformat(),
+            "stop_tries": 0,
+            "stop_tried_at": None,
+        },
+    }
+
+
+async def test_stop_failed_fix_dismisses_the_issue(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_storage: dict[str, Any],
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+) -> None:
+    """Confirming the stop notice dismisses it and calls nothing."""
+    _given_up(hass_storage, mock_config_entry)
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING
+    )
+    await setup_integration(hass, mock_config_entry)
+    assert await async_setup_component(hass, "repairs", {})
+    issue_id = STOP_FAILED_ISSUE_ID.format(entry_id=mock_config_entry.entry_id)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+    client = await hass_client()
+    flow = await _start_fix(client, issue_id)
+    assert flow["step_id"] == "confirm"
+    resp = await client.post(f"/api/repairs/issues/fix/{flow['flow_id']}", json={})
+    assert (await resp.json())["type"] == "create_entry"
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+    mock_client.stop_charge.assert_not_awaited()
+    mock_client.start_charge.assert_not_awaited()
+
+
+async def test_stop_failed_fix_leaves_a_start_block(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_storage: dict[str, Any],
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+) -> None:
+    """Confirming the stop notice while starts are blocked leaves the block and its issue in place."""
+    _given_up(hass_storage, mock_config_entry, blocked=True)
+    # An unknown charger state: neither "off", which would delete the notice, nor evidence
+    # that clears the block.
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, state=ChargerState.UNKNOWN
+    )
+    await setup_integration(hass, mock_config_entry)
+    assert await async_setup_component(hass, "repairs", {})
+    issue_id = STOP_FAILED_ISSUE_ID.format(entry_id=mock_config_entry.entry_id)
+    client = await hass_client()
+    flow = await _start_fix(client, issue_id)
+    resp = await client.post(f"/api/repairs/issues/fix/{flow['flow_id']}", json={})
+    assert (await resp.json())["type"] == "create_entry"
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+    assert mock_config_entry.runtime_data.data.control.blocked
+    assert (
+        ir.async_get(hass).async_get_issue(
+            DOMAIN, f"start_blocked_{mock_config_entry.entry_id}"
+        )
+        is not None
+    )
+
+
+def test_stop_failed_texts() -> None:
+    """The stop notice's texts, word for word, and the two errors a turn-off no longer raises are gone."""
+    strings = json.loads(
+        (
+            Path(__file__).parent.parent / "custom_components" / DOMAIN / "strings.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert strings["issues"]["stop_failed"] == {
+        "title": "A charge stop on {name} couldn't be confirmed",
+        "fix_flow": {
+            "step": {
+                "confirm": {
+                    "title": "The charge on {name} may still be running",
+                    "description": (
+                        "You turned Charge off, but Home Assistant couldn't stop the charge"
+                        " or see it stop, and has stopped trying. The charge may still be"
+                        " running.\n\nCheck the charger in the Nortec Go app and stop the"
+                        " charge there if needed. Turning Charge off again makes Home"
+                        " Assistant try again. Select **Submit** to dismiss this notice."
+                    ),
+                }
+            }
+        },
+    }
+    assert "charge_not_stoppable" not in strings["exceptions"]
+    assert "stop_failed" not in strings["exceptions"]
 
 
 def test_car_gone_texts() -> None:

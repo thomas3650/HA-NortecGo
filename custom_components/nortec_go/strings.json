@@ -162,12 +162,6 @@
     "auth_failed": {
       "message": "The Nortec Go session was rejected. Sign in again from the repair notice."
     },
-    "charge_not_stoppable": {
-      "message": "The charge can't be stopped right now."
-    },
-    "stop_failed": {
-      "message": "Stopping the charge failed; it may have stopped anyway. Check the charger."
-    },
     "stop_pending": {
       "message": "A stop is under way. Try again when it has ended."
     },
@@ -225,6 +219,17 @@
         },
         "abort": {
           "not_loaded": "The Nortec Go integration isn't loaded. Reload it and try again."
+        }
+      }
+    },
+    "stop_failed": {
+      "title": "A charge stop on {name} couldn't be confirmed",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "The charge on {name} may still be running",
+            "description": "You turned Charge off, but Home Assistant couldn't stop the charge or see it stop, and has stopped trying. The charge may still be running.\n\nCheck the charger in the Nortec Go app and stop the charge there if needed. Turning Charge off again makes Home Assistant try again. Select **Submit** to dismiss this notice."
+          }
         }
       }
     },

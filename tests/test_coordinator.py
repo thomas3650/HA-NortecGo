@@ -155,6 +155,21 @@ _PENDING = ChargeControlState(start_pending=True)
             ChargeControlState(blocked=True),
             INTERVAL_IDLE,
         ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_asked=True),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.PAUSED),
+            ChargeControlState(stop_asked=True),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True),
+            ChargeControlState(blocked=True, stop_asked=True),
+            INTERVAL_CHANGING,
+        ),
     ],
 )
 def test_interval_for(
@@ -1771,6 +1786,24 @@ _STOPPING = make_charger(is_connected=True, charge_state=ChargeState.STOPPING)
             ChargeControlState(),
             timedelta(hours=5),
             INTERVAL_IDLE,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_asked=True),
+            timedelta(minutes=1, seconds=50),
+            INTERVAL_CHANGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_asked=True),
+            timedelta(minutes=2),
+            INTERVAL_CHARGING,
+        ),
+        (
+            make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
+            ChargeControlState(stop_asked=True, stop_pending=True),
+            timedelta(minutes=3),
+            INTERVAL_CHANGING,
         ),
     ],
 )

@@ -84,8 +84,11 @@ class NortecGoData:
 def interval_for(
     charger: Charger, control: ChargeControlState, age: timedelta
 ) -> timedelta:
-    """The next polling interval, from the charge status and the last good read's age (D29, D31)."""
-    if charge_status(charger, control) in ("starting", "stopping"):
+    """The next polling interval, from the charge status, a stop asked for and the last good read's age (D29, D31, D50)."""
+    if control.stop_asked or charge_status(charger, control) in (
+        "starting",
+        "stopping",
+    ):
         if control.start_pending or control.stop_pending or age < FAST_READ_MAX_AGE:
             return INTERVAL_CHANGING
         return INTERVAL_CHARGING  # the charger's own state, not seen for a while: a charge is open
@@ -212,8 +215,8 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         read_at = dt_util.utcnow()
         setup = self.data is None
         if setup:
-            # The car first: a setup that fails on it must leave the charge control as loaded,
-            # or a stop asked for before the restart is sent and cancelled, or forgotten (D44).
+            # The car first: a setup that fails on it must leave the charge control as loaded
+            # (D44). A stop it had queued would be cancelled, and wait 2 minutes for its next try (D50).
             self._car_read_at = read_at
             vehicle = await self._async_read_setup_vehicle()
         self.charge_control.on_charger_read(charger, start_attempts)

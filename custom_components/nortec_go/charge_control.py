@@ -41,7 +41,9 @@ from .const import (
     START_BLOCKED_ISSUE_ID,
     START_CONFIRM_TIMEOUT,
     START_LOAD_GRACE,
+    STOP_ASKED_MAX_AGE,
     STOP_CONFIRM_TIMEOUT,
+    STOP_FAILED_ISSUE_ID,
     STOP_MAX_TRIES,
 )
 from .entry import NortecGoConfigEntry
@@ -110,6 +112,10 @@ def _charge_happened(charger: Charger) -> bool:
 
 _CHARGE_OVER = (ChargeState.STOPPING, ChargeState.COMPLETED)
 
+# Why the control gave up on a stop, for the log.
+_NO_STOP_SEEN = f"no stop seen after {STOP_MAX_TRIES} tries"
+_TOO_OLD = f"it was asked for more than {STOP_ASKED_MAX_AGE} ago"
+
 
 def is_stoppable(charger: Charger) -> bool:
     """A charge the read says can be stopped, and that isn't ending already (D50).
@@ -155,11 +161,12 @@ def charge_status(charger: Charger, control: ChargeControlState) -> str | None:
 
 
 async def async_remove_charge_control(hass: HomeAssistant, entry_id: str) -> None:
-    """Delete an entry's stored charge control and its repair issue."""
+    """Delete an entry's stored charge control and its repair issues."""
     await ChargeControlStore(hass, entry_id).async_remove()
     ir.async_delete_issue(
         hass, DOMAIN, START_BLOCKED_ISSUE_ID.format(entry_id=entry_id)
     )
+    ir.async_delete_issue(hass, DOMAIN, STOP_FAILED_ISSUE_ID.format(entry_id=entry_id))
 
 
 class ChargeControl:
@@ -194,6 +201,7 @@ class ChargeControl:
         self._stop_pending_since: datetime | None = None
         self._start_timer: CALLBACK_TYPE | None = None
         self._wait_timer: CALLBACK_TYPE | None = None
+        self._limit_timer: CALLBACK_TYPE | None = None
         entry.async_on_unload(self._async_close)
         self._remembered: ChargerState | None = None
         self._last_charger: Charger | None = None
@@ -227,12 +235,22 @@ class ChargeControl:
         self._block_reason = stored.block_reason
         self._stop_tries = stored.stop_tries
         self._stop_tried_at = stored.stop_tried_at
-        self._stop_asked_since = stored.stop_asked_since
         if stored.stop_tried_at is not None:
             left = STOP_CONFIRM_TIMEOUT - (dt_util.utcnow() - stored.stop_tried_at)
             if left > timedelta(0):
                 # Never more than the full wait: a stored time in the future is a clock change.
                 self._set_wait(min(left, STOP_CONFIRM_TIMEOUT))
+        asked = stored.stop_asked_since
+        if asked is not None:
+            left = STOP_ASKED_MAX_AGE - (dt_util.utcnow() - asked)
+            if left <= timedelta(0):
+                # No grace here, unlike the start's: a stop this old can't be trusted to
+                # belong to the charge that is open now (D50).
+                self._give_up(_TOO_OLD)
+            elif self._stop_tries >= STOP_MAX_TRIES and self._wait_timer is None:
+                self._give_up(_NO_STOP_SEEN)
+            else:
+                self._set_stop_asked(asked, min(left, STOP_ASKED_MAX_AGE))
         pending_since = stored.start_pending_since
         if pending_since is not None:
             left = START_CONFIRM_TIMEOUT - (dt_util.utcnow() - pending_since)
@@ -250,6 +268,7 @@ class ChargeControl:
                 raise ServiceValidationError(
                     translation_domain=DOMAIN, translation_key="stop_pending"
                 )
+            self._delete_stop_issue()
             if self._stop_asked_since is not None:
                 # The owner asks for a charge: the stop is off, whatever the start then does (D50).
                 self._clear_stop()
@@ -330,7 +349,7 @@ class ChargeControl:
             ):
                 return
             if self._stop_asked_since is None:
-                self._stop_asked_since = dt_util.utcnow()
+                self._set_stop_asked(dt_util.utcnow())
                 self._changed()
             # A last read without a charge, or no read, still gets a call: the read may be old.
             # An open charge that isn't stoppable (not yet, or completed) gets none: a read decides.
@@ -404,6 +423,8 @@ class ChargeControl:
                 STOP_MAX_TRIES,
                 failed,
             )
+            if tries >= STOP_MAX_TRIES:
+                self._give_up(_NO_STOP_SEEN)
         self._on_change()
         if rejected and from_turn_off:
             raise HomeAssistantError(
@@ -441,16 +462,22 @@ class ChargeControl:
         ):
             self._end_start_pending()
             changed = True
-        if self._stop_asked_since is not None and self._pending_since is None:
-            if is_charge_off(charger):
+        if self._pending_since is None and is_charge_off(charger):
+            # Evidence the charge is off: the notice about a stop that failed goes too.
+            self._delete_stop_issue()
+            if self._stop_asked_since is not None:
                 # Only a read ends a stop as done (D50).
                 self._clear_stop()
                 changed = True
-            elif is_stoppable(charger) and self._may_try():
-                self._try_queued = True
-                self._entry.async_create_background_task(
-                    self._hass, self._async_background_stop(), f"{DOMAIN} stop"
-                )
+        elif (
+            self._stop_asked_since is not None
+            and is_stoppable(charger)
+            and self._may_try()
+        ):
+            self._try_queued = True
+            self._entry.async_create_background_task(
+                self._hass, self._async_background_stop(), f"{DOMAIN} stop"
+            )
         if self._blocked_since is not None:
             released = (
                 self._remembered is ChargerState.BUSY_NON_RELEASED
@@ -526,11 +553,39 @@ class ChargeControl:
             self._set_block("start_blocked")
             self._changed()
 
+    def _set_stop_asked(
+        self, since: datetime, delay: timedelta = STOP_ASKED_MAX_AGE
+    ) -> None:
+        """A stop asked for since `since`; its timer gives up after `delay`, read or no read (D31, D50)."""
+        self._stop_asked_since = since
+        self._cancel_limit_timer()
+
+        @callback
+        def _due(_now: datetime) -> None:
+            self._limit_timer = None
+            self._entry.async_create_background_task(
+                self._hass, self._async_limit_due(since), f"{DOMAIN} stop limit"
+            )
+
+        self._limit_timer = async_call_later(
+            self._hass,
+            delay,
+            HassJob(_due, f"{DOMAIN} stop limit", cancel_on_shutdown=True),
+        )
+
     def _clear_stop(self) -> None:
         """End the stop asked for; the wait between two calls runs on (D50)."""
         self._stop_asked_since = None
         self._stop_tries = 0
         self._stop_pending_since = None
+        self._cancel_limit_timer()
+
+    async def _async_limit_due(self, since: datetime) -> None:
+        """The 30 minutes' end, under the lock (D50)."""
+        async with self._lock:
+            if self._closed or self._stop_asked_since != since:
+                return
+            self._give_up(_TOO_OLD)
 
     def _set_wait(self, delay: timedelta = STOP_CONFIRM_TIMEOUT) -> None:
         """No stop call for `delay`; the timer then judges an accepted try (D29, D50)."""
@@ -557,17 +612,46 @@ class ChargeControl:
         async with self._lock:
             if self._closed or self._stop_tried_at != tried_at:
                 return
-            if self._stop_pending_since is None:
-                return  # its stop is done or cleared, or the call wasn't accepted
-            self._stop_pending_since = None
-            _LOGGER.warning(
-                "Stopping the charge failed (try %d of %d): %s",
-                self._stop_tries,
-                STOP_MAX_TRIES,
-                f"the charge was still on {STOP_CONFIRM_TIMEOUT} after the charger"
-                " accepted the stop",
-            )
-            self._on_change()
+            if self._stop_pending_since is not None:
+                self._stop_pending_since = None
+                _LOGGER.warning(
+                    "Stopping the charge failed (try %d of %d): %s",
+                    self._stop_tries,
+                    STOP_MAX_TRIES,
+                    f"the charge was still on {STOP_CONFIRM_TIMEOUT} after the charger"
+                    " accepted the stop",
+                )
+                self._on_change()
+            if (
+                self._stop_asked_since is not None
+                and self._stop_tries >= STOP_MAX_TRIES
+            ):
+                self._give_up(_NO_STOP_SEEN)
+
+    def _give_up(self, why: str) -> None:
+        """Stop trying: tell the owner, and show the charger's state again (D50)."""
+        _LOGGER.error("Giving up on the stop asked for: %s", why)
+        self._clear_stop()
+        ir.async_create_issue(
+            self._hass,
+            DOMAIN,
+            STOP_FAILED_ISSUE_ID.format(entry_id=self._entry.entry_id),
+            is_fixable=True,
+            # The charge may still run after a restart, and nothing else brings the notice back.
+            is_persistent=True,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key="stop_failed",
+            translation_placeholders={"name": self._entry.title},
+            data={"entry_id": self._entry.entry_id},
+        )
+        self._changed()
+
+    def _delete_stop_issue(self) -> None:
+        ir.async_delete_issue(
+            self._hass,
+            DOMAIN,
+            STOP_FAILED_ISSUE_ID.format(entry_id=self._entry.entry_id),
+        )
 
     def _cancel_start_timer(self) -> None:
         if self._start_timer is not None:
@@ -579,10 +663,16 @@ class ChargeControl:
             self._wait_timer()
             self._wait_timer = None
 
+    def _cancel_limit_timer(self) -> None:
+        if self._limit_timer is not None:
+            self._limit_timer()
+            self._limit_timer = None
+
     @callback
     def _cancel_timers(self) -> None:
         self._cancel_start_timer()
         self._cancel_wait_timer()
+        self._cancel_limit_timer()
 
     @callback
     def _async_close(self) -> None:

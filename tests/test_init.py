@@ -12,7 +12,7 @@ from freezegun.api import FrozenDateTimeFactory
 from homeassistant import loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL, STATE_UNAVAILABLE
-from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN, HomeAssistant
+from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN, HassJob, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     device_registry as dr,
@@ -21,10 +21,12 @@ from homeassistant.helpers import (
 )
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
+from homeassistant.util.async_ import get_scheduled_timer_handles
 from pynortecgo import (
     AuthError,
     ChargeStartError,
     ChargeStartStep,
+    ChargeState,
     MultipleVehiclesError,
     NortecGoConnectionError,
     VehicleNotFoundError,
@@ -35,7 +37,11 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from custom_components.nortec_go.const import DOMAIN
+from custom_components.nortec_go.const import (
+    DOMAIN,
+    START_LOAD_GRACE,
+    STOP_CONFIRM_TIMEOUT,
+)
 from custom_components.nortec_go.coordinator import car_device_identifier
 from custom_components.nortec_go.entry import tokens_from_data
 
@@ -537,3 +543,198 @@ async def test_failed_setup_leaves_no_start_timer(
     )
     assert issue is None
     assert hass_storage[key]["data"]["blocked_since"] is None
+
+
+def _control_data(**changes: Any) -> dict[str, Any]:
+    """The charge control's stored data in the minor version 2 shape, idle unless told otherwise."""
+    return {
+        "blocked_since": None,
+        "block_reason": None,
+        "start_pending_since": None,
+        "stop_asked_since": None,
+        "stop_tries": 0,
+        "stop_tried_at": None,
+        **changes,
+    }
+
+
+def _timers(hass: HomeAssistant, name: str) -> int:
+    """The scheduled, not cancelled timers whose job has this name."""
+    return sum(
+        1
+        for handle in get_scheduled_timer_handles(hass.loop)
+        if not handle.cancelled()
+        and handle._args  # noqa: SLF001
+        and isinstance(job := handle._args[-1], HassJob)  # noqa: SLF001
+        and job.name == name
+    )
+
+
+async def test_stop_survives_a_setup_that_fails_on_the_price_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A stop queued by the setup's charger read, then cancelled by a rejected price read, is sent by the next setup (#85, case 1)."""
+    key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    now = dt_util.utcnow().isoformat()
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": key,
+        "data": _control_data(start_pending_since=now, stop_asked_since=now),
+    }
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING
+    )
+    never = asyncio.Event()
+
+    async def _stop_in_flight() -> None:
+        await never.wait()
+
+    mock_client.stop_charge.side_effect = _stop_in_flight
+    mock_client.get_price_forecast.side_effect = AuthError("token rejected")
+    with patch.object(ConfigEntry, "async_start_reauth_if_available"):
+        await setup_integration(hass, mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
+    assert (
+        mock_client.stop_charge.await_count == 1
+    )  # made, then cancelled with the setup
+    # The entry closed the control before it cancelled the call, so the call's end armed no
+    # wait on the dead control, and its 30-minute timer went with the others.
+    assert _timers(hass, f"{DOMAIN} stop wait") == 0
+    assert _timers(hass, f"{DOMAIN} stop limit") == 0
+    async_fire_time_changed(hass)  # a delayed save's timer
+    await hass.async_block_till_done()
+    stored = hass_storage[key]["data"]
+    assert stored["start_pending_since"] is None  # the read saw the charge
+    assert stored["stop_asked_since"] == now  # the stop is still asked
+    assert stored["stop_tries"] == 1
+
+    mock_client.stop_charge.side_effect = None
+    mock_client.get_price_forecast.side_effect = None
+    # True for a loaded entry (mypy has narrowed the entry's state to the failed one above).
+    assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert (
+        mock_client.stop_charge.await_count == 1
+    )  # the 2 minutes since the call still run
+    assert not mock_config_entry.runtime_data.data.control.start_pending
+    assert mock_config_entry.runtime_data.data.control.stop_asked
+
+    freezer.tick(STOP_CONFIRM_TIMEOUT + timedelta(seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    await mock_config_entry.runtime_data.async_read_now()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert mock_client.stop_charge.await_count == 2
+    mock_client.start_charge.assert_not_awaited()
+
+
+async def test_stop_survives_the_start_deadline_at_a_slow_setup(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A setup try that is slow, lets the start deadline fire and then fails keeps the stop; the next setup sends it (#85, case 2)."""
+    key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    now = dt_util.utcnow()
+    asked = (now - timedelta(minutes=5)).isoformat()
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": key,
+        "data": _control_data(
+            start_pending_since=(now - timedelta(minutes=9)).isoformat(),
+            stop_asked_since=asked,
+        ),
+    }
+
+    async def _slow_then_fails() -> None:
+        # The read outlasts the pending start's deadline at a load (START_LOAD_GRACE), then fails.
+        freezer.tick(START_LOAD_GRACE + timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await asyncio.sleep(0)
+        raise NortecGoConnectionError("network down")
+
+    mock_client.get_charger.side_effect = _slow_then_fails
+    await setup_integration(hass, mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+    async_fire_time_changed(hass)  # a delayed save's timer
+    await hass.async_block_till_done()
+    stored = hass_storage[key]["data"]
+    assert stored["start_pending_since"] is None  # the deadline ended the pending start
+    assert stored["blocked_since"] is not None
+    assert stored["stop_asked_since"] == asked  # and no longer the stop
+
+    mock_client.get_charger.side_effect = None
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING
+    )
+    # True for a loaded entry (mypy has narrowed the entry's state to the failed one above).
+    assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    mock_client.stop_charge.assert_awaited_once()
+    assert (
+        not mock_config_entry.runtime_data.data.control.blocked
+    )  # the charge seen clears it (D26)
+    mock_client.start_charge.assert_not_awaited()
+
+
+async def test_old_format_stop_is_sent_after_the_upgrade(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A stop asked for under the old stored format is migrated, not turned into a block, and sent."""
+    key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    hass_storage[key] = {
+        "version": 1,
+        "key": key,
+        "data": {
+            "blocked_since": None,
+            "start_pending_since": dt_util.utcnow().isoformat(),
+            "stop_asked": True,
+        },
+    }
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING
+    )
+    await setup_integration(hass, mock_config_entry)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert not mock_config_entry.runtime_data.data.control.blocked
+    mock_client.stop_charge.assert_awaited_once()
+    assert hass_storage[key]["minor_version"] == 2
+
+
+async def test_removal_removes_the_stop_issue(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Removing the entry removes the stop notice a give-up at load raised."""
+    key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": key,
+        "data": _control_data(
+            stop_asked_since=(dt_util.utcnow() - timedelta(minutes=31)).isoformat()
+        ),
+    }
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True, charge_state=ChargeState.CHARGING
+    )
+    await setup_integration(hass, mock_config_entry)
+    issue_id = f"stop_failed_{mock_config_entry.entry_id}"
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+    await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None

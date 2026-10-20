@@ -36,6 +36,10 @@ FAKE_LAST_SEEN = datetime(2026, 9, 26, 8, 30, tzinfo=UTC)
 FAKE_CHARGE_ID = "fake-charge-id"  # make_charger's charge ID while a charge is open
 FAKE_LAST_CHARGE_ID = "fake-last-charge-id"  # differs, so no swap by accident
 FAKE_COMPLETED_AT = datetime(2026, 9, 25, 6, 15, tzinfo=UTC)
+# make_charger's open charge start
+FAKE_STARTED_AT = datetime(2026, 9, 27, 9, 30, tzinfo=UTC)
+# make_completed_charge's start, before FAKE_COMPLETED_AT
+FAKE_LAST_STARTED_AT = datetime(2026, 9, 25, 3, 45, tzinfo=UTC)
 DEFAULT_FORECAST_START = datetime(2026, 9, 26, 22, 0, tzinfo=UTC)
 FAKE_TOKENS = Tokens(
     access_token="fake-access-token",
@@ -63,8 +67,11 @@ def make_charger(
     last_charge: CompletedCharge | None = None,
     charge_id: str = FAKE_CHARGE_ID,
     can_stop: bool = True,
+    started_at: datetime | None = FAKE_STARTED_AT,
 ) -> Charger:
     """Return a charger; idle and unplugged unless told otherwise.
+
+    `started_at` may be None: the client allows an open charge with no start time.
 
     A charge value (`charge_kwh`, `charge_kw`, `charge_cost`) needs a `charge_state`:
     without one there is no open charge to hold it, so the call is refused.
@@ -102,6 +109,7 @@ def make_charger(
             kwh=charge_kwh,
             kw=charge_kw,
             cost=charge_cost,
+            started_at=started_at,
         ),
         last_charge=last_charge,
     )
@@ -112,10 +120,17 @@ def make_completed_charge(
     charge_id: str = FAKE_LAST_CHARGE_ID,
     cost: float = 42.5,
     kwh: float = 18.4,
+    started_at: datetime = FAKE_LAST_STARTED_AT,
     completed_at: datetime = FAKE_COMPLETED_AT,
 ) -> CompletedCharge:
     """Return a completed charge with fake values; its ID differs from an open charge's."""
-    return CompletedCharge(id=charge_id, cost=cost, kwh=kwh, completed_at=completed_at)
+    return CompletedCharge(
+        id=charge_id,
+        cost=cost,
+        kwh=kwh,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
 
 
 def make_vehicle(

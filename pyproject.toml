@@ -16,7 +16,7 @@ dev = [
   "shellcheck-py",
   "zizmor",
   "types-PyYAML",
-  "pynortecgo==0.8.0",
+  "pynortecgo==0.10.0",
 ]
 
 [tool.pytest.ini_options]

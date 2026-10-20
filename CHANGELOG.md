@@ -11,7 +11,7 @@ All notable changes to this project are documented in this file. The format is b
 - The log no longer warns at every restart that the car's power-delivery state is unknown when the car is
   unplugged or done charging.
 - A time out of range in a reply from the service no longer causes an unhandled error:
-  - a failed charger read shows the "unexpected reply" error;
+  - a failed charger read shows the error that the service sent an answer the integration doesn't understand;
   - a failed car or price read keeps its last values and is tried again (a failed car read at setup retries
     the setup);
   - in the charge history, it means no last charge.

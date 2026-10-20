@@ -44,8 +44,8 @@ Date: 2026-10-20 · Branch: `process/controller-merge` · Issue: #116
   The owner is the one deciding, so the owner's word covers them.
 - **Not with the PO flow:** the controller doesn't merge, but tells the owner, when:
   - the PR has an entry in `.git/po-sessions.json`. §8 owns it;
-  - a PO session of this repo runs (`scripts/sessions.py running` lists one named `po`; D49). Then it
-    merges no PR at all: the PO owns the main checkout and the merge queue.
+  - a PO session of this repo runs (`scripts/sessions.py running` lists one named `po`; D49), or the
+    controller can't tell. Then it merges no PR at all: the PO owns the main checkout and the merge queue.
 - **The word is tied to a head:** when the word comes, the controller records the PR's head (`headRefOid`)
   and the time.
 - **One word, one merge:**
@@ -65,7 +65,8 @@ follows them with these differences:
 2. **Behind `main`** (merge step 1): the controller doesn't merge.
    - On a branch it pushes itself, it merges `origin/main` in, runs the gates and `scripts/smoke`, runs the
      bump step again for a releasing PR, pushes, and asks for a new word.
-   - On Dependabot's or Renovate's branch, it only tells the owner. A rebase there drops our commits.
+   - On any other branch (Dependabot's, Renovate's, or one only the owner pushes to), it only tells the
+     owner. On Dependabot's or Renovate's, a rebase drops our commits.
 3. **The checks** (merge step 2): `gh pr checks <n> --required --json name,bucket` shows each one in bucket
    `pass`. If any is pending, the controller waits; if any failed, it tells the owner and doesn't merge.
 4. **Nothing open, nothing new:** §8 merge step 3's checks and commands. The head recorded with the word

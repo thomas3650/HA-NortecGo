@@ -209,8 +209,8 @@ before it is opened.
   - **Which PRs:** any PR the owner names, owner-merge ones (as §8 defines them) included, and Dependabot's
     and Renovate's. A merge by the owner's word counts as the owner merging.
   - **Not with the PO flow:** the controller tells the owner and doesn't merge if the PR has an entry in
-    `.git/po-sessions.json`. While `scripts/sessions.py running` lists a session named `po` (D49), it merges
-    no PR at all.
+    `.git/po-sessions.json`. While `scripts/sessions.py running` lists a session named `po` (D49), or if it
+    can't tell, it tells the owner and merges no PR at all.
   - **One word, one merge:** when the word comes, the controller records the PR's head (`headRefOid`) and
     the time. The word covers that PR at that head. If the merge stops for any reason, a new word is needed.
   - **The steps:** §8 *Merging*, merge steps 1 to 4, then §8 *After a merge* steps 1 to 6, with these
@@ -218,7 +218,7 @@ before it is opened.
     - **A draft:** the controller runs `gh pr ready` first, then waits for the real `version-check` run.
     - **Behind `main`:** on a branch it pushes itself, the controller merges `origin/main` in, runs the gates
       and `scripts/smoke`, runs the bump step again for a releasing PR, pushes, and asks for a new word. On
-      Dependabot's or Renovate's branch it only tells the owner.
+      any other branch (Dependabot's, Renovate's, or one only the owner pushes to) it only tells the owner.
     - **A failed check:** the controller tells the owner. It doesn't hand the PR back to a team lead.
     - **Merge step 3:** the head recorded with the word stands in for the checked head, and the word's time
       for the cleared time. Bots' comments count. If something fails, the controller says what and asks

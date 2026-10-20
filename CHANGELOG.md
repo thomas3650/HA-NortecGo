@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-20
+
 ### Fixed
 
 - The log no longer warns at every restart that the car's power-delivery state is unknown when the car is

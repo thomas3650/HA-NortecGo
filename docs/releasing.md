@@ -199,7 +199,8 @@ owner starts for it. The PO flow doesn't pick it up, because it has no issue. On
 1. Work through the checklist above, and fix what the new version breaks.
 2. Push the first commit of our own (the fix, or the changelog entry) before you retitle it. Until the
    branch holds a commit that isn't Renovate's, Renovate puts its own title back.
-3. Title it by what it changes for users (*Title such a PR…*, below), then run the bump step.
+3. If users see a difference, retitle it `fix` or `feat` (*Title such a PR…*, below), then run the bump
+   step.
 4. Once the branch holds our commits, don't tick Renovate's rebase or retry box: that drops them.
 
 The owner merges it ([`way-of-working.md`](way-of-working.md) §8 *Merging*). If a feature's pull request
@@ -209,6 +210,7 @@ Renovate marks it abandoned, and we close it.
 The app is installed with *Only select repositories*, for this repo alone. An install for *All repositories*
 runs it in silent mode, with no PRs and no error, and would give it the private client repo too.
 `renovate.json` limits it to `pynortecgo`, and Dependabot ignores `pynortecgo` (`.github/dependabot.yml`).
+With `renovate.json` already on `main`, it opens no onboarding PR.
 
 Title such a PR by what it changes for users (*PR titles*). If users see a difference, it's a `feat` or
 `fix` with a changelog entry and the bump step. If they don't, it's `chore(deps): …`. A change only in the

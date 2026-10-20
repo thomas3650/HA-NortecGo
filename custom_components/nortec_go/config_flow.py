@@ -11,6 +11,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
+import probatio
 from pynortecgo import (
     ApiError,
     AuthError,
@@ -22,7 +23,6 @@ from pynortecgo import (
     RateLimitError,
     Tokens,
 )
-import voluptuous as vol  # noqa: TID251  (HA 2026.9.3's flow API is typed for voluptuous schemas)
 
 from .const import DOMAIN
 from .entry import create_client, tokens_to_data
@@ -37,13 +37,13 @@ EMAIL_SELECTOR = TextSelector(
 PASSWORD_SELECTOR = TextSelector(
     TextSelectorConfig(type=TextSelectorType.PASSWORD, autocomplete="current-password")
 )
-USER_SCHEMA = vol.Schema(
+USER_SCHEMA = probatio.Schema(
     {
-        vol.Required(CONF_EMAIL): EMAIL_SELECTOR,
-        vol.Required(CONF_PASSWORD): PASSWORD_SELECTOR,
+        probatio.Required(CONF_EMAIL): EMAIL_SELECTOR,
+        probatio.Required(CONF_PASSWORD): PASSWORD_SELECTOR,
     }
 )
-REAUTH_SCHEMA = vol.Schema({vol.Required(CONF_PASSWORD): PASSWORD_SELECTOR})
+REAUTH_SCHEMA = probatio.Schema({probatio.Required(CONF_PASSWORD): PASSWORD_SELECTOR})
 
 
 async def _async_sign_in(

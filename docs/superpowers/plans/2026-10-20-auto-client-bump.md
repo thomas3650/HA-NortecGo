@@ -111,8 +111,8 @@ In *PR titles*, put these lines right after the Dependabot bullet, which ends "w
 to merge.":
 
 ```text
-- Renovate's `pynortecgo` PRs are titled `chore(deps): update pynortecgo to vX.Y.Z`. Before you retitle
-  one, see *Bumping `pynortecgo`*.
+- Renovate's `pynortecgo` PRs are titled `chore(deps): update dependency pynortecgo to vX.Y.Z`. Before
+  you retitle one, see *Bumping `pynortecgo`*.
 ```
 
 In *Bumping `pynortecgo`*, put this text right after the checklist's last item ("- [ ] Read the client's

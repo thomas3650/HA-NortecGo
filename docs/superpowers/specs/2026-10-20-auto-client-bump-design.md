@@ -36,8 +36,8 @@ Date: 2026-10-20 · Branch: `feat/auto-client-bump` · Issue: #49
   on, with `groupName: "pynortecgo"`. The group puts both managers' updates for one version in one branch,
   `renovate/pynortecgo`, and so in one PR. A local Renovate dry run showed one `renovate/pynortecgo` branch holding both updates.
 - **The PR title:** semantic commits, type `chore` and scope `deps`, give
-  `chore(deps): update pynortecgo to vX.Y.Z`. That title doesn't release, and `version-check` passes it as
-  it passes Dependabot's, because the PR changes neither `version` nor `CHANGELOG.md`.
+  `chore(deps): update dependency pynortecgo to vX.Y.Z`. That title doesn't release, and `version-check`
+  passes it as it passes Dependabot's, because the PR changes neither `version` nor `CHANGELOG.md`.
 - **No dashboard:** `dependencyDashboard: false`. Otherwise Renovate opens a standing issue, and the
   backlog is the issues (D19).
 - **No changelog fetching:** `fetchChangeLogs: "off"`. PyPI lists no source URL for `pynortecgo` today. If
@@ -113,7 +113,7 @@ it "abandoned" instead, and we close it.
 
 | File | Change |
 |---|---|
-| `docs/releasing.md`, *PR titles* | The Dependabot bullet also covers Renovate's `chore(deps): update pynortecgo …` PRs, with step 2 above: our commit before the retitle |
+| `docs/releasing.md`, *PR titles* | The Dependabot bullet also covers Renovate's `chore(deps): update dependency pynortecgo …` PRs, with step 2 above: our commit before the retitle |
 | `docs/releasing.md`, *Bumping `pynortecgo`* | Renovate opens the bump PR, with all three pins, within hours of a release. It is finished as *Finishing a Renovate PR* says (steps 1 to 4, who finishes it, a hand bump first). How the app is installed (*Installing the app*) |
 | `docs/way-of-working.md` §8 *Merging* | "also Dependabot's" becomes "also Dependabot's and Renovate's" |
 | `docs/decisions.md` | D51, below |

@@ -33,8 +33,8 @@ Every PR title is `type(scope)!: text`. The `version-check` check reads it on ev
 - Dependabot's titles are `chore(deps): …`, or `chore(deps-dev): …` for development dependencies. For one
   that users should get, retitle it `feat` or `fix` and run the bump step on its branch. Dependabot then
   stops rebasing it, which is fine for a PR about to merge.
-- Renovate's `pynortecgo` PRs are titled `chore(deps): update pynortecgo to vX.Y.Z`. Before you retitle
-  one, see *Bumping `pynortecgo`*.
+- Renovate's `pynortecgo` PRs are titled `chore(deps): update dependency pynortecgo to vX.Y.Z`. Before
+  you retitle one, see *Bumping `pynortecgo`*.
 - The title's type is separate from the branch's type (`way-of-working.md` §1 step 2).
 
 ## A releasing PR

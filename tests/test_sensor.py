@@ -384,6 +384,25 @@ async def test_charge_energy_and_power_sensors(
         assert entry.options["sensor"]["suggested_display_precision"] == precision
 
 
+async def test_charge_sensors_read_a_charge_without_a_start_time(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+) -> None:
+    """The client allows an open charge with no start time; the charge sensors still read it."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        charge_kwh=3.25,
+        charge_kw=7.4,
+        started_at=None,
+    )
+    await setup_integration(hass, mock_config_entry)
+
+    assert _state(hass, ENERGY) == "3.25"
+    assert _state(hass, POWER) == "7.4"
+
+
 @pytest.mark.parametrize(
     ("charger", "energy", "power"),
     [

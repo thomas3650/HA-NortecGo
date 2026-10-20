@@ -199,9 +199,10 @@ For a release that breaks the models, [`notes.md`](notes.md) has a dry run that 
 before the pins change.
 
 To compare two client versions for the checklist without touching the dev environment, run
-`uv run --no-project --with pynortecgo==X.Y.Z python -I -c "…"` for each, from a scratch directory, and diff
-what it prints: the models' fields (`dataclasses.fields`), `pynortecgo.__all__`, and the
-`NortecGoClient` method signatures (`inspect.signature`).
+`uv run --no-project --with pynortecgo==X.Y.Z python -I -c '…'` for each, from a scratch directory, and diff
+what it prints: the models' fields (`dataclasses.fields`), the enums' members, `pynortecgo.__all__`, and the
+`NortecGoClient` method signatures (`inspect.signature`). Single quotes keep a `!` in the code from breaking
+an interactive shell.
 
 ## Bumping Home Assistant
 

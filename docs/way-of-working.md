@@ -373,8 +373,8 @@ One branch at a time, in the main checkout (only the PO works there, and only on
 
 Only the PO and the owner merge (D45). The PO merges a PR when it took the PR through *From branch ready to
 PR ready* and marked it ready, in this or an earlier session, the PR is not owner-merge, and nothing on it
-waits for the owner (step 3 of the merge, below). Every other PR is the owner's to merge, also
-Dependabot's, the owner's own and trivial ones (§4).
+waits for the owner (step 3 of the merge, below). Every other PR is the owner's to merge, also Dependabot's
+and Renovate's, the owner's own and trivial ones (§4).
 
 **Owner-merge PRs.** A PR is owner-merge when its diff touches something *Escalation* always escalates for
 (the part of that list a diff can touch): charge start or stop (the code that calls them, or what decides

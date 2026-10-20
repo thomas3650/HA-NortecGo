@@ -71,6 +71,9 @@ Collected while writing the ground-structure spec, all returning HTTP 200 on 202
 - gitleaks action: https://github.com/gitleaks/gitleaks-action
 - uv: https://docs.astral.sh/uv/
 - Keep a Changelog: https://keepachangelog.com/en/1.1.0/
+- Renovate `homeassistant-manifest` manager: https://docs.renovatebot.com/modules/manager/homeassistant-manifest/ (added 2026-10-20)
+- Renovate `pep621` manager: https://docs.renovatebot.com/modules/manager/pep621/ (added 2026-10-20)
+- Renovate hosted app config: https://docs.renovatebot.com/mend-hosted/hosted-apps-config/ (added 2026-10-20)
 
 **GitHub**
 - Dependabot options: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference

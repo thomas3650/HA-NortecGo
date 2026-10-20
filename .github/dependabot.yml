@@ -20,6 +20,8 @@ updates:
     groups:
       uv:
         patterns: ["*"]
+    ignore:
+      - dependency-name: pynortecgo  # Renovate bumps it, with manifest.json (D51)
   - package-ecosystem: pre-commit
     directory: /
     commit-message:

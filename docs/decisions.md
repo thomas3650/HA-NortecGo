@@ -464,3 +464,13 @@ superseded. How to add one:
   its age bounds the chance of stopping a later one.
 - **Source:** [stop safety spec](superpowers/specs/2026-10-02-stop-safety-reconfigure-design.md),
   Decisions and §1
+
+### D51: Renovate bumps pynortecgo
+- **Date:** 2026-10-20 · **Status:** active
+- **Decision:** Renovate's GitHub App, installed for this repo only, opens the PR for a new `pynortecgo`
+  release, with `manifest.json`, `pyproject.toml` and `uv.lock` in one PR. Dependabot ignores `pynortecgo`
+  and keeps every other dependency. A person finishes the PR as a client bump (`releasing.md`), and the
+  owner merges it.
+- **Why:** Dependabot doesn't read `manifest.json`, and a workflow of our own would need a token secret
+  for its PR to run the required checks. Renovate's app needs neither, and has a manager for HA manifests.
+- **Source:** [spec](superpowers/specs/2026-10-20-auto-client-bump-design.md)

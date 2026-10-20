@@ -157,3 +157,12 @@ after giving up, the place of a delete next to a refusal, a registration with th
 the rule on a scratch copy and seeing that every test still passed. A reviewer of code where a missing
 guard is costly does the same for the guards the task adds, and a new test for a guard is seen to fail
 without it. See also *Mutate the moved lines to test "behaviour unchanged"* above.
+
+## 2026-10-20: Validating `renovate.json`
+
+Given a file name, `renovate-config-validator` checks it as a global (self-hosted) config, which allows
+options a repo config doesn't. Check the repo's config with `--no-global`:
+
+`npx --yes --package renovate -- renovate-config-validator --strict --no-global renovate.json`
+
+It should print `Validating renovate.json as repo config`.

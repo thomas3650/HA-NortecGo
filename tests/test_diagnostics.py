@@ -95,8 +95,17 @@ CHARGER_FIELDS = {
     "active_charge",
     "last_charge",
 }
-ACTIVE_CHARGE_FIELDS = {"id", "state", "state_raw", "can_stop", "kwh", "kw", "cost"}
-COMPLETED_CHARGE_FIELDS = {"id", "cost", "kwh", "completed_at"}
+ACTIVE_CHARGE_FIELDS = {
+    "id",
+    "state",
+    "state_raw",
+    "can_stop",
+    "kwh",
+    "kw",
+    "cost",
+    "started_at",
+}
+COMPLETED_CHARGE_FIELDS = {"id", "cost", "kwh", "started_at", "completed_at"}
 VEHICLE_FIELDS = {
     "id",
     "name",
@@ -217,11 +226,13 @@ async def test_diagnostics_output(
                     "kwh": 4.2,
                     "kw": 7.1,
                     "cost": 9.87,
+                    "started_at": "2026-09-27T09:30:00+00:00",
                 },
                 "last_charge": {
                     "id": FAKE_LAST_CHARGE_ID,
                     "cost": 42.5,
                     "kwh": 18.4,
+                    "started_at": "2026-09-25T03:45:00+00:00",
                     "completed_at": "2026-09-25T06:15:00+00:00",
                 },
             },

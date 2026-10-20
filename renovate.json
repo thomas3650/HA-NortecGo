@@ -1,0 +1,22 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "enabledManagers": ["homeassistant-manifest", "pep621"],
+  "dependencyDashboard": false,
+  "fetchChangeLogs": "off",
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "packageRules": [
+    {
+      "description": "Renovate bumps only pynortecgo; Dependabot keeps the rest (D51).",
+      "matchPackageNames": ["*"],
+      "enabled": false
+    },
+    {
+      "description": "One PR for manifest.json, pyproject.toml and uv.lock.",
+      "matchPackageNames": ["pynortecgo"],
+      "enabled": true,
+      "groupName": "pynortecgo"
+    }
+  ]
+}

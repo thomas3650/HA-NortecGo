@@ -203,9 +203,9 @@ owner starts for it. The PO flow doesn't pick it up, because it has no issue. On
    step.
 4. Once the branch holds our commits, don't tick Renovate's rebase or retry box: that drops them.
 
-The owner merges it ([`way-of-working.md`](way-of-working.md) §8 *Merging*). If a feature's pull request
-bumps the client first, Renovate closes its own once the version is on `main`. If we had pushed to it,
-Renovate marks it abandoned, and we close it.
+The owner merges it, or tells the controller to ([`way-of-working.md`](way-of-working.md) §6 *Merging when
+told*). If a feature's pull request bumps the client first, Renovate closes its own once the version is on
+`main`. If we had pushed to it, Renovate marks it abandoned, and we close it.
 
 The app is installed with *Only select repositories*, for this repo alone. An install for *All repositories*
 runs it in silent mode, with no PRs and no error, and would give it the private client repo too.

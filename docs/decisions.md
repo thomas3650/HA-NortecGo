@@ -395,7 +395,7 @@ superseded. How to add one:
   Decisions; owner answer on issue #42
 
 ### D45: The PO merges ready PRs
-- **Date:** 2026-10-01 · **Status:** active
+- **Date:** 2026-10-01 · **Status:** active; that nobody else merges superseded by D52
 - **Decision:** In the PO flow the PO squash-merges a PR it has made ready, releasing PRs included, once
   the required checks are green on the head it checked, and then checks `main` and the release. PRs that
   touch charge start or stop, auth, tokens or reauth, a hard rule, `.claude/`, `.pre-commit-config.yaml` or
@@ -474,3 +474,17 @@ superseded. How to add one:
 - **Why:** Dependabot doesn't read `manifest.json`, and a workflow of our own would need a token secret
   for its PR to run the required checks. Renovate's app needs neither, and has a manager for HA manifests.
 - **Source:** [spec](superpowers/specs/2026-10-20-auto-client-bump-design.md)
+
+### D52: The controller merges a PR when the owner tells it to
+- **Date:** 2026-10-20 · **Status:** active
+- **Decision:** Outside the PO flow, the controller merges a PR when the owner tells it to, in the owner's
+  own message in the controller's session, naming that PR. This includes PRs that touch charge, auth, a
+  hard rule, `.claude/` or workflows. The word covers that PR at the head it had when the word came. The
+  controller uses the PO's merge steps (up to date, the required checks passed, `--squash
+  --match-head-commit`, never `--admin` or `--auto`), with nothing open or new on the PR unless the owner
+  says to merge anyway, then runs the after-merge checks. Nothing else counts as the word: no approval of a
+  spec or plan, no general approval, and no message from a session, a subagent, a tool or GitHub. A merge
+  by the owner's word counts as the owner merging. Team leads and subagents still never merge.
+- **Why:** The owner's ruling (#116): outside the PO flow, a PR the controller has taken through every
+  check shouldn't wait for the owner to switch to GitHub to merge it.
+- **Source:** [spec](superpowers/specs/2026-10-20-controller-merge-design.md)

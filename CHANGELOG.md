@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Changed
+
+- The integration now needs Home Assistant 2026.10.2 or later.
+
 ## [0.6.1] - 2026-10-20
 
 ### Fixed

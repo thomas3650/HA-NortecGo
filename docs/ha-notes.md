@@ -28,9 +28,11 @@ each section. Small facts that fit no doc stay in [`notes.md`](notes.md).
 ## Tooling
 
 - The ruff config copied from HA core bans `voluptuous` (use `probatio`) and `from __future__ import
-  annotations`. HA 2026.9.3's flow API (`async_show_form`, `add_suggested_values_to_schema`) is still typed
-  for voluptuous schemas, so `probatio` fails mypy strict there; `config_flow.py` imports
-  `voluptuous as vol  # noqa: TID251`.
+  annotations`. From HA 2026.10 the flow API (`async_show_form`, `add_suggested_values_to_schema`) is typed
+  for `probatio.Schema`, so `config_flow.py` uses `import probatio`. Once HA is imported, `voluptuous`
+  resolves to probatio's shim, so the switch from voluptuous changed typing only (#119).
+- In HA 2026.10.2, `homeassistant.components.binary_sensor` has no `__all__` and doesn't re-export
+  `BinarySensorDeviceClass` for mypy strict; import it from `homeassistant.components.binary_sensor.const`.
 - Python 3.14 allows `except A, B:` without parentheses (PEP 758), and `ruff format` removes them.
 - The pre-commit `ruff-format` hook also formats Python blocks inside `.md` files, such as specs and plans
   (found in #45).

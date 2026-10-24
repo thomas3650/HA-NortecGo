@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14.2"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -1241,7 +1241,7 @@ dev = [
     { name = "actionlint-py" },
     { name = "mypy" },
     { name = "pre-commit" },
-    { name = "pynortecgo", specifier = "==0.10.0" },
+    { name = "pynortecgo", specifier = "==0.11.0" },
     { name = "pytest-cov" },
     { name = "pytest-homeassistant-custom-component", specifier = "==0.13.373" },
     { name = "ruff" },
@@ -2453,15 +2453,15 @@ wheels = [
 
 [[package]]
 name = "pynortecgo"
-version = "0.10.0"
+version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e1/d0/1dcf2ddf9ccc1de9cd56600fe1c88eabc9fe2910bb168e91cba3744dd9fc/pynortecgo-0.10.0.tar.gz", hash = "sha256:e52ebd6f81129a000852bfcf7834cd6155b009383f102bdd3a38d331b48c6f2e", size = 27374, upload-time = "2026-10-19T20:29:02.596Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/22/59/6a56723497dd003d621c3530b5ab6696a9704bd2490a1cf3a408e9ecc139/pynortecgo-0.11.0.tar.gz", hash = "sha256:9085a08323841a7576be149f6407d5a6d541719c95eff5e8f66455ac11e4f4f1", size = 33077, upload-time = "2026-10-23T20:54:51.526Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/28/f8fb6b24051b8df90e68534bb71628af814618a74667290d0e35c8cad8bc/pynortecgo-0.10.0-py3-none-any.whl", hash = "sha256:959d0976593febad29bf5c99960b12fc061d087edd9995aeda93a59713970526", size = 30308, upload-time = "2026-10-19T20:29:01.229Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/9d/c617febc40d0056a5ac5cf6ec7b637373e102f87f2c95acaf8334d9e9971/pynortecgo-0.11.0-py3-none-any.whl", hash = "sha256:350c854620f49817b22feda6621490cf13044d94d90bd1790bd73d4caf6b21f8", size = 37470, upload-time = "2026-10-23T20:54:49.551Z" },
 ]
 
 [[package]]

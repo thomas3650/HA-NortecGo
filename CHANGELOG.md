@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-28
+
+### Changed
+
+- `pynortecgo` 0.11.0. In the price forecast, the grid tariff for the hours beyond those the charger prices
+  itself now comes from the tariff your grid company publishes on Energi Data Service, instead of an
+  estimate. For it, the integration now contacts `api.energidataservice.dk`, with nothing about you, your
+  account or your charger (see *Data updates* in the docs). When the tariff can't be found there, it is
+  estimated as before.
+
 ## [0.6.2] - 2026-10-20
 
 ### Changed

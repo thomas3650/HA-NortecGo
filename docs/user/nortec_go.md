@@ -220,6 +220,15 @@ one of these times fails, the integration tries once more 15 minutes later (or l
 service asks it to wait), unless the next read time comes first. The current price moves to the next 15
 minutes by itself, without a read.
 
+For the hours beyond those the charger prices itself, the grid tariff comes from the tariff your grid
+company publishes in DataHub's public price list, on Energinet's Energi Data Service
+(`api.energidataservice.dk`, no sign-in). To find it, the integration makes two requests there at its first
+price read. It makes them again after a restart of Home Assistant or a reload of the integration, at the
+next price read after a request fails, and when the tariff changes. The requests ask only for grid
+companies' tariffs: they hold nothing about you, your account or your charger. One answer can be several
+megabytes. When Energi Data Service can't be reached, the forecast still comes, with the grid tariff
+estimated for those hours (see *Known limitations*).
+
 *Energy this charge*, *Charging power* and *Cost this charge* come from the last charger read, so while
 charging they can be up to 5 minutes old. *Last charge cost* follows at the first read after a charge ends,
 or the one after it (up to 60 minutes later); press *Refresh* to read it sooner. *Total energy* follows the
@@ -241,9 +250,9 @@ step on *Refresh* fails then too.
 - One charger per account. An account with no charger or with more than one can't be added.
 - Starting a charge needs exactly one car and one saved card (see *Prerequisites*).
 - Unofficial: the integration uses the same private API as the app, which can change without notice.
-- The grid tariff is estimated for the hours beyond those the charger prices itself. The estimates improve
-  as the integration keeps running, and start over after a Home Assistant restart or a reload of the
-  integration.
+- When your grid company's tariff can't be found on Energi Data Service (see *Data updates*), the grid
+  tariff is estimated for the hours beyond those the charger prices itself. The estimates improve as the
+  integration keeps running, and start over after a Home Assistant restart or a reload of the integration.
 - The prices have been checked only for the DK2 price area (DKK).
 - Tomorrow's prices are a forecast until the day-ahead prices come out, around 13:00; the 15:05 read
   replaces them (or its retry about 15 minutes later, if it fails).
@@ -338,6 +347,14 @@ Assistant itself is starting, when it has started), then at longer gaps of up to
 works, all the integration's entities are unavailable, *Charge* included. The integration's entry shows the
 reason, which can also be one of the texts for a service that can't be reached, limits requests, returns an
 error or sends an answer the integration doesn't understand.
+
+### Warnings about the grid tariff or DataHub in the log
+
+The integration couldn't get your grid company's tariff from Energi Data Service (see *Data updates*), so
+it estimates the grid tariff for some hours of the forecast (see *Known limitations*). The forecast still
+works. When the service couldn't be reached, the integration tries again at the next price read. Otherwise
+it tries again after a restart of Home Assistant or a reload of the integration, or when the tariff
+changes. Each warning is logged once until a restart, a reload or a tariff change.
 
 ### Debug logging
 

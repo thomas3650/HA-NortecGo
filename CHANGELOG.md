@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-28
+
 ### Changed
 
 - `pynortecgo` 0.11.0. In the price forecast, the grid tariff for the hours beyond those the charger prices

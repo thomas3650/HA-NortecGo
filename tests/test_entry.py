@@ -14,7 +14,7 @@ from custom_components.nortec_go.entry import (
     tokens_to_data,
 )
 
-from .conftest import FAKE_DEVICE_ID, FAKE_TOKENS
+from .conftest import FAKE_DEVICE_ID, FAKE_GRID_TARIFF, FAKE_TOKENS
 
 
 def test_tokens_to_data() -> None:
@@ -44,11 +44,14 @@ def test_tokens_from_data_ignores_other_keys() -> None:
 async def test_create_client(hass: HomeAssistant, mock_client_class: MagicMock) -> None:
     """The client gets HA's shared session and the given keyword arguments."""
     callback = AsyncMock()
+    tariff_callback = AsyncMock()
     client = create_client(
         hass,
         tokens=FAKE_TOKENS,
         device_id=FAKE_DEVICE_ID,
         on_tokens_refreshed=callback,
+        grid_tariff=FAKE_GRID_TARIFF,
+        on_grid_tariff=tariff_callback,
     )
     assert client is mock_client_class.return_value
     mock_client_class.assert_called_once_with(
@@ -56,6 +59,8 @@ async def test_create_client(hass: HomeAssistant, mock_client_class: MagicMock) 
         tokens=FAKE_TOKENS,
         device_id=FAKE_DEVICE_ID,
         on_tokens_refreshed=callback,
+        grid_tariff=FAKE_GRID_TARIFF,
+        on_grid_tariff=tariff_callback,
     )
 
 
@@ -69,4 +74,6 @@ async def test_create_client_defaults(
         tokens=None,
         device_id=None,
         on_tokens_refreshed=None,
+        grid_tariff=None,
+        on_grid_tariff=None,
     )

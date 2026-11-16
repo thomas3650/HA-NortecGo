@@ -49,11 +49,14 @@ from .conftest import (
     FAKE_CHARGER_ID,
     FAKE_DEVICE_ID,
     FAKE_EMAIL,
+    FAKE_GRID_TARIFF,
     FAKE_TOKENS,
     NEW_TOKENS,
     make_charger,
     setup_integration,
 )
+
+GRID_TARIFF_KEY = "nortec_go.{entry_id}.grid_tariff"
 
 INTEGRATION_DIR = Path(__file__).parent.parent / "custom_components" / DOMAIN
 
@@ -99,6 +102,7 @@ async def test_setup_entry(
     mock_config_entry: MockConfigEntry,
     mock_client_class: MagicMock,
     mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
 ) -> None:
     """Setup builds the client from stored data, sets the stored charger, reads it once."""
     await setup_integration(hass, mock_config_entry)
@@ -109,9 +113,99 @@ async def test_setup_entry(
     assert kwargs["tokens"] == FAKE_TOKENS
     assert kwargs["device_id"] == FAKE_DEVICE_ID
     assert kwargs["on_tokens_refreshed"] is not None
+    assert kwargs["grid_tariff"] is None
+    assert kwargs["on_grid_tariff"] is not None
+    # Nothing is written until the client's callback runs.
+    assert (
+        GRID_TARIFF_KEY.format(entry_id=mock_config_entry.entry_id) not in hass_storage
+    )
     mock_client.set_charger.assert_called_once_with(FAKE_CHARGER_ID)
     mock_client.get_charger.assert_awaited_once()
     mock_client.login.assert_not_awaited()
+
+
+def _grid_tariff_file(entry: MockConfigEntry, data: Any) -> tuple[str, dict[str, Any]]:
+    """The key and the storage file of the entry's grid tariff."""
+    key = GRID_TARIFF_KEY.format(entry_id=entry.entry_id)
+    return key, {"version": 1, "minor_version": 1, "key": key, "data": data}
+
+
+async def test_setup_passes_the_stored_grid_tariff(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client_class: MagicMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A stored grid tariff goes to the client unchanged."""
+    key, file = _grid_tariff_file(mock_config_entry, FAKE_GRID_TARIFF)
+    hass_storage[key] = file
+    await setup_integration(hass, mock_config_entry)
+    assert mock_client_class.call_args.kwargs["grid_tariff"] == FAKE_GRID_TARIFF
+
+
+async def test_setup_ignores_a_grid_tariff_of_the_wrong_shape(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client_class: MagicMock,
+    hass_storage: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A stored grid tariff that isn't a dict is dropped with a warning; setup carries on."""
+    key, file = _grid_tariff_file(mock_config_entry, [1, 2])
+    hass_storage[key] = file
+    with caplog.at_level(logging.WARNING):
+        await setup_integration(hass, mock_config_entry)
+    state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
+    assert state is ConfigEntryState.LOADED
+    assert mock_client_class.call_args.kwargs["grid_tariff"] is None
+    assert (
+        caplog.text.count("Ignoring the stored grid tariff: it has an unexpected shape")
+        == 1
+    )
+
+
+async def test_grid_tariff_from_the_client_is_stored(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client_class: MagicMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """The client's grid tariff callback saves it, without a reload."""
+    await setup_integration(hass, mock_config_entry)
+    await mock_client_class.call_args.kwargs["on_grid_tariff"](FAKE_GRID_TARIFF)
+    await hass.async_block_till_done()
+    key = GRID_TARIFF_KEY.format(entry_id=mock_config_entry.entry_id)
+    assert hass_storage[key]["data"] == FAKE_GRID_TARIFF
+    assert mock_client_class.call_count == 1
+
+
+async def test_reload_hands_back_the_saved_grid_tariff(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client_class: MagicMock,
+) -> None:
+    """After a reload the new client gets the tariff the old one handed over."""
+    await setup_integration(hass, mock_config_entry)
+    await mock_client_class.call_args.kwargs["on_grid_tariff"](FAKE_GRID_TARIFF)
+    await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert mock_client_class.call_count == 2
+    assert mock_client_class.call_args.kwargs["grid_tariff"] == FAKE_GRID_TARIFF
+
+
+async def test_remove_entry_removes_the_stored_grid_tariff(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Removing the entry deletes its grid tariff file."""
+    key, file = _grid_tariff_file(mock_config_entry, FAKE_GRID_TARIFF)
+    hass_storage[key] = file
+    await setup_integration(hass, mock_config_entry)
+    assert await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert key not in hass_storage
 
 
 async def test_setup_retry_reuses_stored_tokens(

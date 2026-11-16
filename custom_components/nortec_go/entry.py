@@ -42,6 +42,8 @@ def create_client(
     tokens: Tokens | None = None,
     device_id: str | None = None,
     on_tokens_refreshed: Callable[[Tokens], Awaitable[None]] | None = None,
+    grid_tariff: Mapping[str, Any] | None = None,
+    on_grid_tariff: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> NortecGoClient:
     """Build a client on Home Assistant's shared aiohttp session."""
     return NortecGoClient(
@@ -49,4 +51,6 @@ def create_client(
         tokens=tokens,
         device_id=device_id,
         on_tokens_refreshed=on_tokens_refreshed,
+        grid_tariff=grid_tariff,
+        on_grid_tariff=on_grid_tariff,
     )

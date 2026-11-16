@@ -2,6 +2,7 @@
 
 from collections.abc import Generator, Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.const import CONF_DEVICE_ID, CONF_EMAIL
@@ -51,6 +52,13 @@ NEW_TOKENS = Tokens(
     refresh_token="new-fake-refresh-token",
     expires_at=datetime(2030, 1, 2, 12, 0, tzinfo=UTC),
 )
+
+# Opaque to the integration: a made-up dict, not the client's format.
+FAKE_GRID_TARIFF: dict[str, Any] = {
+    "version": 1,
+    "label": "made-up",
+    "records": [{"p": [0.1, 0.2]}],
+}
 
 
 def make_charger(

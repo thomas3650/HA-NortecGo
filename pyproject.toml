@@ -27,7 +27,7 @@ pythonpath = ["scripts"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["custom_components", "tests", "scripts/release_check.py", "scripts/sessions.py"]
+files = ["custom_components", "tests", "scripts/release_check.py"]
 mypy_path = "scripts"
 explicit_package_bases = true
 
@@ -37,7 +37,6 @@ ignore_missing_imports = true
 
 [tool.ruff]
 required-version = ">=0.16.8"
-extend-exclude = [".claude"]
 force-exclude = true
 
 [tool.ruff.lint]
@@ -84,7 +83,7 @@ mark-parentheses = false
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
-known-first-party = ["custom_components.nortec_go", "tests", "release_check", "sessions"]
+known-first-party = ["custom_components.nortec_go", "tests", "release_check"]
 combine-as-imports = true
 split-on-trailing-comma = false
 

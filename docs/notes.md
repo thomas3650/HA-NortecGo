@@ -166,3 +166,11 @@ options a repo config doesn't. Check the repo's config with `--no-global`:
 `npx --yes --package renovate -- renovate-config-validator --strict --no-global renovate.json`
 
 It should print `Validating renovate.json as repo config`.
+
+## 2026-11-16: An old local uv lowers the lock's `revision`
+
+`uv.lock` starts with `version = 1` and a `revision` number, which newer uv releases raise. A `uv lock` or
+`uv sync` with a local uv older than the one that last wrote the lock rewrites `revision` to its own, lower
+number (uv 0.11.19 turned `revision = 5` into `3` in #130). Don't commit that, and don't fix the line by
+hand: run `uv self update`, then lock again. `git diff uv.lock` should then show only the packages you meant
+to change.

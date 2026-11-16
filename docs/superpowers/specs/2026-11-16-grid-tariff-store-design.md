@@ -15,7 +15,8 @@ Date: 2026-11-16 · Branch: `fix/grid-tariff-store` · Issue: #130
   - It adds two `NortecGoClient` keywords. `grid_tariff` is a dict that `on_grid_tariff` handed over earlier,
     passed back unchanged. `on_grid_tariff` is an async callback, `(tariff: dict[str, Any]) -> None`, that
     runs when the client finds a new tariff.
-  - With a stored tariff, a restart or reload needs no request while the tariff still covers the forecast.
+  - With a stored tariff, a restart or reload needs no request while the tariff still fits the charger's
+    own prices and covers the forecast.
 - **Not in this work:**
   - the forecast's maths and the estimate;
   - the polling times;
@@ -37,11 +38,13 @@ Date: 2026-11-16 · Branch: `fix/grid-tariff-store` · Issue: #130
 | `manifest.json` `requirements`, `pyproject.toml` | `pynortecgo==0.12.0`; `uv lock --upgrade-package pynortecgo` | Ends the 429s (`releasing.md` → *Bumping `pynortecgo`*) |
 | `const.py` | `GRID_TARIFF_STORE_VERSION: Final = 1`, `GRID_TARIFF_STORE_KEY: Final = "nortec_go.{entry_id}.grid_tariff"` | Next to the other store keys |
 | new `grid_tariff.py` | `GridTariffStore(hass, entry_id)` over a plain `Store[dict[str, Any]]`, with `async_load() -> dict[str, Any] \| None`, `async_save(tariff)` and `async_remove()` | One module per store, as `prices.py` and `energy.py` have |
-| `entry.py` `create_client` | Two new keyword arguments, `grid_tariff` and `on_grid_tariff`, both default `None`, passed through to `NortecGoClient` | The config flow's sign-in clients keep calling it without them |
+| `entry.py` `create_client` | Two new keyword arguments, passed through to `NortecGoClient`: `grid_tariff: Mapping[str, Any] \| None = None` (the client's own type) and `on_grid_tariff: Callable[[dict[str, Any]], Awaitable[None]] \| None = None`. Both are typed here: the client's `GridTariffCallback` alias isn't in `pynortecgo.__all__`, and nothing is imported from its private modules | The config flow's sign-in clients keep calling it without them |
 | `__init__.py` `async_setup_entry` | Before the client is built: load the store. Pass the result as `grid_tariff`, and a local `_async_store_grid_tariff` that saves the dict as `on_grid_tariff` | The client needs the tariff when it is built |
 | `__init__.py` `async_remove_entry` | Also `await GridTariffStore(hass, entry.entry_id).async_remove()`; the docstring names the grid tariff | Nothing stays behind when the entry is deleted |
 | `docs/user/nortec_go.md` | See *User docs* | Same PR as the code |
 | `CHANGELOG.md` | See *CHANGELOG entry* | User-visible fix |
+| `docs/decisions.md` | D53, below *Decisions* | A new store with a lasting rule, as the energy store got D47 |
+| `quality_scale.yaml` | No change: no rule is completed or affected | CLAUDE.md asks it to be checked in the same PR |
 
 ### The store
 
@@ -49,28 +52,44 @@ Date: 2026-11-16 · Branch: `fix/grid-tariff-store` · Issue: #130
   The dict carries its own version, and the client ignores a stored dict it can't read and searches again,
   without raising. So the store needs no migration of its own while it stays at version 1.
 - `async_load` returns the stored dict, or `None` when there is no file or the data isn't a dict. The client
-  takes `None` as "nothing stored".
+  takes `None` as "nothing stored". Data that isn't a dict logs a warning, "Ignoring the stored grid tariff:
+  it has an unexpected shape", as `PriceStore` and `EnergyStore` do. A dict the client can't read is the
+  client's to log (at debug), and then it searches again.
 - `async_save` writes at once (`Store.async_save`, not a delayed save). The callback runs seldom, only when
-  the client finds a new tariff, and a delayed save could be lost on a crash.
+  the client finds a new tariff, and a delayed save could be lost on a crash. When the client finds a newer
+  tariff, it replaces the stored one.
 - The callback runs inside a forecast, so it must not call the client. A comment says so, as
   `_async_store_tokens` has.
-- The client catches anything the callback raises and keeps using the tariff, so a failed save can't break
-  a price read. The integration adds no handling of its own.
+- A failed write is already caught and logged by Home Assistant's `Store`, and the client catches any
+  `Exception` from the callback and keeps using the tariff. So a failed save can't break a price read, and
+  the integration adds no handling of its own.
 
 ## User docs
 
-In *Data updates*, the paragraph on Energi Data Service changes. It no longer says "two requests at its
-first price read". It should say that:
+In *Data updates*, the paragraph on Energi Data Service (today `docs/user/nortec_go.md:223-230`) changes. It
+no longer says "two requests at its first price read", and its sentence on when they are made again is
+replaced. It should say that:
 
-- the integration makes at most one request there per price read, and waits about a minute between them;
-- finding the tariff takes two requests, so with no stored tariff it is found at the second price read
-  after the integration starts, and the hours beyond the charger's own prices are estimated until then;
+- the integration makes at most one request there per price read, at least a minute apart, and longer if
+  the service asks it to wait. A price read that comes sooner makes no request; the hours beyond the
+  charger's own prices are then estimated for that read;
+- finding the tariff takes two requests. With no stored tariff it is found at the second price read after
+  the integration starts. That can be hours later (the reads at 00:05, 05:05, 10:05, 15:05 and 20:05), or
+  sooner with a *Refresh* press more than a minute after the start. Until then those hours are estimated;
 - the tariff it finds is stored with the integration's other data;
-- after a restart or a reload, the stored tariff is used with no request, while it covers the forecast;
-- when the stored tariff ends before the forecast does, one request per start looks for a newer one.
+- after a restart or a reload, the stored tariff is used with no request, while it still fits the charger's
+  own prices and covers the forecast;
+- when the stored tariff ends before the forecast does, one request per start looks for a newer one. A
+  network or HTTP failure doesn't use that request up: the next price read tries again;
+- after a failed request, the next price read tries again, with one request;
+- a new search starts when the charger's tariff changes, or when the stored tariff no longer fits the
+  charger's own prices. The tariff it then finds is stored in place of the old one.
 
-What the requests hold and the several-megabytes note stay. *Known limitations* and the *Troubleshooting*
-entry on DataHub warnings are re-checked against this. Only what's no longer true changes.
+What the requests hold and the several-megabytes note stay.
+
+*Known limitations* (`nortec_go.md:253-255`, estimates start over after a restart or reload) and the
+*Troubleshooting* entry on DataHub warnings (`:351-357`) were checked against the 0.12.0 wheel and stay
+true: no change expected. The branch review re-checks them against the landed text.
 
 ## CHANGELOG entry
 
@@ -86,17 +105,28 @@ Under `## [Unreleased]`, `### Fixed`:
 | Topic | Decision |
 |---|---|
 | Title | `fix: keep your grid company's tariff across restarts with pynortecgo 0.12.0 (#130)`. A patch release, with the changelog entry and the bump step |
-| Diagnostics | Unchanged. The tariff is public data: a grid company's published prices and DataHub's grid company IDs, nothing from the account. It isn't needed to debug the integration's own reads either |
+| Diagnostics | Unchanged. The dict is public grid tariff data (a grid company's published prices, DataHub's grid company IDs, and the charger's tariff label and VAT flag), with nothing that identifies the user, and it isn't needed to debug the integration's own reads |
 | Store shape | The client's dict, unchanged (see *The store*) |
 | Renovate | If Renovate opens its own 0.12.0 PR, it closes it once the version is on `main` (`releasing.md`). Nothing is pushed to it |
 | Merge | The owner merges, or tells the controller to (way-of-working §6 *Merging when told*) |
+
+### D53 (for `docs/decisions.md`)
+
+- **Decision:** the grid tariff the client finds is kept per entry in its own store
+  (`nortec_go.{entry_id}.grid_tariff`), exactly as the client hands it over, with no parsing, checks or
+  migration of the integration's own. It is handed back to the client at setup, deleted with the entry, and
+  left out of diagnostics.
+- **Why:** the dict is the client's format, versioned and checked by the client, which ignores one it can't
+  read. Owning a copy of that format here would duplicate the client and break when it changes.
+- **Source:** this spec, *The store*.
 
 ## Client bump checklist (`releasing.md` → *Bumping `pynortecgo`*)
 
 Already checked against the 0.12.0 wheel while writing this spec. The PR re-states the results.
 
-- **Public API:** `__all__`, the model fields and the enums are unchanged from 0.11.0. The only signature
-  change is the two new optional `NortecGoClient` keywords.
+- **Public API and models:** `__all__`, the model fields and the enums are unchanged from 0.11.0. The only
+  signature change is the two new optional `NortecGoClient` keywords. This also covers the checklist's
+  "breaking changes to the models" item: there are none.
 - **New exceptions:** none. The DataHub path still never raises.
 - **Log and exception text:** the new messages hold an HTTP status, a wait in seconds, an exception type name,
   or a grid company ID and tariff code. None of them holds an email, password, token, device ID or request
@@ -117,4 +147,11 @@ format (hard rule 7 covers model objects, and this is not one).
 - Removal: `async_remove_entry` deletes the grid tariff file along with the others.
 - `create_client` called without the new arguments passes `None` for both (the config flow's sign-in
   clients).
+- Existing tests that change: `test_create_client` and `test_create_client_defaults` in
+  `tests/test_entry.py` assert the exact `NortecGoClient` call, so they get the two new keywords. Setup
+  asserts in `tests/test_init.py` that check `create_client`'s or the client's arguments are updated the
+  same way.
+- Order: `mock_client_class` (`tests/conftest.py`) patches the client with `autospec=True`, so a call with
+  `grid_tariff=` raises `TypeError` against 0.11.0. The pin and lock bump (and `uv sync`) comes before, or
+  in the same task as, the code and tests that use the new keywords.
 - The coverage gate stays at 95% or more.

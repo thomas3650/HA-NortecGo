@@ -71,8 +71,9 @@ no longer says "two requests at its first price read", and its sentence on when 
 replaced. It should say that:
 
 - the integration makes at most one request there per price read, at least a minute apart, and longer if
-  the service asks it to wait. A price read that comes sooner makes no request; the hours beyond the
-  charger's own prices are then estimated for that read;
+  the service asks it to wait. While the tariff is still being searched for, a price read that comes sooner
+  makes no request, and the hours beyond the charger's own prices are estimated for that read. A tariff
+  already found or stored is used without waiting;
 - finding the tariff takes two requests. With no stored tariff it is found at the second price read after
   the integration starts. That can be hours later (the reads at 00:05, 05:05, 10:05, 15:05 and 20:05), or
   sooner with a *Refresh* press more than a minute after the start. Until then those hours are estimated;
@@ -80,8 +81,8 @@ replaced. It should say that:
 - after a restart or a reload, the stored tariff is used with no request, while it still fits the charger's
   own prices and covers the forecast;
 - when the stored tariff ends before the forecast does, one request per start looks for a newer one. A
-  network or HTTP failure doesn't use that request up: the next price read tries again;
-- after a failed request, the next price read tries again, with one request;
+  network or HTTP failure doesn't use that request up;
+- after a failed request (here or while searching), the next price read tries again, with one request;
 - a new search starts when the charger's tariff changes, or when the stored tariff no longer fits the
   charger's own prices. The tariff it then finds is stored in place of the old one.
 
@@ -112,6 +113,9 @@ Under `## [Unreleased]`, `### Fixed`:
 
 ### D53 (for `docs/decisions.md`)
 
+Title: `### D53: The grid tariff is stored as the client hands it over`, dated the day it is written, status
+`active`.
+
 - **Decision:** the grid tariff the client finds is kept per entry in its own store
   (`nortec_go.{entry_id}.grid_tariff`), exactly as the client hands it over, with no parsing, checks or
   migration of the integration's own. It is handed back to the client at setup, deleted with the entry, and
@@ -140,7 +144,7 @@ tests is a made-up dict: the integration treats it as opaque, so it doesn't need
 format (hard rule 7 covers model objects, and this is not one).
 
 - `GridTariffStore`: load with no file gives `None`; a saved dict loads back equal; data that isn't a dict
-  gives `None`; remove deletes the file.
+  gives `None` and logs the warning from *The store* (`caplog`); remove deletes the file.
 - Setup: with a stored tariff, `NortecGoClient` is built with that dict as `grid_tariff`. With none stored,
   it gets `grid_tariff=None`. Both cases pass an `on_grid_tariff` callback.
 - The callback: calling the `on_grid_tariff` given to the client writes the dict to the store.

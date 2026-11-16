@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start Home Assistant with the integration and the owner's dev config (config/), let the entry set up, and
-# fail on any error from the integration. Run before a PR is marked ready (docs/way-of-working.md, step 10).
+# fail on any error from the integration. Run before a PR is marked ready.
 # It only reads the charger, car and prices; it never starts or stops a charge. The full log stays in
 # local/ (never committed); only the integration's error lines are printed.
 set -euo pipefail

@@ -1,4 +1,4 @@
-"""Tell this repository's running Claude sessions from other projects' (docs/way-of-working.md §8, D49).
+"""Tell this repository's running Claude sessions from other projects'.
 
 Read-only: it runs `claude agents --json` and `git rev-parse`, and writes nothing. It never prints a
 session's directory or id, on stdout or stderr.

@@ -1,18 +1,16 @@
 ## What and why
 
-<!-- One or two sentences. For non-trivial work, link the spec and plan (docs/way-of-working.md §1 step 6). -->
+<!-- One or two sentences: what this changes and why. -->
 
 Closes #
 
 ## Checklist
 
-- [ ] Gates pass (`CLAUDE.md` → *Commands*: the tests, the coverage gate and the lint line)
-- [ ] Title type per `docs/releasing.md` (user-visible → `feat`, `fix` or `perf`, with a `CHANGELOG.md` entry)
-- [ ] Releasing title → the bump step run last (`docs/releasing.md`)
+- [ ] Gates pass: `pytest`, the 95% coverage gate, `ruff check`, `ruff format --check`, `mypy`, `actionlint` and `zizmor`
+- [ ] Title type fits the change (user-visible → `feat`, `fix` or `perf`, with a `CHANGELOG.md` entry)
+- [ ] Releasing title → the bump step run last (`uv run python scripts/release_check.py release-pr --title='<PR title>'`), then `chore: release X.Y.Z` committed
 - [ ] `custom_components/nortec_go/quality_scale.yaml` updated (rules completed or changed)
-- [ ] `docs/user/nortec_go.md` updated (user-visible changes)
+- [ ] `README.md` updated (user-visible changes)
 - [ ] No private data: IDs, tokens, emails, captures, raw API details, links into the private repo
 - [ ] `pytest-homeassistant-custom-component` bump → `hacs.json` `homeassistant` minimum raised
-- [ ] `pynortecgo` bump → the checklist in `docs/releasing.md` → *Bumping `pynortecgo`* done
-- [ ] Lasting decision → `docs/decisions.md` entry
-- [ ] `full-reviewer` run on the branch (non-trivial changes)
+- [ ] `pynortecgo` bump → its exception messages hold no secrets; new client model fields reviewed for redaction in diagnostics; new exception classes handled; the client's changelog read for breaking changes

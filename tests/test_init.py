@@ -141,6 +141,7 @@ async def test_setup_passes_the_stored_grid_tariff(
     hass_storage[key] = file
     await setup_integration(hass, mock_config_entry)
     assert mock_client_class.call_args.kwargs["grid_tariff"] == FAKE_GRID_TARIFF
+    assert mock_client_class.call_args.kwargs["on_grid_tariff"] is not None
 
 
 async def test_setup_ignores_a_grid_tariff_of_the_wrong_shape(

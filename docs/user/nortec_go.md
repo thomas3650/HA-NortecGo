@@ -232,14 +232,15 @@ forecast still comes, with the grid tariff estimated for those hours (see *Known
 
 Finding the tariff takes two requests. With no stored tariff, it is found at the second price read after the
 integration starts. That can be hours later (the reads at 00:05, 05:05, 10:05, 15:05 and 20:05), or sooner
-with a *Refresh* press more than a minute after the start. Until then those hours are estimated. The tariff
-it finds is stored with the integration's other data. After a restart of Home Assistant or a reload of the
-integration, the stored tariff is used with no request, while it still fits the charger's own prices and
-covers the forecast. When the stored tariff ends before the forecast does, the integration makes one request
-per start to look for a newer one; a request that fails on the network or with an error from the service
-doesn't count as that one. After a failed request, here or while searching, the next price read tries again, with
-one request. A new search starts when the charger's tariff changes, or when the stored tariff no longer fits
-the charger's own prices. The tariff it then finds is stored in place of the old one.
+with a *Refresh* press more than a minute after the integration starts. Until then those hours are estimated.
+The tariff it finds is stored with the integration's other data. After a restart of Home Assistant or a reload
+of the integration, the stored tariff is used with no request, while it still fits the charger's own prices
+and covers the forecast. When the stored tariff ends before the forecast does, the integration makes one
+request to look for a newer one, once after each restart of Home Assistant or reload of the integration; a
+request that fails on the network or with an error from the service doesn't count as that one. After a failed
+request, here or while searching, the next price read tries again, with one request. A new search starts when
+the charger's tariff changes, or when the stored tariff no longer fits the charger's own prices. The tariff it
+then finds is stored in place of the old one.
 
 *Energy this charge*, *Charging power* and *Cost this charge* come from the last charger read, so while
 charging they can be up to 5 minutes old. *Last charge cost* follows at the first read after a charge ends,

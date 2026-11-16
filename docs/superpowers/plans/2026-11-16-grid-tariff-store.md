@@ -45,7 +45,7 @@ task: this plan argues from it.
 
 1. **A file whose data isn't a dict** (a hand-edited or corrupt store holding a list, a string or a number).
    Expected: setup still succeeds, the client gets `grid_tariff=None`, and one warning names the stored
-   grid tariff. Pinned by Task 1's `test_store_wrong_shape`.
+   grid tariff. Pinned by Task 1's `test_store_wrong_shape` and `test_setup_ignores_a_grid_tariff_of_the_wrong_shape`.
 2. **A reload after the client saved a tariff.** Expected: the new client is built with the dict the old
    one saved, so a reload needs no DataHub request. Pinned by Task 1's
    `test_reload_hands_back_the_saved_grid_tariff`.
@@ -92,11 +92,11 @@ task: this plan argues from it.
 Set `pynortecgo==0.12.0` in `manifest.json` `requirements` and in `pyproject.toml`. Run
 `uv lock --upgrade-package pynortecgo`, then `uv sync`.
 Check: `uv run python -c "import importlib.metadata as m; print(m.version('pynortecgo'))"` prints `0.12.0`,
-and `git diff --stat uv.lock` shows only the `pynortecgo` entry changed (apart from what 0.12.0 needs).
+and `git diff uv.lock` changes only the `pynortecgo` entry (0.12.0's dependencies are the same as 0.11.0's).
 
-- [ ] **Step 2: Run the whole suite on 0.12.0, unchanged**
+- [ ] **Step 2: Run the suite and the lint line on 0.12.0, unchanged**
 
-Run: `uv run pytest -q`
+Run: `uv run pytest -q`, then the lint line from *Global Constraints*.
 Expected: PASS. 0.12.0 only adds optional keywords, so nothing should break. If anything fails, stop and
 report it.
 
@@ -132,15 +132,22 @@ async def test_store_round_trip(hass, hass_storage):
     await store.async_remove()
     assert KEY not in hass_storage
 
-async def test_store_missing_file(hass):
-    assert await GridTariffStore(hass, "entry1").async_load() is None
+async def test_store_missing_file(hass, caplog):
+    with caplog.at_level(logging.WARNING):
+        assert await GridTariffStore(hass, "entry1").async_load() is None
+    assert WARNING not in caplog.text
 
 @pytest.mark.parametrize("data", [[1, 2], "text", 5])
 async def test_store_wrong_shape(hass, hass_storage, data, caplog):
     hass_storage[KEY] = {"version": 1, "minor_version": 1, "key": KEY, "data": data}
-    assert await GridTariffStore(hass, "entry1").async_load() is None
-    assert "stored grid tariff" in caplog.text
+    with caplog.at_level(logging.WARNING):
+        assert await GridTariffStore(hass, "entry1").async_load() is None
+    assert caplog.text.count(WARNING) == 1
 ```
+
+`WARNING = "Ignoring the stored grid tariff: it has an unexpected shape"`, as in Step 6. The sketches here
+and in Step 10 leave out types; the real tests are fully annotated (mypy strict covers `tests/`), as the
+store tests in `tests/test_energy.py` are.
 
 - [ ] **Step 5: Run them to see them fail**
 
@@ -176,8 +183,8 @@ Run: `uv run pytest tests/test_entry.py -q`. Expected: FAIL (`create_client` tak
 
 - [ ] **Step 9: Add the two keywords to `create_client`**
 
-Signature as in *Interfaces*, both passed straight through to `NortecGoClient`. Import `Mapping` and
-`Callable`/`Awaitable` from `collections.abc`; nothing from `pynortecgo._*`. The docstring stays one line.
+Signature as in *Interfaces*, both passed straight through to `NortecGoClient`. `entry.py` already imports
+`Mapping`, `Callable` and `Awaitable`; nothing comes from `pynortecgo._*`. The docstring stays one line.
 
 Run: `uv run pytest tests/test_entry.py -q`. Expected: PASS.
 
@@ -185,8 +192,10 @@ Run: `uv run pytest tests/test_entry.py -q`. Expected: PASS.
 
 `GRID_TARIFF_KEY = "nortec_go.{entry_id}.grid_tariff"`, formatted with `mock_config_entry.entry_id`.
 
-- In `test_setup_entry`, add: `assert kwargs["grid_tariff"] is None` and
-  `assert kwargs["on_grid_tariff"] is not None`.
+- In `test_setup_entry`, add the `hass_storage: dict[str, Any]` fixture and:
+  `assert kwargs["grid_tariff"] is None`, `assert kwargs["on_grid_tariff"] is not None`, and
+  `assert GRID_TARIFF_KEY.format(entry_id=mock_config_entry.entry_id) not in hass_storage` (nothing is
+  written until the callback runs).
 - New tests:
 
 ```text
@@ -194,6 +203,14 @@ async def test_setup_passes_the_stored_grid_tariff(hass, mock_config_entry, mock
     # hass_storage[key] = {"version": 1, "minor_version": 1, "key": key, "data": FAKE_GRID_TARIFF}
     await setup_integration(hass, mock_config_entry)
     assert mock_client_class.call_args.kwargs["grid_tariff"] == FAKE_GRID_TARIFF
+
+async def test_setup_ignores_a_grid_tariff_of_the_wrong_shape(hass, mock_config_entry, mock_client_class, hass_storage, caplog):
+    # hass_storage[key] = {"version": 1, "minor_version": 1, "key": key, "data": [1, 2]}
+    with caplog.at_level(logging.WARNING):
+        await setup_integration(hass, mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert mock_client_class.call_args.kwargs["grid_tariff"] is None
+    assert caplog.text.count("Ignoring the stored grid tariff: it has an unexpected shape") == 1
 
 async def test_grid_tariff_from_the_client_is_stored(hass, mock_config_entry, mock_client_class, hass_storage):
     await setup_integration(hass, mock_config_entry)
@@ -229,8 +246,9 @@ Run: `uv run pytest tests/test_init.py -q`. Expected: the new tests and `test_se
   `# Runs inside the client's price forecast: must not call the client.`
 - Pass `grid_tariff=grid_tariff, on_grid_tariff=_async_store_grid_tariff` to `create_client`.
 - In `async_remove_entry`, add `await GridTariffStore(hass, entry.entry_id).async_remove()` after the
-  energy store. The docstring becomes: `"""Delete the entry's stored prices, energy ledger, grid tariff and
-  charge control, and its repair issues."""`
+  energy store. The docstring becomes, on one line: `"""Delete the entry's stored prices, energy ledger,
+  grid tariff and charge control, and its repair issues."""`
+- `__init__.py` (and `tests/conftest.py`) need `from typing import Any`.
 
 Run: `uv run pytest tests/test_init.py -q`. Expected: PASS.
 
@@ -277,7 +295,8 @@ charger's own prices", so the condition isn't lost. It may become two paragraphs
 Read *Known limitations* (the estimate bullet) and *Troubleshooting* → *Warnings about the grid tariff or
 DataHub in the log* against the new paragraph. The spec expects no change. Change only a sentence that is
 no longer true, and say which in the report.
-Check: `git grep -n -i "two requests" -- docs/user` prints nothing.
+Check: `git grep -n -i -e "makes two requests there" -e "It makes them again after a restart" -- docs/user`
+prints nothing (the removed wording; "finding the tariff takes two requests" stays, as the spec asks).
 
 - [ ] **Step 3: Add the changelog entry**
 
@@ -298,3 +317,11 @@ Run the gate lines in *Global Constraints* (the pre-commit hooks also check the 
 git add docs/user/nortec_go.md CHANGELOG.md docs/decisions.md
 git commit -F /tmp/grid-tariff-task-2-msg-1.txt   # "docs: the stored grid tariff, changelog and D53 (#130)"
 ```
+
+---
+
+### After the tasks (controller, not a task)
+
+- The *Bumping `pynortecgo`* checklist results from the spec go in the PR description.
+- The branch review (`full-reviewer`), `scripts/smoke`, the bump step (a `fix` title, so a patch), and
+  `Closes #130` in the PR description (§1 steps 9–10).

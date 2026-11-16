@@ -188,6 +188,15 @@ def test_breaking_mark_on_a_non_releasing_type(title: str) -> None:
         parse_title(title)
 
 
+@pytest.mark.parametrize("title", ["Bump a thing", "build: a thing", "docs!: a thing"])
+def test_title_errors_name_no_doc(title: str) -> None:
+    """A refused title's message states its rule without pointing at a doc."""
+    with pytest.raises(ReleaseCheckError) as err:
+        parse_title(title)
+    assert "see " not in str(err.value)
+    assert ".md" not in str(err.value)
+
+
 @pytest.mark.parametrize(
     ("title", "releasing"),
     [
@@ -293,7 +302,10 @@ def test_bad_changelog_heading(heading: str) -> None:
 def test_duplicate_changelog_section() -> None:
     """A section name that appears twice is refused, naming the recipe."""
     text = BUMPED_LOG.replace("## [0.1.0] - 2026-09-29", "## [0.1.1] - 2026-09-29")
-    with pytest.raises(ReleaseCheckError, match="Two releasing PRs at once"):
+    with pytest.raises(
+        ReleaseCheckError,
+        match=re.escape("put this branch's entries back under [Unreleased]"),
+    ):
         parse_changelog(text)
 
 

@@ -4,7 +4,7 @@
   "codeowners": ["@thomas3650"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/thomas3650/HA-NortecGo/blob/main/docs/user/nortec_go.md",
+  "documentation": "https://github.com/thomas3650/HA-NortecGo#readme",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/thomas3650/HA-NortecGo/issues",

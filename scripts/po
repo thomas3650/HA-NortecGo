@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Claude in PO mode (docs/way-of-working.md §8): the PO session, named po, in the main checkout.
+# Start Claude in PO mode: the PO session, named po, in the main checkout.
 # Refuses in a linked worktree, and while a session of this repo named po or team-lead runs (the two modes never run at once).
 set -euo pipefail
 

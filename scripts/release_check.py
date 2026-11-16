@@ -1,4 +1,4 @@
-"""Release rules for the release workflows and the bump step (docs/releasing.md).
+"""Release rules for the release workflows and the bump step.
 
 Stdlib only. The workflows run it with `uv run --no-project --python 3.14`.
 """
@@ -31,7 +31,6 @@ GROUP_ORDER: tuple[str, ...] = (
     "Security",
 )
 UNRELEASED = "Unreleased"
-DOCS = "docs/releasing.md"
 
 _VERSION = re.compile(
     r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
@@ -100,19 +99,15 @@ def parse_title(title: str) -> Title:
     """Parse a PR title, `type(scope)!: text`."""
     match = _TITLE.fullmatch(title)
     if match is None:
-        raise ReleaseCheckError(
-            f"PR title {title!r} isn't 'type(scope)!: text' (see {DOCS})"
-        )
+        raise ReleaseCheckError(f"PR title {title!r} isn't 'type(scope)!: text'")
     kind = match["type"]
     if kind not in RELEASING and kind not in NON_RELEASING:
         allowed = ", ".join(sorted([*RELEASING, *NON_RELEASING]))
-        raise ReleaseCheckError(
-            f"PR title type {kind!r} isn't one of: {allowed} (see {DOCS})"
-        )
+        raise ReleaseCheckError(f"PR title type {kind!r} isn't one of: {allowed}")
     breaking = match["bang"] is not None
     if breaking and kind not in RELEASING:
         raise ReleaseCheckError(
-            f"'!' marks a breaking change, which is a feat, fix or perf, not a {kind} (see {DOCS})"
+            f"'!' marks a breaking change, which is a feat, fix or perf, not a {kind}"
         )
     return Title(kind, match["scope"], breaking)
 
@@ -188,7 +183,9 @@ def parse_changelog(text: str) -> Changelog:
     for section in sections:
         if section.name in seen:
             raise ReleaseCheckError(
-                f"CHANGELOG.md has [{section.name}] twice (see {DOCS}, Two releasing PRs at once)"
+                f"CHANGELOG.md has [{section.name}] twice. Another releasing PR merged first: "
+                "merge origin/main, take main's CHANGELOG.md and manifest.json version, "
+                "put this branch's entries back under [Unreleased], and rerun the bump step"
             )
         seen.add(section.name)
     return Changelog("\n".join(preamble).strip("\n"), tuple(sections))
@@ -312,7 +309,7 @@ def _releasing_problems(
     if version != expected:
         problems.append(
             f"manifest.json: version is {version}, expected {expected} "
-            f"(run the bump step, see {DOCS})"
+            "(run the bump step)"
         )
     first = head.sections[0] if head.sections else None
     second = head.sections[1] if len(head.sections) > 1 else None
@@ -358,9 +355,7 @@ def pr_problems(
     if expected is not None:
         return problems + _releasing_problems(head, head_version.text, expected, added)
     if head_version.text != base_version.text:
-        problems.append(
-            f"manifest.json: a {parsed.kind} PR doesn't change the version (see {DOCS})"
-        )
+        problems.append(f"manifest.json: a {parsed.kind} PR doesn't change the version")
     if fixing_old:
         problems += [f"CHANGELOG.md: unexpected new section [{name}]" for name in added]
         if _unreleased(head) != _unreleased(base):
@@ -370,7 +365,7 @@ def pr_problems(
     elif head_changelog != base_changelog:
         problems.append(
             f"CHANGELOG.md: a {parsed.kind} PR doesn't change the changelog "
-            f"(a user-visible change is a feat, fix or perf PR, see {DOCS})"
+            "(a user-visible change is a feat, fix or perf PR)"
         )
     return problems
 
@@ -500,7 +495,7 @@ def _release_pr(title_text: str) -> int:
     title = parse_title(title_text)
     if not title.releasing:
         print(
-            f"A {title.kind} PR doesn't release: nothing to bump (see {DOCS})",
+            f"A {title.kind} PR doesn't release: nothing to bump",
             file=sys.stderr,
         )
         return 1
@@ -510,7 +505,7 @@ def _release_pr(title_text: str) -> int:
     if _git("merge-base", "--is-ancestor", "origin/main", "HEAD").returncode != 0:
         print(
             "origin/main isn't in this branch: merge origin/main into this branch first "
-            f"(see {DOCS}, Two releasing PRs at once)",
+            "(another releasing PR may have merged; never rebase, that needs a force-push)",
             file=sys.stderr,
         )
         return 1

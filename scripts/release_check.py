@@ -404,7 +404,7 @@ class Verdict:
 def bump_verdict(
     *, base_manifest: str, head_manifest: str, base_changelog: str, head_changelog: str
 ) -> Verdict:
-    """Whether the head is a bump of the base (spec §3)."""
+    """Whether the head is a bump of the base."""
     base = manifest_version(base_manifest)
     head = manifest_version(head_manifest)
     version = head.text

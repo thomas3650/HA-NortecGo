@@ -776,7 +776,7 @@ async def test_stop_survives_the_start_deadline_at_a_slow_setup(
     mock_client.stop_charge.assert_awaited_once()
     assert (
         not mock_config_entry.runtime_data.data.control.blocked
-    )  # the charge seen clears it (D26)
+    )  # the charge seen clears it
     mock_client.start_charge.assert_not_awaited()
 
 

@@ -1,4 +1,4 @@
-"""The Nortec Go Charge switch: starts and stops a charge (§2.1)."""
+"""The Nortec Go Charge switch: starts and stops a charge."""
 
 from typing import Any
 
@@ -32,7 +32,7 @@ class NortecGoChargeSwitch(NortecGoChargerEntity, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        """Available after a failed read too, so turn_off still reaches stop_charge (§2.1)."""
+        """Available after a failed read too, so turn_off still reaches stop_charge."""
         return True
 
     @property

@@ -56,7 +56,7 @@ from .prices import KnownSlots, PriceStore, merge_forecast, next_price_read, pru
 
 _LOGGER = logging.getLogger(__name__)
 
-# The setup car read's errors by class, the first match wins; anything else is car_read_failed (D44).
+# The setup car read's errors by class, the first match wins; anything else is car_read_failed.
 _SETUP_CAR_ERROR_KEYS: tuple[tuple[type[NortecGoError], str], ...] = (
     (RateLimitError, "rate_limited"),
     (NortecGoConnectionError, "cannot_connect"),
@@ -69,9 +69,9 @@ _SETUP_CAR_ERROR_KEYS: tuple[tuple[type[NortecGoError], str], ...] = (
 class NortecGoData:
     """One read of the charger and the car, with the charge control's state.
 
-    vehicle is None when the account has no single car, at setup or since (D44). read_at is
+    vehicle is None when the account has no single car, at setup or since. read_at is
     when the charger was last read successfully. total_energy_kwh is the energy ledger's total
-    after this read (D47).
+    after this read.
     """
 
     charger: Charger
@@ -84,7 +84,7 @@ class NortecGoData:
 def interval_for(
     charger: Charger, control: ChargeControlState, age: timedelta
 ) -> timedelta:
-    """The next polling interval, from the charge status, a stop asked for and the last good read's age (D29, D31, D50)."""
+    """The next polling interval, from the charge status, a stop asked for and the last good read's age."""
     if control.stop_asked or charge_status(charger, control) in (
         "starting",
         "stopping",
@@ -98,7 +98,7 @@ def interval_for(
 
 
 def car_device_identifier(charger_id: str) -> tuple[str, str]:
-    """The car device's identifier, keyed on the charger (§2.1)."""
+    """The car device's identifier, keyed on the charger."""
     return (DOMAIN, f"{charger_id}_car")
 
 
@@ -155,22 +155,22 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
 
     @property
     def car_gone(self) -> bool:
-        """Whether the car went from the account while running: from a "no car" answer to the next good read (D44)."""
+        """Whether the car went from the account while running: from a "no car" answer to the next good read."""
         return self._car_gone
 
     @property
     def price_read_failing(self) -> bool:
-        """Whether the price reads fail now: from the first failure to the next good read (D37)."""
+        """Whether the price reads fail now: from the first failure to the next good read."""
         return self._prices_failing
 
     @property
     def price_retry_pending(self) -> bool:
-        """Whether a price read retry is scheduled (D37)."""
+        """Whether a price read retry is scheduled."""
         return self._price_retry is not None
 
     @property
     def energy_ledger(self) -> EnergyLedger:
-        """The ledger Total energy is summed from (D47)."""
+        """The ledger Total energy is summed from."""
         return self._energy
 
     async def _async_update_data(self) -> NortecGoData:
@@ -215,8 +215,8 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         read_at = dt_util.utcnow()
         setup = self.data is None
         if setup:
-            # The car first: a setup that fails on it must leave the charge control as loaded
-            # (D44). A stop it had queued would be cancelled, and wait 2 minutes for its next try (D50).
+            # The car first: a setup that fails on it must leave the charge control as loaded.
+            # A stop it had queued would be cancelled, and wait 2 minutes for its next try.
             self._car_read_at = read_at
             vehicle = await self._async_read_setup_vehicle()
         self.charge_control.on_charger_read(charger, start_attempts)
@@ -243,7 +243,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         )
 
     async def _async_read_charger(self) -> Charger:
-        """Read the charger; a failed read first sets the next interval from the last good one (D31)."""
+        """Read the charger; a failed read first sets the next interval from the last good one."""
         try:
             return await self.client.get_charger()
         except NortecGoError as err:
@@ -257,14 +257,14 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             raise
 
     async def _async_advance_energy(self, charger: Charger, read_at: datetime) -> None:
-        """Count the read in the energy ledger, and save the ledger when it changed (D47)."""
+        """Count the read in the energy ledger, and save the ledger when it changed."""
         advanced = advance(self._energy, charger, read_at)
         if advanced is not self._energy:
             self._energy = advanced
             await self._energy_store.async_save(advanced)
 
     def _car_due(self, now: datetime) -> bool:
-        """Read the car when asked, or when its last try is old enough (§3.2)."""
+        """Read the car when asked, or when its last try is old enough."""
         return (
             self._read_car_next
             # For mypy only: the setup read always sets _car_read_at.
@@ -290,13 +290,13 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self.async_update_listeners()
 
     async def async_read_now(self, *, with_car: bool = False) -> None:
-        """Read the charger now, not debounced; the car too when asked (§3.3)."""
+        """Read the charger now, not debounced; the car too when asked."""
         if with_car:
             self._read_car_next = True
         await self.async_refresh()
 
     async def _async_read_setup_vehicle(self) -> Vehicle | None:
-        """The setup's car read decides has_car; a failed read fails setup rather than guessing (D44)."""
+        """The setup's car read decides has_car; a failed read fails setup rather than guessing."""
         try:
             vehicle = await self.client.get_vehicle()
         except AuthError as err:
@@ -359,7 +359,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
 
     @callback
     def _async_car_gone(self, err: NortecGoError) -> None:
-        """The account no longer has exactly one car: drop its data and raise the repair issue (D44).
+        """The account no longer has exactly one car: drop its data and raise the repair issue.
 
         Nothing is removed here; the next setup removes the device.
         """
@@ -395,7 +395,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
 
     @callback
     def _async_update_car_device(self, vehicle: Vehicle) -> None:
-        """Bring the car device's name, brand and model up to date, also for another car (D44)."""
+        """Bring the car device's name, brand and model up to date, also for another car."""
         registry = dr.async_get(self.hass)
         identifier = car_device_identifier(self.charger_id)
         if (
@@ -429,7 +429,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             registry.async_update_device(device.id, name=name)
 
     async def async_load_energy(self) -> None:
-        """Load the stored energy ledger, or start a new one (D47).
+        """Load the stored energy ledger, or start a new one.
 
         A new one is saved at once, so its start survives a restart that comes before the first
         charge: a charge that then runs while Home Assistant is off still counts.
@@ -455,10 +455,10 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         retry_on_failure: bool = False,
         raise_on_failure: bool = False,
     ) -> None:
-        """Read the forecast, merge, prune and save it with its currency; keep the known slots on failure (§4.3).
+        """Read the forecast, merge, prune and save it with its currency; keep the known slots on failure.
 
-        A failed read asked to retry on failure is read once more later (D37). One asked to raise
-        on failure then raises a translated error, for the Refresh button (D43).
+        A failed read asked to retry on failure is read once more later. One asked to raise
+        on failure then raises a translated error, for the Refresh button.
         """
         try:
             forecast = await self.client.get_price_forecast()
@@ -499,7 +499,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self.async_update_listeners()
 
     def _log_price_error(self, err: NortecGoError) -> None:
-        """Log the first price read failure of a run at warning, later ones at debug (D37)."""
+        """Log the first price read failure of a run at warning, later ones at debug."""
         level = logging.DEBUG if self._prices_failing else logging.WARNING
         self._prices_failing = True
         _LOGGER.log(
@@ -510,7 +510,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
 
     @callback
     def _async_schedule_price_retry(self, err: NortecGoError) -> None:
-        """Read the prices once more later, unless the next scheduled read comes first (D37)."""
+        """Read the prices once more later, unless the next scheduled read comes first."""
         delay = PRICE_RETRY_DELAY
         if isinstance(err, RateLimitError) and err.retry_after is not None:
             delay = max(delay, timedelta(seconds=err.retry_after))
@@ -552,7 +552,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
 
         @callback
         def _price_time(now: datetime) -> None:
-            # The scheduled read replaces a pending retry (D37).
+            # The scheduled read replaces a pending retry.
             self._async_cancel_price_retry()
             self.async_start_price_read(retry_on_failure=True)
 

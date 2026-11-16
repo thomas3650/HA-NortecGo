@@ -77,7 +77,7 @@ async def test_round_trip(hass: HomeAssistant, hass_storage: dict[str, Any]) -> 
 async def test_a_try_time_stays_without_a_stop(
     hass: HomeAssistant, hass_storage: dict[str, Any]
 ) -> None:
-    """The last call's time belongs to the control, not to one stop (D50)."""
+    """The last call's time belongs to the control, not to one stop."""
     _put(hass_storage, {**EMPTY, "stop_tried_at": T3})
     loaded = await ChargeControlStore(hass, ENTRY_ID).async_load()
     assert loaded == StoredControl(stop_tried_at=_time(T3))
@@ -190,7 +190,7 @@ async def test_minor_1_of_a_wrong_shape_is_unreadable(
 async def test_wrong_shape_is_unreadable(
     hass: HomeAssistant, hass_storage: dict[str, Any], data: dict[str, Any]
 ) -> None:
-    """Each wrong shape of spec §3: a missing key, a wrong type, a block and its reason apart, tries that don't fit."""
+    """Each wrong shape of the stored state: a missing key, a wrong type, a block and its reason apart, tries that don't fit."""
     _put(hass_storage, data)
     with pytest.raises(UnreadableStoreError):
         await ChargeControlStore(hass, ENTRY_ID).async_load()

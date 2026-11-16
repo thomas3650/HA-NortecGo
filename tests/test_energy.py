@@ -1,4 +1,4 @@
-"""Tests for the Total energy ledger: the counting rule and its store (D47)."""
+"""Tests for the Total energy ledger: the counting rule and its store."""
 
 from datetime import UTC, datetime, timedelta
 import logging
@@ -290,7 +290,7 @@ def test_new_ledger_and_total() -> None:
 def test_advance(
     reads: list[tuple[float, Charger]], totals: list[float], waiting: list[str]
 ) -> None:
-    """The total after each read, and the charges still provisional at the end (spec §2)."""
+    """The total after each read, and the charges still provisional at the end."""
     ledger, seen = _run(reads)
     assert seen == totals
     assert [charge.id for charge in ledger.provisional] == waiting

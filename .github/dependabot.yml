@@ -21,7 +21,7 @@ updates:
       uv:
         patterns: ["*"]
     ignore:
-      - dependency-name: pynortecgo  # Renovate bumps it, with manifest.json (D51)
+      - dependency-name: pynortecgo  # Renovate bumps it, with manifest.json, which Dependabot doesn't read
   - package-ecosystem: pre-commit
     directory: /
     commit-message:

@@ -1,7 +1,7 @@
 """The Nortec Go repair fix flows.
 
-Allow charge starts again (§3.5), remove a car that is gone (D44), and dismiss the notice
-about a stop that couldn't be confirmed (D50).
+Allow charge starts again, remove a car that is gone, and dismiss the notice about a stop
+that couldn't be confirmed.
 """
 
 from typing import Any

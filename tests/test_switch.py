@@ -155,7 +155,7 @@ async def test_switch_off_right_after_a_stop(
 async def test_switch_added_without_a_car(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
-    """The Charge switch is added even when the account has no car (D32)."""
+    """The Charge switch is added even when the account has no car."""
     mock_client.get_vehicle.side_effect = VehicleNotFoundError("no car")
     await setup_integration(hass, mock_config_entry)
     assert not mock_config_entry.runtime_data.has_car

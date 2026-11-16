@@ -175,7 +175,7 @@ _PENDING = ChargeControlState(start_pending=True)
 def test_interval_for(
     charger: Any, control: ChargeControlState, interval: timedelta
 ) -> None:
-    """30 s while starting or stopping, 5 min while charging, 60 min otherwise (D29)."""
+    """30 s while starting or stopping, 5 min while charging, 60 min otherwise."""
     assert interval_for(charger, control, timedelta(0)) == interval
 
 
@@ -421,7 +421,7 @@ async def test_failed_setup_car_read_keeps_a_stop_asked(
     mock_client: AsyncMock,
     error: Exception,
 ) -> None:
-    """A setup that fails on the car read sends no stop and keeps the stored control (D44).
+    """A setup that fails on the car read sends no stop and keeps the stored control.
 
     The setup that then works sends the stop the owner asked for, once.
     """
@@ -750,7 +750,7 @@ async def test_car_gone_while_running(
     caplog: pytest.LogCaptureFixture,
     error: Exception,
 ) -> None:
-    """A "no car" answer while running: no car data, a repair issue, one warning; a good read ends it (D44)."""
+    """A "no car" answer while running: no car data, a repair issue, one warning; a good read ends it."""
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
     issues = ir.async_get(hass)
@@ -1810,7 +1810,7 @@ _STOPPING = make_charger(is_connected=True, charge_state=ChargeState.STOPPING)
 def test_interval_for_by_read_age(
     charger: Any, control: ChargeControlState, age: timedelta, interval: timedelta
 ) -> None:
-    """Our own pending states keep 30 s; the charger's own starting or stopping only while the read is fresh (D31)."""
+    """Our own pending states keep 30 s; the charger's own starting or stopping only while the read is fresh."""
     assert interval_for(charger, control, age) == interval
 
 

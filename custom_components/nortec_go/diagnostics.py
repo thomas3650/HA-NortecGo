@@ -1,4 +1,4 @@
-"""Diagnostics for Nortec Go: only the sign-in secrets are redacted (D38)."""
+"""Diagnostics for Nortec Go: only the sign-in secrets are redacted."""
 
 from dataclasses import asdict
 from typing import Any, Final
@@ -17,7 +17,8 @@ from .const import CONF_REFRESH_TOKEN
 from .entry import NortecGoConfigEntry
 
 # The password is never stored; it is here in case a later bug stores it. The device ID is
-# sent at sign-in. IDs and names stay (D38).
+# sent at sign-in. IDs and names stay: they help match a
+# download to the devices, and aren't secrets.
 TO_REDACT: Final = {
     CONF_ACCESS_TOKEN,
     CONF_DEVICE_ID,
@@ -84,7 +85,7 @@ async def async_get_config_entry_diagnostics(
                 "first_slot_start": min(slots, default=None),
                 "last_slot_start": max(slots, default=None),
             },
-            # The Total energy ledger; charge IDs aren't secrets (D38).
+            # The Total energy ledger; charge IDs aren't secrets.
             "energy": asdict(coordinator.energy_ledger),
         }
     )

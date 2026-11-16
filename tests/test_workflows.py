@@ -210,7 +210,7 @@ def _pre_commit_repos() -> list[dict[str, Any]]:
 
 
 def test_pre_commit_ruff_is_the_locked_one() -> None:
-    """pre-commit runs ruff through uv run, so its version is the one in uv.lock (D41)."""
+    """pre-commit runs ruff through uv run, so its version is the one in uv.lock."""
     repos = _pre_commit_repos()
     assert not any("ruff-pre-commit" in repo["repo"] for repo in repos)
     hooks = {

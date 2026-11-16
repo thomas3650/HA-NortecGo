@@ -1,4 +1,4 @@
-"""A charge the car paused, as the owner saw it in Home Assistant (spec §2)."""
+"""A charge the car paused, as the owner saw it in Home Assistant."""
 
 from unittest.mock import AsyncMock
 

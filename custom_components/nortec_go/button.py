@@ -1,4 +1,4 @@
-"""The Nortec Go Refresh button: reads the charger, the car and the prices now (D27)."""
+"""The Nortec Go Refresh button: reads the charger, the car and the prices now."""
 
 from contextlib import suppress
 
@@ -43,7 +43,10 @@ async def async_setup_entry(
 
 
 class NortecGoRefreshButton(NortecGoChargerEntity, ButtonEntity):
-    """Reads the charger, the car and the prices when pressed; raises when a read fails (D43)."""
+    """Reads the charger, the car and the prices when pressed; raises when a read fails.
+
+    A silent press during an outage would look like fresh data.
+    """
 
     def __init__(self, coordinator: NortecGoCoordinator) -> None:
         """Name the button Refresh."""
@@ -63,7 +66,7 @@ class NortecGoRefreshButton(NortecGoChargerEntity, ButtonEntity):
             await coordinator.async_read_prices(raise_on_failure=True)
             return
         failed = coordinator.last_exception
-        # The prices are read all the same; the charger's error wins when both fail (D43).
+        # The prices are read all the same; the charger's error wins when both fail.
         with suppress(HomeAssistantError):
             await coordinator.async_read_prices(raise_on_failure=True)
         raise read_error(failed) from failed

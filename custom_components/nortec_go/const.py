@@ -37,6 +37,10 @@ PRICE_STORE_KEY: Final = "nortec_go.{entry_id}.prices"
 ENERGY_STORE_VERSION: Final = 1
 ENERGY_STORE_KEY: Final = "nortec_go.{entry_id}.energy"
 
+# The client's grid tariff, kept as it hands it over (D53).
+GRID_TARIFF_STORE_VERSION: Final = 1
+GRID_TARIFF_STORE_KEY: Final = "nortec_go.{entry_id}.grid_tariff"
+
 # The charge switch's start guard (D26).
 START_CONFIRM_TIMEOUT: Final = timedelta(minutes=10)
 # How long the switch shows off after an accepted stop while the charger still reports the charge

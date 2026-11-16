@@ -1241,7 +1241,7 @@ dev = [
     { name = "actionlint-py" },
     { name = "mypy" },
     { name = "pre-commit" },
-    { name = "pynortecgo", specifier = "==0.11.0" },
+    { name = "pynortecgo", specifier = "==0.12.0" },
     { name = "pytest-cov" },
     { name = "pytest-homeassistant-custom-component", specifier = "==0.13.373" },
     { name = "ruff" },
@@ -2453,15 +2453,15 @@ wheels = [
 
 [[package]]
 name = "pynortecgo"
-version = "0.11.0"
+version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/22/59/6a56723497dd003d621c3530b5ab6696a9704bd2490a1cf3a408e9ecc139/pynortecgo-0.11.0.tar.gz", hash = "sha256:9085a08323841a7576be149f6407d5a6d541719c95eff5e8f66455ac11e4f4f1", size = 33077, upload-time = "2026-10-23T20:54:51.526Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/83/9b/a89115ba9d3f2afca6afb8140e46542ae766cfa51a6793a221803bbaa978/pynortecgo-0.12.0.tar.gz", hash = "sha256:ac024606622408dc58ea9c159b43f798c09564815838618eb82177c8d9d68218", size = 36931, upload-time = "2026-11-16T09:43:45.51Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0e/9d/c617febc40d0056a5ac5cf6ec7b637373e102f87f2c95acaf8334d9e9971/pynortecgo-0.11.0-py3-none-any.whl", hash = "sha256:350c854620f49817b22feda6621490cf13044d94d90bd1790bd73d4caf6b21f8", size = 37470, upload-time = "2026-10-23T20:54:49.551Z" },
+    { url = "https://files.pythonhosted.org/packages/48/92/671effe97f86565194c3abd27ae8c7d4ef3abd83bfe359cb99b765a69a96/pynortecgo-0.12.0-py3-none-any.whl", hash = "sha256:7b705863188d2e611219b9d9d8b9540a570a8595e336ec2f36f1c1e1b452f5d7", size = 41683, upload-time = "2026-11-16T09:43:44.228Z" },
 ]
 
 [[package]]
@@ -3351,17 +3351,18 @@ wheels = [
 
 [[package]]
 name = "virtualenv"
-version = "21.12.1"
+version = "21.14.13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "distlib" },
     { name = "filelock" },
+    { name = "packaging" },
     { name = "platformdirs" },
     { name = "python-discovery" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ad/3b/02608bb39c6b6f7d59ca62b04d704cf61e85361a7123b6394bca275661e1/virtualenv-21.12.1.tar.gz", hash = "sha256:be5a0a62cb2d1529ff6999652e2e7826f95bf7faa9b96b88cc39847c023d90a0", size = 5397187, upload-time = "2026-09-24T19:03:48.546Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/aa/bff50daee0488e16d611258a9b6c5a1d0c9e128f8ca424e9f4e1c0444ef2/virtualenv-21.14.13.tar.gz", hash = "sha256:de5307ba4b9a0001d9c8ea02832d38f63ca432880f416c1bface61c4323fd905", size = 5570301, upload-time = "2026-10-22T20:10:16.952Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f5/8c/692cf235722ee45c612630d2b49b3d1765892f7e440055365ea1b59c659e/virtualenv-21.12.1-py3-none-any.whl", hash = "sha256:878db9e963d0ef0b38561a344a4f9b12dc5c7741b6245d7ed10e9291cfea28bc", size = 5486096, upload-time = "2026-09-24T19:03:45.985Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/a9/c10d8a44a29fb94a18b43fdf11f38caca53ae7c9406f11a72b1cb8f624f1/virtualenv-21.14.13-py3-none-any.whl", hash = "sha256:5fbb04138a4861580b78ba9110d529a26bc48fcc93c8ec36bc0202eeed96a788", size = 5557094, upload-time = "2026-10-22T20:10:15.096Z" },
 ]
 
 [[package]]

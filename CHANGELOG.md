@@ -6,6 +6,15 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-16
+
+### Fixed
+
+- `pynortecgo` 0.12.0. The grid tariff from your grid company is used again for the hours beyond those the
+  charger prices itself. Energi Data Service started limiting requests, so it had been estimated since about
+  7 November. The tariff the integration finds is now stored, so a restart of Home Assistant or a reload of
+  the integration doesn't need to fetch it again.
+
 ## [0.6.3] - 2026-10-28
 
 ### Changed

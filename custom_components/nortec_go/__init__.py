@@ -1,5 +1,7 @@
 """The Nortec Go integration."""
 
+from typing import Any
+
 from homeassistant.const import CONF_DEVICE_ID, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, device_registry as dr
@@ -11,6 +13,7 @@ from .const import DOMAIN
 from .coordinator import NortecGoCoordinator, car_device_identifier
 from .energy import EnergyStore
 from .entry import NortecGoConfigEntry, create_client, tokens_from_data, tokens_to_data
+from .grid_tariff import GridTariffStore
 from .prices import PriceStore
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -37,11 +40,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
             entry, data={**entry.data, **tokens_to_data(tokens)}
         )
 
+    grid_tariff_store = GridTariffStore(hass, entry.entry_id)
+    grid_tariff = await grid_tariff_store.async_load()
+
+    async def _async_store_grid_tariff(tariff: dict[str, Any]) -> None:
+        # Runs inside the client's price forecast: must not call the client.
+        await grid_tariff_store.async_save(tariff)
+
     client = create_client(
         hass,
         tokens=tokens_from_data(entry.data),
         device_id=entry.data[CONF_DEVICE_ID],
         on_tokens_refreshed=_async_store_tokens,
+        grid_tariff=grid_tariff,
+        on_grid_tariff=_async_store_grid_tariff,
     )
     # Read the config flow's charger directly; a removed one raises ChargerNotFoundError.
     assert entry.unique_id is not None  # the config flow always sets it
@@ -69,9 +81,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> 
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> None:
-    """Delete the entry's stored prices, energy ledger and charge control, and its repair issues."""
+    """Delete the entry's stored prices, energy ledger, grid tariff and charge control, and its repair issues."""
     await PriceStore(hass, entry.entry_id).async_remove()
     await EnergyStore(hass, entry.entry_id).async_remove()
+    await GridTariffStore(hass, entry.entry_id).async_remove()
     await async_remove_charge_control(hass, entry.entry_id)
 
 

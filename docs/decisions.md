@@ -488,3 +488,13 @@ superseded. How to add one:
 - **Why:** The owner's ruling (#116): outside the PO flow, a PR the controller has taken through every
   check shouldn't wait for the owner to switch to GitHub to merge it.
 - **Source:** [spec](superpowers/specs/2026-10-20-controller-merge-design.md)
+
+### D53: The grid tariff is stored as the client hands it over
+- **Date:** 2026-11-16 · **Status:** active
+- **Decision:** The grid tariff the client finds is kept per entry in its own store
+  (`nortec_go.{entry_id}.grid_tariff`), exactly as the client hands it over, with no parsing, checks or
+  migration of the integration's own. It is handed back to the client at setup, deleted with the entry, and
+  left out of diagnostics.
+- **Why:** The dict is the client's format, versioned and checked by the client, which ignores one it can't
+  read. Owning a copy of that format here would duplicate the client and break when it changes.
+- **Source:** [spec](superpowers/specs/2026-11-16-grid-tariff-store-design.md) (*The store*)

@@ -172,6 +172,6 @@ It should print `Validating renovate.json as repo config`.
 `uv.lock` starts with `version = 1` and a `revision` number, which newer uv releases raise. A local uv
 older than the one that last wrote the lock reads it fine (`uv sync --locked` and `uv lock --check`
 pass), but when it writes the lock (`uv lock --upgrade-package`, or a `uv lock` or `uv sync` after a
-dependency change), it rewrites `revision` to its own, lower number. uv 0.11.19 turned `revision = 5` into `3` in #130. Don't commit that,
-and don't fix the line by hand: run `uv self update`, then lock again. `git diff uv.lock` should then show
-only the packages you meant to change.
+dependency change), it rewrites `revision` to its own, lower number. uv 0.11.19 turned `revision = 5`
+into `3` in #130. Don't commit that, and don't fix the line by hand: run `uv self update`, then lock
+again. `git diff uv.lock` should then show only the packages you meant to change.

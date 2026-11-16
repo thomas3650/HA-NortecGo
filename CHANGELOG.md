@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-16
+
 ### Fixed
 
 - `pynortecgo` 0.12.0. The grid tariff from your grid company is used again for the hours beyond those the

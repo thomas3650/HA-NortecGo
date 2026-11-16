@@ -28,7 +28,7 @@ def test_quality_scale_statuses() -> None:
 def test_dependency_transparency_comment() -> None:
     """The comment isn't cut short by a YAML '#' comment marker."""
     rule = load_yaml_dict(QUALITY_SCALE)["rules"]["dependency-transparency"]
-    assert rule["comment"].endswith("(issue #34).")
+    assert rule["comment"].endswith("a public publishing pipeline.")
 
 
 CHECKED_STATUSES = {

@@ -1,4 +1,4 @@
-"""The cost of the open charge and of the last completed one, as pynortecgo reports them (D42).
+"""The cost of the open charge and of the last completed one, as pynortecgo reports them.
 
 The one place that reads the charges' costs: ActiveCharge.cost and CompletedCharge.cost.
 """

@@ -52,7 +52,7 @@ def test_merge_normalises_to_utc() -> None:
 
 
 def test_merge_stores_the_total_price() -> None:
-    """A slot's total price is stored, not its spot price (D34)."""
+    """A slot's total price is stored, not its spot price."""
     forecast = make_forecast(MIDNIGHT, [2.0])
     assert forecast.slots[0].spot_price != 2.0
     assert merge_forecast({}, forecast) == {MIDNIGHT: 2.0}

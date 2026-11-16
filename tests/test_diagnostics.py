@@ -1,4 +1,4 @@
-"""Tests for the Nortec Go diagnostics: only the sign-in secrets are redacted (D38)."""
+"""Tests for the Nortec Go diagnostics: only the sign-in secrets are redacted."""
 
 from dataclasses import fields
 from datetime import UTC, datetime
@@ -83,7 +83,7 @@ ENTRY = {
     "options": {},
 }
 # The pynortecgo fields the download shows. A client bump that changes them fails
-# test_client_model_fields_are_pinned: decide for each new field whether it is a secret (D38).
+# test_client_model_fields_are_pinned: decide for each new field whether it is a secret.
 CHARGER_FIELDS = {
     "id",
     "name",
@@ -182,7 +182,7 @@ async def test_diagnostics_output(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """The whole output: the four stored secrets redacted, everything else kept (D38)."""
+    """The whole output: the four stored secrets redacted, everything else kept."""
     freezer.move_to(NOON)
     mock_client.get_charger.return_value = make_charger(
         is_connected=True,
@@ -452,7 +452,7 @@ async def test_unloaded_entry(
 
 
 def test_client_model_fields_are_pinned() -> None:
-    """A pynortecgo bump that changes these fields fails here: judge each new one (D38)."""
+    """A pynortecgo bump that changes these fields fails here: judge each new one."""
     assert {f.name for f in fields(Charger)} == CHARGER_FIELDS
     assert {f.name for f in fields(ActiveCharge)} == ACTIVE_CHARGE_FIELDS
     assert {f.name for f in fields(CompletedCharge)} == COMPLETED_CHARGE_FIELDS

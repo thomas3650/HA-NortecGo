@@ -219,7 +219,7 @@ def test_is_charge_on(
 def test_charge_status(
     charger: Any, control: ChargeControlState, expected: str | None
 ) -> None:
-    """The status follows the spec's table, first match wins."""
+    """The status follows the table, first match wins."""
     assert charge_status(charger, control) == expected
 
 
@@ -512,7 +512,7 @@ async def test_pending_start_times_out_into_block(
 async def test_unplugged_read_after_the_timeout_clears_the_block(
     hass: HomeAssistant, control: ChargeControl, freezer: FrozenDateTimeFactory
 ) -> None:
-    """The timer blocks at 10 minutes; a later read that sees the cable unplugged clears it (D26)."""
+    """The timer blocks at 10 minutes; a later read that sees the cable unplugged clears it."""
     await control.async_start()
     await _fire(hass, freezer, START_CONFIRM_TIMEOUT)
     assert control.state == BLOCKED
@@ -670,7 +670,7 @@ async def test_overdue_start_at_load_blocks_after_the_grace_without_evidence(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """An overdue stored start whose first read brings no evidence blocks once the grace is over (§8)."""
+    """An overdue stored start whose first read brings no evidence blocks once the grace is over."""
     key = STORE_KEY.format(entry.entry_id)
     hass_storage[key] = {
         "version": 1,
@@ -897,7 +897,7 @@ async def test_pending_stop_ends_when_the_charge_is_not_on(
     [
         make_charger(is_connected=True, charge_state=ChargeState.CHARGING),
         make_charger(is_connected=True, charge_state=ChargeState.PAUSED),
-        # Not evidence that the charge is off: the pending stop runs its 2 minutes (D50).
+        # Not evidence that the charge is off: the pending stop runs its 2 minutes.
         make_charger(is_connected=True, charge_state=ChargeState.UNKNOWN),
         BUSY_NO_CHARGE_STATE,
     ],
@@ -1415,7 +1415,7 @@ async def test_no_call_while_a_start_is_pending(
 async def test_open_charger_without_a_charge_gets_no_call(
     hass: HomeAssistant, control: ChargeControl, client: AsyncMock
 ) -> None:
-    """An open charger with no charge object ends the pending start, but the stop waits (D50)."""
+    """An open charger with no charge object ends the pending start, but the stop waits."""
     await control.async_start()
     await control.async_stop()
     control.on_charger_read(BUSY_NO_CHARGE_STATE, control.start_attempts)
@@ -1441,7 +1441,7 @@ async def test_stop_outlives_the_start_deadline(
     control.on_charger_read(CHARGING, control.start_attempts)
     await hass.async_block_till_done(wait_background_tasks=True)
     client.stop_charge.assert_awaited_once()
-    assert control.state == STOP_PENDING  # the charge seen cleared the block (D26)
+    assert control.state == STOP_PENDING  # the charge seen cleared the block
     client.start_charge.assert_awaited_once()
 
 
@@ -1512,7 +1512,7 @@ async def test_no_active_charge_does_not_end_the_stop(
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The answer "no active charge" is no evidence: the stop stays until a read decides (D50)."""
+    """The answer "no active charge" is no evidence: the stop stays until a read decides."""
     client.stop_charge.side_effect = NoActiveChargeError("x")
     await control.async_stop()  # the last read shows an idle charger: the call is made
     await hass.async_block_till_done()
@@ -1566,7 +1566,7 @@ async def test_charge_the_read_says_cant_be_stopped_gets_no_call(
 async def test_stale_read_changes_nothing_about_the_stop(
     hass: HomeAssistant, control: ChargeControl, client: AsyncMock
 ) -> None:
-    """A stale read neither ends a pending stop nor sends a stored stop (D26, D50)."""
+    """A stale read neither ends a pending stop nor sends a stored stop."""
     control.on_charger_read(CHARGING, control.start_attempts)
     await control.async_stop()
     control.on_charger_read(
@@ -1782,7 +1782,7 @@ async def test_wait_holds_from_one_stop_to_the_next(
     client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A new stop right after a failed call waits out what is left of the 2 minutes (D50)."""
+    """A new stop right after a failed call waits out what is left of the 2 minutes."""
     control.on_charger_read(CHARGING, control.start_attempts)
     client.stop_charge.side_effect = ChargeNotStoppableError("x")
     await control.async_stop()
@@ -2624,7 +2624,7 @@ async def test_turn_off_after_giving_up_keeps_the_issue_and_waits(
     client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A new turn-off is a new stop, but it doesn't hide the notice or call inside the 2 minutes (D50)."""
+    """A new turn-off is a new stop, but it doesn't hide the notice or call inside the 2 minutes."""
     await _fail_10_times(
         hass, control, client, freezer, last=ChargeNotStoppableError("x")
     )

@@ -72,7 +72,7 @@ def prune(
 def prices_today(
     known: Mapping[datetime, float], now: datetime, time_zone: tzinfo
 ) -> list[dict[str, Any]]:
-    """Today's full day for EV Smart Charging, padded (D23)."""
+    """Today's full day for EV Smart Charging, padded."""
     today = []
     for start in _day_starts(now, time_zone, 0):
         price = known.get(start)
@@ -115,7 +115,7 @@ def _local_read_time(day: date, hour: int, time_zone: tzinfo) -> datetime:
 
 
 def next_price_read(now: datetime, time_zone: tzinfo) -> datetime:
-    """The first scheduled price read after now, in UTC (D37)."""
+    """The first scheduled price read after now, in UTC."""
     today = now.astimezone(time_zone).date()
     for hour in PRICE_READ_HOURS:
         read = _local_read_time(today, hour, time_zone)
@@ -148,7 +148,7 @@ class _PriceData(Store[dict[str, Any]]):
         old_minor_version: int,
         old_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """Version 1 held spot prices: drop them, as they can't be mixed with totals (D34)."""
+        """Version 1 held spot prices: drop them, as they can't be mixed with totals."""
         # Version 1 is the only older version; a version 3 must branch on old_major_version.
         return {"currency": None, "slots": []}
 

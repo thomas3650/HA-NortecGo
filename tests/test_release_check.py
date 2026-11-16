@@ -893,7 +893,7 @@ def test_release_pr_two_releasing_prs(
     _write(origin, REAL_MANIFEST.replace('"0.1.0"', '"0.1.1"'), main_log)
     _commit_all(origin, "fix: main's fix")
     _git(work, "fetch", "-q", "origin")
-    # The two changelogs conflict (spec, Facts), so check=False; the recipe below resolves it.
+    # The two changelogs conflict, so check=False; the recipe below resolves it.
     merge = subprocess.run(
         [
             "git",

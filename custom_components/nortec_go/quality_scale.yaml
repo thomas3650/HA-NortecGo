@@ -5,7 +5,7 @@ rules:
     comment: "The integration registers no service actions."
   appropriate-polling:
     status: done
-    comment: "30 s only while a charge is starting or stopping or a stop asked for hasn't gone through (at most 30 minutes per stop, D50), bounded while reads fail (10 min after a start, 2 min after a stop or the last good read); 5 min while charging, 60 min otherwise (D29, D31)."
+    comment: "30 s only while a charge is starting or stopping or a stop asked for hasn't gone through (at most 30 minutes per stop), bounded while reads fail (10 min after a start, 2 min after a stop or the last good read); 5 min while charging, 60 min otherwise."
   brands:
     status: done
     comment: "Local brand/ folder (HA >= 2026.3), accepted by HACS; moves to home-assistant/brands for a core submission."
@@ -14,7 +14,7 @@ rules:
   config-flow-test-coverage: done
   dependency-transparency:
     status: todo
-    comment: "The pynortecgo source repo is private; the rule needs an open repo, tags and a public publishing pipeline. Tracked in the pynortecgo repo (issue #34)."
+    comment: "The client library's source repository is private; the rule needs an open repository, tags and a public publishing pipeline."
   docs-actions:
     status: exempt
     comment: "The integration registers no service actions."
@@ -40,7 +40,7 @@ rules:
   # Silver
   action-exceptions:
     status: done
-    comment: "Turning Charge on and the Refresh button raise translated errors when their action fails. A turn-off that can't stop the charge is tried again and ends in a repair issue (D50); a rejected session and a reload raise translated errors."
+    comment: "Turning Charge on and the Refresh button raise translated errors when their action fails. A turn-off that can't stop the charge is tried again and ends in a repair issue; a rejected session and a reload raise translated errors."
   config-entry-unloading: done
   docs-configuration-parameters:
     status: exempt
@@ -75,12 +75,12 @@ rules:
   docs-use-cases: done
   dynamic-devices:
     status: todo
-    comment: "Deliberately not done (D44): car entities are added only at setup, so a car added to the account shows up after a reload."
+    comment: "Deliberately not done: car entities are added only at setup, so none appear or disappear at random times; a car added to the account shows up after a reload."
   entity-category: done
   entity-device-class: done
   entity-disabled-by-default:
     status: done
-    comment: "Every entity is enabled: Last read and Last seen are the only signs of how old the charger and car data are, and they change only once per read (D29)."
+    comment: "Every entity is enabled: Last read and Last seen are the only signs of how old the charger and car data are, and they change only once per read."
   entity-translations: done
   exception-translations: done
   icon-translations:
@@ -90,7 +90,7 @@ rules:
   repair-issues: done
   stale-devices:
     status: todo
-    comment: "Deliberately not done while running (D44): a car that goes from the account makes its entities unavailable and raises a repair issue whose fix reloads the entry; the device is removed at setup. No async_remove_config_entry_device."
+    comment: "Deliberately not done while running: a car that goes from the account makes its entities unavailable and raises a repair issue whose fix reloads the entry; the device is removed at setup. No async_remove_config_entry_device."
 
   # Platinum
   async-dependency: done

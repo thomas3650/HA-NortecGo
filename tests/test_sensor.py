@@ -261,7 +261,7 @@ async def test_charge_status_sensor(
     charger: Charger,
     expected: str,
 ) -> None:
-    """Charge status is an enum sensor with the spec's options."""
+    """Charge status is an enum sensor with its options."""
     mock_client.get_charger.return_value = charger
     await setup_integration(hass, mock_config_entry)
     state = hass.states.get("sensor.garage_charger_charge_status")
@@ -796,7 +796,7 @@ async def test_cost_values(
     cost: str,
     last_cost: str,
 ) -> None:
-    """The rows of the spec's table (§3): what each sensor shows in each situation."""
+    """The rows of the table: what each sensor shows in each situation."""
     mock_client.get_charger.return_value = charger
     await setup_integration(hass, mock_config_entry)
     assert _state(hass, COST) == cost

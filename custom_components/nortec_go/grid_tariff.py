@@ -1,4 +1,4 @@
-"""The grid tariff the client hands over, kept across restarts (D53).
+"""The grid tariff the client hands over, kept across restarts.
 
 The integration keeps the client's dict unchanged: it doesn't read, check or migrate it.
 """

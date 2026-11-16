@@ -33,7 +33,7 @@ class NortecGoChargerEntity(NortecGoEntity):
 
 
 class NortecGoCarEntity(NortecGoEntity):
-    """An entity on the car device; unavailable while the car is gone from the account (D44)."""
+    """An entity on the car device; unavailable while the car is gone from the account."""
 
     def __init__(self, coordinator: NortecGoCoordinator, key: str) -> None:
         """Attach the entity to the car device, named "Car" when the car has no name."""

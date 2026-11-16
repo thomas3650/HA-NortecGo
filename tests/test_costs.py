@@ -1,4 +1,4 @@
-"""Tests for the cost reads: the open charge's cost and the last completed charge's (D42)."""
+"""Tests for the cost reads: the open charge's cost and the last completed charge's."""
 
 from pynortecgo import Charger, ChargeState
 import pytest

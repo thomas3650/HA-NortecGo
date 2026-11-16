@@ -15,7 +15,7 @@ repos:
       - id: detect-private-key
       - id: check-added-large-files
         exclude: ^uv\.lock$
-  # ruff runs through uv, so its version is the one in uv.lock, as in CI (D41).
+  # ruff runs through uv, so its version is the one in uv.lock, as in CI; a separately pinned ruff would drift from it.
   - repo: local
     hooks:
       - id: ruff-check

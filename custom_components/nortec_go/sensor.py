@@ -97,7 +97,7 @@ class NortecGoCostSensorDescription(SensorEntityDescription):
 
 
 # Cost this charge has no state class: a per-charge value without last_reset would give a
-# wrong statistics sum. Last charge cost starts a new cycle per completed charge (D42).
+# wrong statistics sum. Last charge cost starts a new cycle per completed charge.
 COST_SENSORS: tuple[NortecGoCostSensorDescription, ...] = (
     NortecGoCostSensorDescription(
         key="charge_cost",
@@ -143,7 +143,7 @@ async def async_setup_entry(
 
 
 class NortecGoPriceSensor(NortecGoChargerEntity, SensorEntity):
-    """The current price, with EV Smart Charging's day lists (§3.4)."""
+    """The current price, with EV Smart Charging's day lists."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _unrecorded_attributes = frozenset({"prices_today", "prices_tomorrow"})
@@ -154,12 +154,12 @@ class NortecGoPriceSensor(NortecGoChargerEntity, SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Always available, so the lists are always there (§4.4)."""
+        """Always available, so the lists are always there."""
         return True
 
     @property
     def native_unit_of_measurement(self) -> str:
-        """The forecast's currency per kWh, or Home Assistant's while none is known (D34)."""
+        """The forecast's currency per kWh, or Home Assistant's while none is known."""
         currency = self.coordinator.price_currency or self.hass.config.currency
         return f"{currency}/kWh"
 
@@ -181,7 +181,7 @@ class NortecGoPriceSensor(NortecGoChargerEntity, SensorEntity):
 
 
 class NortecGoChargeStatusSensor(NortecGoChargerEntity, SensorEntity):
-    """The charge's phase and the start guard (§2.2)."""
+    """The charge's phase and the start guard."""
 
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = CHARGE_STATUS_OPTIONS
@@ -198,7 +198,7 @@ class NortecGoChargeStatusSensor(NortecGoChargerEntity, SensorEntity):
 
 
 class NortecGoLastReadSensor(NortecGoChargerEntity, SensorEntity):
-    """When the charger was last read successfully (§4)."""
+    """When the charger was last read successfully."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -242,7 +242,7 @@ class NortecGoChargeSensor(NortecGoChargerEntity, SensorEntity):
 
 
 class NortecGoTotalEnergySensor(NortecGoChargerEntity, SensorEntity):
-    """The energy delivered since the sensor was added, summed per charge (D47)."""
+    """The energy delivered since the sensor was added, summed per charge."""
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -261,7 +261,7 @@ class NortecGoTotalEnergySensor(NortecGoChargerEntity, SensorEntity):
 
 
 class NortecGoCostSensor(NortecGoChargerEntity, SensorEntity):
-    """A cost the client reports, in the charger's currency (D42)."""
+    """A cost the client reports, in the charger's currency."""
 
     entity_description: NortecGoCostSensorDescription
 
@@ -276,7 +276,7 @@ class NortecGoCostSensor(NortecGoChargerEntity, SensorEntity):
 
     @property
     def native_unit_of_measurement(self) -> str:
-        """The charger's currency, then the forecast's, then Home Assistant's (D34, D42)."""
+        """The charger's currency, then the forecast's, then Home Assistant's."""
         return (
             self.coordinator.data.charger.currency
             or self.coordinator.price_currency

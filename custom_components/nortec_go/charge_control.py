@@ -1,4 +1,11 @@
-"""The Nortec Go charge control: start and stop, the pending start, the stored stop, and the start guard (D26, D29, D31, D50)."""
+"""The Nortec Go charge control: start and stop, the pending start, the stored stop, and the start guard.
+
+Each start can place a card hold, and EV Smart Charging may ask for "on" several times an
+hour, so a start that may have left a hold blocks further starts until a read or the owner
+clears it. A stop is stored until a read sees the charge off, because an unattended stop
+must actually stop the car; as it isn't tied to one charge, its age is bounded. The start
+and stop deadlines run on timers, so an outage doesn't stretch them.
+"""
 
 import asyncio
 from collections.abc import Callable, Coroutine
@@ -68,7 +75,7 @@ CHARGE_STATUS_OPTIONS = [
     "idle",
 ]
 
-# Pre-check errors: no payment request was sent, so no hold (§3.1).
+# Pre-check errors: no payment request was sent, so no hold.
 _PRE_CHECK_ERRORS: dict[type[NortecGoError], str] = {
     CableNotConnectedError: "cable_not_connected",
     ChargerNotReleasedError: "charger_not_released",
@@ -118,7 +125,7 @@ _TOO_OLD = f"it was asked for more than {STOP_ASKED_MAX_AGE} ago"
 
 
 def is_stoppable(charger: Charger) -> bool:
-    """A charge the read says can be stopped, and that isn't ending already (D50).
+    """A charge the read says can be stopped, and that isn't ending already.
 
     An open charger without a charge object, as seen right after a start, isn't.
     """
@@ -127,21 +134,21 @@ def is_stoppable(charger: Charger) -> bool:
 
 
 def is_charge_off(charger: Charger) -> bool:
-    """The charge is ending or over, or none is open on a charger whose state is known (D50)."""
+    """The charge is ending or over, or none is open on a charger whose state is known."""
     if charge_state(charger) in _CHARGE_OVER:
         return True
     return not charge_is_open(charger) and charger.state is not ChargerState.UNKNOWN
 
 
 def is_charge_on(charger: Charger, control: ChargeControlState) -> bool:
-    """The Charge switch's state (§2.1; the pending stop, D29)."""
+    """The Charge switch's state; off while a stop is pending or asked for."""
     if control.stop_pending or control.stop_asked:
         return False
     return control.start_pending or charge_state(charger) in _CHARGE_ON
 
 
 def charge_status(charger: Charger, control: ChargeControlState) -> str | None:
-    """The Charge status sensor's value (§2.2); None is Home Assistant's unknown."""
+    """The Charge status sensor's value; None is Home Assistant's unknown."""
     if control.blocked:
         return "start_blocked"
     if control.stop_pending:
@@ -170,7 +177,7 @@ async def async_remove_charge_control(hass: HomeAssistant, entry_id: str) -> Non
 
 
 class ChargeControl:
-    """Starts and stops charges for one entry, and guards against repeated starts (§3)."""
+    """Starts and stops charges for one entry, and guards against repeated starts."""
 
     def __init__(
         self,
@@ -193,10 +200,10 @@ class ChargeControl:
         self._block_reason: str | None = None
         self._pending_since: datetime | None = None
         self._stop_asked_since: datetime | None = None
-        # The stop_charge() calls made for the stop asked, and the last call's time (D50).
+        # The stop_charge() calls made for the stop asked, and the last call's time.
         self._stop_tries = 0
         self._stop_tried_at: datetime | None = None
-        # A try is queued or in flight: no second one (D50).
+        # A try is queued or in flight: no second one.
         self._try_queued = False
         self._stop_pending_since: datetime | None = None
         self._start_timer: CALLBACK_TYPE | None = None
@@ -219,7 +226,7 @@ class ChargeControl:
         )
 
     async def async_load(self) -> None:
-        """Load the stored state; a store that can't be read blocks starts to be safe (§3.5)."""
+        """Load the stored state; a store that can't be read blocks starts to be safe."""
         try:
             stored = await self._store.async_load()
         except UnreadableStoreError:
@@ -245,7 +252,7 @@ class ChargeControl:
             left = STOP_ASKED_MAX_AGE - (dt_util.utcnow() - asked)
             if left <= timedelta(0):
                 # No grace here, unlike the start's: a stop this old can't be trusted to
-                # belong to the charge that is open now (D50).
+                # belong to the charge that is open now.
                 self._give_up(_TOO_OLD)
             elif self._stop_tries >= STOP_MAX_TRIES and self._wait_timer is None:
                 self._give_up(_NO_STOP_SEEN)
@@ -261,7 +268,7 @@ class ChargeControl:
             self._create_issue(stored.block_reason)
 
     async def async_start(self) -> None:
-        """Start a charge once, unless one is on, pending or blocked (§3.1)."""
+        """Start a charge once, unless one is on, pending or blocked."""
         async with self._lock:
             self._raise_if_closed()
             if self._stop_pending_since is not None:
@@ -270,7 +277,7 @@ class ChargeControl:
                 )
             self._delete_stop_issue()
             if self._stop_asked_since is not None:
-                # The owner asks for a charge: the stop is off, whatever the start then does (D50).
+                # The owner asks for a charge: the stop is off, whatever the start then does.
                 self._clear_stop()
                 self._changed()
             if self._pending_since is not None:
@@ -340,7 +347,7 @@ class ChargeControl:
             self._request_read()
 
     async def async_stop(self) -> None:
-        """Ask for the charge to be off: the stop is stored, and tried now when it may be (D50)."""
+        """Ask for the charge to be off: the stop is stored, and tried now when it may be."""
         async with self._lock:
             self._raise_if_closed()
             charger = self._last_charger
@@ -365,7 +372,7 @@ class ChargeControl:
             await self._async_try_stop(from_turn_off=True)
 
     def _may_try(self) -> bool:
-        """Whether a stop_charge() call may be made now (D50)."""
+        """Whether a stop_charge() call may be made now."""
         return (
             self._stop_asked_since is not None
             and not self._closed
@@ -379,7 +386,7 @@ class ChargeControl:
     async def _async_try_stop(self, *, from_turn_off: bool) -> None:
         """One stop_charge() call, under the lock, with the try already marked as queued.
 
-        Only a read ends the stop as done: the call's answer never does (D50). So every answer
+        Only a read ends the stop as done: the call's answer never does. So every answer
         but a rejected session asks for a read. An exception that isn't the client's own
         escapes untranslated, as it does today.
         """
@@ -438,7 +445,7 @@ class ChargeControl:
             ) from None
 
     async def _async_background_stop(self) -> None:
-        """A try queued by a read; it checks again under the lock (D50)."""
+        """A try queued by a read; it checks again under the lock."""
         try:
             async with self._lock:
                 if (
@@ -455,12 +462,12 @@ class ChargeControl:
 
     @callback
     def on_charger_read(self, charger: Charger, start_attempts: int) -> None:
-        """Update the pending start, the stop and the block from a charger read (§3.4, D50)."""
+        """Update the pending start, the stop and the block from a charger read."""
         self._last_charger = charger
         if self._closed:
             return  # unloaded: the reloaded control owns the store now
         if start_attempts != self.start_attempts:
-            # A stale read: it began before the latest start attempt, and changes nothing (D26).
+            # A stale read: it began before the latest start attempt, and changes nothing.
             return
         changed = False
         if self._pending_since is not None and (
@@ -472,7 +479,7 @@ class ChargeControl:
             # Evidence the charge is off: the notice about a stop that failed goes too.
             self._delete_stop_issue()
             if self._stop_asked_since is not None:
-                # Only a read ends a stop as done (D50).
+                # Only a read ends a stop as done.
                 self._clear_stop()
                 changed = True
         elif (
@@ -525,7 +532,7 @@ class ChargeControl:
     def _set_start_pending(
         self, since: datetime, delay: timedelta = START_CONFIRM_TIMEOUT
     ) -> None:
-        """Start pending since `since`; its timer ends it with a block after `delay` (D31)."""
+        """Start pending since `since`; its timer ends it with a block after `delay`."""
         self._pending_since = since
         self._cancel_start_timer()
 
@@ -547,7 +554,7 @@ class ChargeControl:
         self._cancel_start_timer()
 
     async def _async_start_due(self, since: datetime) -> None:
-        """The start timer's work, under the lock: no charge seen in time blocks starts (D26)."""
+        """The start timer's work, under the lock: no charge seen in time blocks starts."""
         async with self._lock:
             if self._closed or self._pending_since != since:
                 return
@@ -562,7 +569,7 @@ class ChargeControl:
     def _set_stop_asked(
         self, since: datetime, delay: timedelta = STOP_ASKED_MAX_AGE
     ) -> None:
-        """A stop asked for since `since`; its timer gives up after `delay`, read or no read (D31, D50)."""
+        """A stop asked for since `since`; its timer gives up after `delay`, read or no read."""
         self._stop_asked_since = since
         self._cancel_limit_timer()
 
@@ -580,21 +587,21 @@ class ChargeControl:
         )
 
     def _clear_stop(self) -> None:
-        """End the stop asked for; the wait between two calls runs on (D50)."""
+        """End the stop asked for; the wait between two calls runs on."""
         self._stop_asked_since = None
         self._stop_tries = 0
         self._stop_pending_since = None
         self._cancel_limit_timer()
 
     async def _async_limit_due(self, since: datetime) -> None:
-        """The 30 minutes' end, under the lock (D50)."""
+        """The 30 minutes' end, under the lock."""
         async with self._lock:
             if self._closed or self._stop_asked_since != since:
                 return
             self._give_up(_TOO_OLD)
 
     def _set_wait(self, delay: timedelta = STOP_CONFIRM_TIMEOUT) -> None:
-        """No stop call for `delay`; the timer then judges an accepted try (D29, D50)."""
+        """No stop call for `delay`; the timer then judges an accepted try."""
         if self._closed:
             return
         tried_at = self._stop_tried_at
@@ -614,7 +621,7 @@ class ChargeControl:
         )
 
     async def _async_wait_due(self, tried_at: datetime | None) -> None:
-        """The wait's end, under the lock: an accepted stop that didn't take has failed (D50)."""
+        """The wait's end, under the lock: an accepted stop that didn't take has failed."""
         async with self._lock:
             if self._closed or self._stop_tried_at != tried_at:
                 return
@@ -635,7 +642,7 @@ class ChargeControl:
                 self._give_up(_NO_STOP_SEEN)
 
     def _give_up(self, why: str) -> None:
-        """Stop trying: tell the owner, and show the charger's state again (D50)."""
+        """Stop trying: tell the owner, and show the charger's state again."""
         _LOGGER.error("Giving up on the stop asked for: %s", why)
         self._clear_stop()
         ir.async_create_issue(
@@ -686,7 +693,7 @@ class ChargeControl:
 
         A setup that fails after async_load never calls async_shutdown, but runs this, and
         only then cancels a stop call in flight. Closing here keeps that call's end from
-        arming a timer on a control the next setup has replaced (D50).
+        arming a timer on a control the next setup has replaced.
         """
         self._closed = True
         self._cancel_timers()

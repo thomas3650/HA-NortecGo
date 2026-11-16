@@ -1,4 +1,4 @@
-"""The Nortec Go charge control's stored state: its shape, its migration and its file (D50)."""
+"""The Nortec Go charge control's stored state: its shape, its migration and its file."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,7 +33,7 @@ class StoredControl:
     start_pending_since: datetime | None = None
     stop_asked_since: datetime | None = None
     stop_tries: int = 0
-    # The last stop call's time. It stays when its stop ends: the wait between calls goes on (D50).
+    # The last stop call's time. It stays when its stop ends: the wait between calls goes on.
     stop_tried_at: datetime | None = None
 
 

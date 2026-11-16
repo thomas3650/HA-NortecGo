@@ -1,4 +1,4 @@
-"""Total energy: a stored ledger of the energy the charger delivered, summed per charge (D47).
+"""Total energy: a stored ledger of the energy the charger delivered, summed per charge.
 
 Each completed charge counts once, by its charge ID, and the open charge counts at its live
 reading. The total never goes down.

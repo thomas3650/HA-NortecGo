@@ -8,7 +8,7 @@
   "semanticCommitScope": "deps",
   "packageRules": [
     {
-      "description": "Renovate bumps only pynortecgo; Dependabot keeps the rest (D51).",
+      "description": "Renovate bumps only pynortecgo; Dependabot keeps the rest, as it doesn't read manifest.json.",
       "matchPackageNames": ["*"],
       "enabled": false
     },

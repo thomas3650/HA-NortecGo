@@ -540,6 +540,9 @@ async def test_failed_idle_read_retries_within_5_minutes(
     assert mock_client.get_charger.await_count == reads + 1
     assert coordinator.last_update_success
     assert coordinator.update_interval == INTERVAL_IDLE
+    # The good read ends the retry: a control change works out the usual interval.
+    coordinator._async_control_changed()  # noqa: SLF001
+    assert coordinator.update_interval == INTERVAL_IDLE
 
 
 async def test_failed_charging_read_keeps_5_minutes(
@@ -608,6 +611,40 @@ async def test_uncapped_errors_keep_the_interval(
     mock_client.get_charger.side_effect = error
     await coordinator.async_refresh()
     assert not coordinator.last_update_success
+    assert coordinator.update_interval == INTERVAL_IDLE
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        RateLimitError("too many requests"),
+        ChargerNotFoundError("x"),
+        UnexpectedResponseError("GET /example", "bad shape"),
+    ],
+)
+async def test_uncapped_error_after_outage_keeps_the_interval(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    error: Exception,
+) -> None:
+    """An uncapped error after a retried one ends the retry: the usual interval, also on a control change."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = NortecGoConnectionError("x")
+    await coordinator.async_refresh()
+    assert coordinator.update_interval == READ_RETRY_INTERVAL
+    reads = mock_client.get_charger.await_count
+
+    mock_client.get_charger.side_effect = error
+    freezer.tick(READ_RETRY_INTERVAL + timedelta(seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads + 1
+    assert coordinator.update_interval == INTERVAL_IDLE
+    coordinator._async_control_changed()  # noqa: SLF001
     assert coordinator.update_interval == INTERVAL_IDLE
 
 

@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-11-17
+
 ### Fixed
 
 - When the Nortec Go service couldn't be reached or returned an error while the charger was idle, the

@@ -48,6 +48,7 @@ from .const import (
     PRICE_READ_HOURS,
     PRICE_READ_MINUTE,
     PRICE_RETRY_DELAY,
+    READ_RETRY_INTERVAL,
     TICK_MINUTES,
 )
 from .energy import EnergyLedger, EnergyStore, advance, new_ledger, total_kwh
@@ -62,6 +63,16 @@ _SETUP_CAR_ERROR_KEYS: tuple[tuple[type[NortecGoError], str], ...] = (
     (NortecGoConnectionError, "cannot_connect"),
     (ApiError, "api_error"),
     (UnexpectedResponseError, "unexpected_response"),
+)
+
+# Charger read errors that keep the usual interval; any other is retried within
+# READ_RETRY_INTERVAL. Reauth replaces the reads; a missing charger or a changed API gains nothing
+# from reading sooner; a rate-limited API isn't read more often.
+_UNCAPPED_READ_ERRORS: tuple[type[NortecGoError], ...] = (
+    AuthError,
+    ChargerNotFoundError,
+    UnexpectedResponseError,
+    RateLimitError,
 )
 
 
@@ -137,6 +148,8 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self._vehicle: Vehicle | None = None
         self._car_read_at: datetime | None = None
         self._read_car_next = False
+        # Set while the last charger read failed with an error that is retried soon.
+        self._retry_soon = False
         self._price_store = PriceStore(hass, entry.entry_id)
         self._energy_store = EnergyStore(hass, entry.entry_id)
         # A placeholder until async_load_energy; nothing reads or saves it.
@@ -243,18 +256,32 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         )
 
     async def _async_read_charger(self) -> Charger:
-        """Read the charger; a failed read first sets the next interval from the last good one."""
+        """Read the charger; a failed read first sets the next interval from the last good one.
+
+        A failed read whose error may pass is tried again within READ_RETRY_INTERVAL.
+        """
         try:
-            return await self.client.get_charger()
+            charger = await self.client.get_charger()
         except NortecGoError as err:
             _LOGGER.debug("Reading the charger failed: %s", err)
+            self._retry_soon = not isinstance(err, _UNCAPPED_READ_ERRORS)
             if self.data is not None:
-                self.update_interval = interval_for(
-                    self.data.charger,
-                    self.charge_control.state,
-                    dt_util.utcnow() - self.data.read_at,
+                self.update_interval = self._capped(
+                    interval_for(
+                        self.data.charger,
+                        self.charge_control.state,
+                        dt_util.utcnow() - self.data.read_at,
+                    )
                 )
             raise
+        self._retry_soon = False
+        return charger
+
+    def _capped(self, interval: timedelta) -> timedelta:
+        """The interval, at most READ_RETRY_INTERVAL while a failed read is to be tried again soon."""
+        if self._retry_soon:
+            return min(interval, READ_RETRY_INTERVAL)
+        return interval
 
     async def _async_advance_energy(self, charger: Charger, read_at: datetime) -> None:
         """Count the read in the energy ledger, and save the ledger when it changed."""
@@ -284,8 +311,10 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         control = self.charge_control.state
         self.data = replace(self.data, control=control)
         # Before the read right away: if that read fails, HA reuses this interval.
-        self.update_interval = interval_for(
-            self.data.charger, control, dt_util.utcnow() - self.data.read_at
+        self.update_interval = self._capped(
+            interval_for(
+                self.data.charger, control, dt_util.utcnow() - self.data.read_at
+            )
         )
         self.async_update_listeners()
 

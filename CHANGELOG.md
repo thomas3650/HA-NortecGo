@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-11-17
+
+### Fixed
+
+- When the Nortec Go service couldn't be reached or returned an error while the charger was idle, the
+  entities stayed unavailable for up to an hour; the integration now tries again within 5 minutes.
+
 ## [0.6.4] - 2026-11-16
 
 ### Fixed

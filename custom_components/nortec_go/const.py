@@ -14,6 +14,8 @@ INTERVAL_IDLE: Final = timedelta(minutes=60)
 # The charger's own starting or stopping state keeps the 30 s reads only while the last good
 # read is younger than this, so an outage doesn't read every 30 s.
 FAST_READ_MAX_AGE: Final = timedelta(minutes=2)
+# The most a failed charger read waits before the next try.
+READ_RETRY_INTERVAL: Final = timedelta(minutes=5)
 # A read also reads the car when its last try is at least this old; the margin keeps an
 # early 5-minute read from skipping it.
 CAR_READ_MIN_AGE: Final = INTERVAL_CHARGING - INTERVAL_CHANGING

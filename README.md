@@ -205,8 +205,10 @@ The integration reads the charger:
 - every 5 minutes while a charge is running,
 - every 60 minutes otherwise.
 
-While the charger can't be read, the 30-second reads stop after about 2 minutes, or about 10 minutes after
-you turn *Charge* on. Reads then come every 5 minutes while a stop is waiting.
+When the Nortec Go service can't be reached or returns an error, the integration tries again at least every
+5 minutes. The 30-second reads stop after about 2 minutes, or about 10 minutes after you turn *Charge* on.
+When the service limits requests, the integration waits as long as the service asks, or else the usual
+interval. Once a read works, the intervals above apply again.
 
 It reads the car with the charger, but at most about every 5 minutes, and on every *Refresh*. It reads the
 price forecast when it starts and at 00:05, 05:05, 10:05, 15:05 and 20:05. If a price read at start-up or at

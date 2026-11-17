@@ -49,6 +49,7 @@ from custom_components.nortec_go.const import (
     INTERVAL_CHANGING,
     INTERVAL_CHARGING,
     INTERVAL_IDLE,
+    READ_RETRY_INTERVAL,
     START_CONFIRM_TIMEOUT,
     STOP_CONFIRM_TIMEOUT,
 )
@@ -494,7 +495,7 @@ async def test_later_charger_errors(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A later charger failure fails the update, skips the car and keeps the interval."""
+    """A later charger failure fails the update, skips the car and retries within 5 minutes."""
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
 
@@ -503,8 +504,111 @@ async def test_later_charger_errors(
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert not coordinator.last_update_success
-    assert coordinator.update_interval == INTERVAL_IDLE
+    assert coordinator.update_interval == READ_RETRY_INTERVAL
     assert mock_client.get_vehicle.await_count == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        NortecGoConnectionError("x"),
+        ApiError("GET /example", 500),
+        _UnknownClientError("x"),
+    ],
+)
+async def test_failed_idle_read_retries_within_5_minutes(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    error: Exception,
+) -> None:
+    """A failed read at idle is tried again within 5 minutes, and a good read restores the 60 min."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = error
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert coordinator.update_interval == READ_RETRY_INTERVAL
+    reads = mock_client.get_charger.await_count
+
+    mock_client.get_charger.side_effect = None
+    freezer.tick(READ_RETRY_INTERVAL + timedelta(seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads + 1
+    assert coordinator.last_update_success
+    assert coordinator.update_interval == INTERVAL_IDLE
+
+
+async def test_failed_charging_read_keeps_5_minutes(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+) -> None:
+    """A failed read while charging keeps the charging interval."""
+    mock_client.get_charger.return_value = make_charger(
+        is_connected=True,
+        charge_state=ChargeState.CHARGING,
+        state=ChargerState.BUSY_CHARGING,
+    )
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = NortecGoConnectionError("x")
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert coordinator.update_interval == INTERVAL_CHARGING
+
+
+async def test_control_change_during_outage_keeps_retry_interval(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A control change while reads fail at idle keeps the retry interval, and the next read comes within it."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = NortecGoConnectionError("x")
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    reads = mock_client.get_charger.await_count
+
+    coordinator._async_control_changed()  # noqa: SLF001
+    assert coordinator.update_interval == READ_RETRY_INTERVAL
+
+    mock_client.get_charger.side_effect = None
+    freezer.tick(READ_RETRY_INTERVAL + timedelta(seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert mock_client.get_charger.await_count == reads + 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ChargerNotFoundError("x"),
+        UnexpectedResponseError("GET /example", "bad shape"),
+        RateLimitError("too many requests"),
+    ],
+)
+async def test_uncapped_errors_keep_the_interval(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    error: Exception,
+) -> None:
+    """A missing charger, a changed API or a rate limit without a wait keeps the usual interval."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = error
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert coordinator.update_interval == INTERVAL_IDLE
 
 
 async def test_rate_limit_retry_after(
@@ -1897,7 +2001,7 @@ async def test_pending_start_during_an_outage_blocks_at_10_minutes(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """With reads failing, the pending start ends at 10 minutes with the block, and reads every 60 min."""
+    """With reads failing, the pending start ends at 10 minutes with the block, and reads every 5 min."""
     mock_client.get_charger.return_value = make_charger(is_connected=True)
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
@@ -1909,7 +2013,7 @@ async def test_pending_start_during_an_outage_blocks_at_10_minutes(
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert coordinator.data.control.blocked
-    assert coordinator.update_interval == INTERVAL_IDLE
+    assert coordinator.update_interval == READ_RETRY_INTERVAL
     assert _switch(hass) == "off"
 
 

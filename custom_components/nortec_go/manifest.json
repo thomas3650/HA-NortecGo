@@ -9,6 +9,6 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/thomas3650/HA-NortecGo/issues",
   "loggers": ["pynortecgo"],
-  "requirements": ["pynortecgo==0.12.0"],
+  "requirements": ["pynortecgo==0.12.1"],
   "version": "0.6.5"
 }

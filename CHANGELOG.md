@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-11-19
+
+### Fixed
+
+- `pynortecgo` 0.12.1. Starting a charge failed every time, because the Nortec Go service stopped accepting
+  the app version the client identified itself as.
+
 ## [0.6.5] - 2026-11-17
 
 ### Fixed

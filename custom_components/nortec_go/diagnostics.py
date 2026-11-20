@@ -82,6 +82,7 @@ async def async_get_config_entry_diagnostics(
             "prices": {
                 "currency": coordinator.price_currency,
                 "slot_count": len(slots),
+                "split_slot_count": len(coordinator.known_split),
                 "first_slot_start": min(slots, default=None),
                 "last_slot_start": max(slots, default=None),
             },

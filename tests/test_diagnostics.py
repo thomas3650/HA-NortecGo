@@ -260,6 +260,7 @@ async def test_diagnostics_output(
         "prices": {
             "currency": "DKK",
             "slot_count": 8,
+            "split_slot_count": 8,
             "first_slot_start": "2026-09-26T22:00:00+00:00",
             "last_slot_start": "2026-09-26T23:45:00+00:00",
         },
@@ -344,9 +345,42 @@ async def test_no_car_and_no_prices(
     assert data["prices"] == {
         "currency": "DKK",
         "slot_count": 0,
+        "split_slot_count": 0,
         "first_slot_start": None,
         "last_slot_start": None,
     }
+
+
+async def test_split_slot_count_differs_from_slot_count(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_admin_user: MockUser,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Slots stored before the split was kept count in slot_count, not in split_slot_count."""
+    freezer.move_to(NOON)
+    key = f"nortec_go.{mock_config_entry.entry_id}.prices"
+    hass_storage[key] = {
+        "version": 2,
+        "minor_version": 1,
+        "key": key,
+        "data": {
+            "currency": "DKK",
+            "slots": [
+                {"start": "2026-09-26T22:00:00+00:00", "price": 1.0},
+                {"start": "2026-09-26T22:15:00+00:00", "price": 2.0},
+            ],
+        },
+    }
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+
+    data = await _download(hass, hass_client, hass_admin_user, mock_config_entry)
+    assert data["prices"]["slot_count"] == 2
+    assert data["prices"]["split_slot_count"] == 0
 
 
 async def test_car_gone_is_in_the_download(

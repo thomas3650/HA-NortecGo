@@ -1,6 +1,7 @@
 """Tests for the Nortec Go sensors."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock
 
 from freezegun.api import FrozenDateTimeFactory
@@ -52,6 +53,8 @@ from .conftest import (
 
 MIDNIGHT = datetime(2026, 9, 26, 22, 0, tzinfo=UTC)  # 00:00 local on 27 Sep
 PRICE = "sensor.garage_charger_current_price"
+SPOT = "sensor.garage_charger_spot_price"
+FEES = "sensor.garage_charger_fees_and_grid_tariff"
 
 
 @pytest.fixture(autouse=True)
@@ -236,6 +239,169 @@ def test_price_lists_not_recorded() -> None:
         "prices_today",
         "prices_tomorrow",
     } <= NortecGoPriceSensor._unrecorded_attributes  # noqa: SLF001
+
+
+async def test_split_sensors(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Spot price and Fees and grid tariff: the current slot's split, its lists, unit and names."""
+    freezer.move_to(MIDNIGHT + timedelta(minutes=20))  # 00:20 local
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT,
+        [1.0, 2.0, 3.0],
+        spot_prices=[0.4, 1.1, 2.5],
+        estimated=[False, True, False],
+    )
+    await setup_integration(hass, mock_config_entry)
+
+    spot = hass.states.get(SPOT)
+    fees = hass.states.get(FEES)
+    assert spot is not None
+    assert fees is not None
+    assert spot.state == "1.1"
+    assert fees.state == "0.9"
+    for state in (spot, fees):
+        assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == "DKK/kWh"
+        assert state.attributes[ATTR_STATE_CLASS] == SensorStateClass.MEASUREMENT
+        assert ATTR_DEVICE_CLASS not in state.attributes
+        assert len(state.attributes["prices_today"]) == 96
+        assert state.attributes["prices_tomorrow"] == []
+    assert spot.attributes["prices_today"][2] == {
+        "time": MIDNIGHT + timedelta(minutes=30),
+        "price": 2.5,
+    }
+    fees_today = fees.attributes["prices_today"]
+    assert fees_today[1]["tariff_estimated"] is True
+    assert fees_today[2]["tariff_estimated"] is False
+    assert spot.attributes["friendly_name"].endswith("Spot price")
+    assert fees.attributes["friendly_name"].endswith("Fees and grid tariff")
+
+
+async def test_split_adds_up_to_current_price(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Spot price plus Fees and grid tariff is the current price, slot by slot."""
+    freezer.move_to(MIDNIGHT + timedelta(minutes=20))
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [1.29012, 2.0, 0.53337], spot_prices=[0.0001, 1.1, 0.2]
+    )
+    await setup_integration(hass, mock_config_entry)
+
+    totals = hass.states.get(PRICE).attributes["prices_today"]  # type: ignore[union-attr]
+    spots = hass.states.get(SPOT).attributes["prices_today"]  # type: ignore[union-attr]
+    fees = hass.states.get(FEES).attributes["prices_today"]  # type: ignore[union-attr]
+    compared = 0
+    for total, spot, fee in zip(totals, spots, fees, strict=True):
+        if spot["price"] is None:
+            continue
+        assert spot["price"] + fee["price"] == pytest.approx(total["price"], abs=5e-5)
+        compared += 1
+    assert compared == 3
+
+
+async def test_fees_state_matches_its_list(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The state is rounded as the list item of the current slot."""
+    freezer.move_to(MIDNIGHT + timedelta(minutes=20))
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [1.0, 2.0], spot_prices=[0.4, 1.1]
+    )
+    await setup_integration(hass, mock_config_entry)
+
+    fees = hass.states.get(FEES)
+    assert fees is not None
+    assert fees.state == "0.9"
+    assert fees.attributes["prices_today"][1]["price"] == 0.9
+
+
+async def test_split_sensors_unknown_after_upgrade(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stored totals without a split, and a failing price read: the split is unknown, the total is kept."""
+    key = f"nortec_go.{mock_config_entry.entry_id}.prices"
+    hass_storage[key] = {
+        "version": 2,
+        "minor_version": 1,
+        "key": key,
+        "data": {
+            "currency": "DKK",
+            "slots": [
+                {"start": MIDNIGHT.isoformat(), "price": 1.0},
+                {"start": (MIDNIGHT + timedelta(minutes=15)).isoformat(), "price": 2.0},
+            ],
+        },
+    }
+    freezer.move_to(MIDNIGHT + timedelta(minutes=20))
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+
+    assert hass.states.get(PRICE).state == "2.0"  # type: ignore[union-attr]
+    spot = hass.states.get(SPOT)
+    fees = hass.states.get(FEES)
+    assert spot is not None
+    assert fees is not None
+    assert spot.state == STATE_UNKNOWN
+    assert fees.state == STATE_UNKNOWN
+    assert len(spot.attributes["prices_today"]) == 96
+    assert all(item["price"] is None for item in spot.attributes["prices_today"])
+    assert len(fees.attributes["prices_today"]) == 96
+    assert all(
+        item["price"] is None and item["tariff_estimated"] is None
+        for item in fees.attributes["prices_today"]
+    )
+
+
+async def test_split_sensors_stay_available_when_charger_fails(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A failing charger read leaves Spot price, Fees and grid tariff and their lists in place."""
+    freezer.move_to(MIDNIGHT + timedelta(minutes=5))
+    mock_client.get_price_forecast.return_value = make_forecast(MIDNIGHT, [1.0])
+    await setup_integration(hass, mock_config_entry)
+
+    mock_client.get_charger.side_effect = NortecGoConnectionError("network down")
+    await mock_config_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    for entity_id in (SPOT, FEES):
+        state = hass.states.get(entity_id)
+        assert state is not None
+        assert state.state == "0.5"
+        assert len(state.attributes["prices_today"]) == 96
+    cable = hass.states.get("binary_sensor.garage_charger_cable_connected")
+    assert cable is not None
+    assert cable.state == STATE_UNAVAILABLE
+
+
+def test_split_lists_not_recorded() -> None:
+    """The recorder leaves the split sensors' lists out."""
+    from custom_components.nortec_go.sensor import (  # noqa: PLC0415
+        NortecGoFeesSensor,
+        NortecGoSpotPriceSensor,
+    )
+
+    for sensor in (NortecGoSpotPriceSensor, NortecGoFeesSensor):
+        assert {
+            "prices_today",
+            "prices_tomorrow",
+        } <= sensor._unrecorded_attributes  # noqa: SLF001
 
 
 @pytest.mark.parametrize(

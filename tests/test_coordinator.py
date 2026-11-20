@@ -59,6 +59,7 @@ from custom_components.nortec_go.coordinator import (
     interval_for,
 )
 from custom_components.nortec_go.energy import EnergyLedger, EnergyStore
+from custom_components.nortec_go.prices import SlotSplit
 
 from .conftest import (
     FAKE_CHARGE_ID,
@@ -1234,6 +1235,130 @@ async def test_failed_price_read_keeps_slots(
     await coordinator.async_read_prices()
     assert coordinator.known_prices == {MIDNIGHT: 1.0}
     assert "Could not read the price forecast" in caplog.text
+
+
+async def test_price_read_saves_the_split(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A price read keeps each slot's spot price and tariff flag and saves them."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=10))
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [2.0, 3.0], spot_prices=[1.2, 1.5], estimated=[False, True]
+    )
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.known_split == {
+        MIDNIGHT: SlotSplit(1.2, False),
+        MIDNIGHT + timedelta(minutes=15): SlotSplit(1.5, True),
+    }
+    data = hass_storage[STORE_KEY.format(mock_config_entry.entry_id)]["data"]
+    assert [slot["spot"] for slot in data["slots"]] == [1.2, 1.5]
+    assert [slot["tariff_estimated"] for slot in data["slots"]] == [False, True]
+
+
+async def test_stored_split_loaded_and_pruned_at_setup(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The stored split is loaded without yesterday's slots; a failed read keeps it."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=10))
+    key = STORE_KEY.format(mock_config_entry.entry_id)
+    hass_storage[key] = {
+        "version": 2,
+        "minor_version": 1,
+        "key": key,
+        "data": {
+            "currency": "DKK",
+            "slots": [
+                {
+                    "start": "2026-09-26T21:45:00+00:00",
+                    "price": 9.0,
+                    "spot": 8.0,
+                    "tariff_estimated": True,
+                },
+                {
+                    "start": "2026-09-26T22:00:00+00:00",
+                    "price": 1.0,
+                    "spot": 0.4,
+                    "tariff_estimated": False,
+                },
+            ],
+        },
+    }
+    mock_client.get_price_forecast.side_effect = NortecGoConnectionError("network down")
+    await setup_integration(hass, mock_config_entry)
+
+    assert _coordinator(mock_config_entry).known_split == {
+        MIDNIGHT: SlotSplit(0.4, False)
+    }
+
+
+async def test_price_read_prunes_the_split(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A successful read drops yesterday's split slots, the stored and the read ones."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=10))
+    key = STORE_KEY.format(mock_config_entry.entry_id)
+    hass_storage[key] = {
+        "version": 2,
+        "minor_version": 1,
+        "key": key,
+        "data": {
+            "currency": "DKK",
+            "slots": [
+                {
+                    "start": "2026-09-26T21:45:00+00:00",
+                    "price": 9.0,
+                    "spot": 8.0,
+                    "tariff_estimated": True,
+                },
+            ],
+        },
+    }
+    # The read covers yesterday's last slot too, so only the read's prune can drop it.
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT - timedelta(minutes=15), [9.0, 1.0], spot_prices=[8.0, 0.4]
+    )
+    await setup_integration(hass, mock_config_entry)
+
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.known_split == {MIDNIGHT: SlotSplit(0.4, False)}
+    data = hass_storage[key]["data"]
+    assert [slot["start"] for slot in data["slots"]] == ["2026-09-26T22:00:00+00:00"]
+    assert [slot["spot"] for slot in data["slots"]] == [0.4]
+
+
+async def test_failed_price_read_keeps_split(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A failed price read keeps the known split."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=1))
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT, [1.0], spot_prices=[0.4]
+    )
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.known_split == {MIDNIGHT: SlotSplit(0.4, False)}
+
+    mock_client.get_price_forecast.side_effect = UnexpectedResponseError(
+        "GET /example", "gap"
+    )
+    await coordinator.async_read_prices()
+    assert coordinator.known_split == {MIDNIGHT: SlotSplit(0.4, False)}
 
 
 async def test_later_price_auth_error_starts_reauth(

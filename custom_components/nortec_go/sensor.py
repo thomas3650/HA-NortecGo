@@ -1,4 +1,4 @@
-"""Nortec Go sensors: the price for EV Smart Charging, the charge status, the open charge's energy, power and cost, the total energy, the last charge's cost, the last read and the car's values."""
+"""Nortec Go sensors: the price for EV Smart Charging and its split into spot price and fees, the charge status, the open charge's energy, power and cost, the total energy, the last charge's cost, the last read and the car's values."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -23,7 +23,15 @@ from .coordinator import NortecGoCoordinator
 from .costs import charge_cost, last_charge_completed_at, last_charge_cost
 from .entity import NortecGoCarEntity, NortecGoChargerEntity
 from .entry import NortecGoConfigEntry
-from .prices import current_price, prices_today, prices_tomorrow
+from .prices import (
+    current_fees,
+    current_price,
+    current_spot,
+    fees_prices,
+    prices_today,
+    prices_tomorrow,
+    spot_prices,
+)
 
 PARALLEL_UPDATES = 0
 
@@ -125,6 +133,8 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     entities: list[SensorEntity] = [
         NortecGoPriceSensor(coordinator),
+        NortecGoSpotPriceSensor(coordinator),
+        NortecGoFeesSensor(coordinator),
         NortecGoChargeStatusSensor(coordinator),
         NortecGoLastReadSensor(coordinator),
         NortecGoTotalEnergySensor(coordinator),
@@ -177,6 +187,78 @@ class NortecGoPriceSensor(NortecGoChargerEntity, SensorEntity):
         return {
             "prices_today": prices_today(known, now, time_zone),
             "prices_tomorrow": prices_tomorrow(known, now, time_zone),
+        }
+
+
+class _NortecGoSplitSensor(NortecGoChargerEntity, SensorEntity):
+    """A part of the current price, with lists for today and tomorrow."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _unrecorded_attributes = frozenset({"prices_today", "prices_tomorrow"})
+
+    @property
+    def available(self) -> bool:
+        """Always available, as Current price is."""
+        return True
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        """The forecast's currency per kWh, or Home Assistant's while none is known."""
+        currency = self.coordinator.price_currency or self.hass.config.currency
+        return f"{currency}/kWh"
+
+
+class NortecGoSpotPriceSensor(_NortecGoSplitSensor):
+    """The spot price of the current slot, with its lists."""
+
+    def __init__(self, coordinator: NortecGoCoordinator) -> None:
+        """Name the sensor Spot price."""
+        super().__init__(coordinator, "spot_price")
+
+    @property
+    def native_value(self) -> float | None:
+        """The current slot's spot price, or None (unknown)."""
+        return current_spot(self.coordinator.known_split, dt_util.utcnow())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """prices_today and prices_tomorrow of the spot price, None where unknown."""
+        now = dt_util.utcnow()
+        time_zone = dt_util.get_default_time_zone()
+        split = self.coordinator.known_split
+        known = self.coordinator.known_prices
+        return {
+            "prices_today": spot_prices(split, known, now, time_zone, 0),
+            "prices_tomorrow": spot_prices(split, known, now, time_zone, 1),
+        }
+
+
+class NortecGoFeesSensor(_NortecGoSplitSensor):
+    """What is added to the spot price in the current slot, with its lists."""
+
+    def __init__(self, coordinator: NortecGoCoordinator) -> None:
+        """Name the sensor Fees and grid tariff."""
+        super().__init__(coordinator, "fees_and_grid_tariff")
+
+    @property
+    def native_value(self) -> float | None:
+        """The current slot's price minus its spot price, or None (unknown)."""
+        return current_fees(
+            self.coordinator.known_split,
+            self.coordinator.known_prices,
+            dt_util.utcnow(),
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """prices_today and prices_tomorrow of the add-on, with the tariff flag, None where unknown."""
+        now = dt_util.utcnow()
+        time_zone = dt_util.get_default_time_zone()
+        split = self.coordinator.known_split
+        known = self.coordinator.known_prices
+        return {
+            "prices_today": fees_prices(split, known, now, time_zone, 0),
+            "prices_tomorrow": fees_prices(split, known, now, time_zone, 1),
         }
 
 

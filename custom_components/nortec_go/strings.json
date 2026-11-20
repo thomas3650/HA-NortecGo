@@ -81,6 +81,12 @@
       "current_price": {
         "name": "Current price"
       },
+      "spot_price": {
+        "name": "Spot price"
+      },
+      "fees_and_grid_tariff": {
+        "name": "Fees and grid tariff"
+      },
       "battery": {
         "name": "Battery"
       },

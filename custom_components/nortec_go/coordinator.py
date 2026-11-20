@@ -53,7 +53,15 @@ from .const import (
 )
 from .energy import EnergyLedger, EnergyStore, advance, new_ledger, total_kwh
 from .entry import NortecGoConfigEntry
-from .prices import KnownSlots, PriceStore, merge_forecast, next_price_read, prune
+from .prices import (
+    KnownSlots,
+    KnownSplit,
+    PriceStore,
+    merge_forecast,
+    merge_split,
+    next_price_read,
+    prune,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -142,6 +150,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self.charger_id = entry.unique_id
         self.has_car = True
         self.known_prices: KnownSlots = {}
+        self.known_split: KnownSplit = {}
         self.price_currency: str | None = None
         self._car_failing = False
         self._car_gone = False
@@ -470,10 +479,13 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         self._energy = ledger
 
     async def async_load_prices(self) -> None:
-        """Load the stored slots, without yesterday's, and the prices' currency."""
+        """Load the stored slots and split, without yesterday's, and the prices' currency."""
         stored = await self._price_store.async_load()
         self.known_prices = prune(
             stored.slots, dt_util.utcnow(), dt_util.get_default_time_zone()
+        )
+        self.known_split = prune(
+            stored.split, dt_util.utcnow(), dt_util.get_default_time_zone()
         )
         self.price_currency = stored.currency
 
@@ -486,6 +498,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
     ) -> None:
         """Read the forecast, merge, prune and save it with its currency; keep the known slots on failure.
 
+        The split is merged, pruned and saved with the totals, and kept on failure too.
         A failed read asked to retry on failure is read once more later. One asked to raise
         on failure then raises a translated error, for the Refresh button.
         """
@@ -522,9 +535,16 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             dt_util.utcnow(),
             dt_util.get_default_time_zone(),
         )
+        self.known_split = prune(
+            merge_split(self.known_split, forecast),
+            dt_util.utcnow(),
+            dt_util.get_default_time_zone(),
+        )
         if forecast.currency is not None:
             self.price_currency = forecast.currency
-        await self._price_store.async_save(self.known_prices, self.price_currency)
+        await self._price_store.async_save(
+            self.known_prices, self.price_currency, self.known_split
+        )
         self.async_update_listeners()
 
     def _log_price_error(self, err: NortecGoError) -> None:

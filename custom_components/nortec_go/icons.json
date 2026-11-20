@@ -9,6 +9,12 @@
       "current_price": {
         "default": "mdi:cash-clock"
       },
+      "spot_price": {
+        "default": "mdi:chart-bell-curve-cumulative"
+      },
+      "fees_and_grid_tariff": {
+        "default": "mdi:receipt-text-outline"
+      },
       "charge_limit": {
         "default": "mdi:battery-charging-80"
       },

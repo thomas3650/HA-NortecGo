@@ -528,7 +528,7 @@ async def test_stored_block_survives_restart(
     mock_client: AsyncMock,
     hass_storage: dict[str, Any],
 ) -> None:
-    """A stored block is loaded at setup: starts stay blocked and the issue is back (Review Focus 5)."""
+    """A stored block is loaded at setup: starts stay blocked and the issue is back."""
     key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
     hass_storage[key] = {
         "version": 1,

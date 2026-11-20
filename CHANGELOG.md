@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+
+- *Spot price* and *Fees and grid tariff* sensors, which split the current price into the spot price and
+  what is added to it, each with lists for today and tomorrow; *Fees and grid tariff* marks the hours where
+  the grid tariff is estimated.
+
 ## [0.6.6] - 2026-11-19
 
 ### Fixed

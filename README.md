@@ -68,6 +68,8 @@ integration starts (see *Known limitations*).
 | Entity | Type | Description |
 |---|---|---|
 | Current price | Sensor | The total price (spot, fees and grid tariff) for the current 15 minutes, per kWh, incl. VAT, in the currency of the price data (Home Assistant's currency until price data has named one). Its `prices_today` and `prices_tomorrow` attributes are in the format EV Smart Charging reads |
+| Spot price | Sensor | The spot price for the current 15 minutes, per kWh, incl. VAT, in the current price's currency. Its `prices_today` and `prices_tomorrow` attributes list it per 15 minutes, with no value where it isn't known |
+| Fees and grid tariff | Sensor | What is added to the spot price for the current 15 minutes: the fixed fees and the grid tariff, per kWh, incl. VAT. Spot price + Fees and grid tariff = Current price. Its `prices_today` and `prices_tomorrow` attributes list it per 15 minutes, with `tariff_estimated` true where the grid tariff is estimated, and no value where it isn't known. It can't be split into the single fees and taxes |
 | Cable connected | Binary sensor | On when a cable is connected to the charger |
 | Charging | Binary sensor | On while the car draws power |
 | Charge | Switch | Starts and stops a charge. On while a charge is starting, charging or paused, and right after a start until the charger shows it; off after you turn it off, until the charger shows the stop (see *Starting a charge*) |

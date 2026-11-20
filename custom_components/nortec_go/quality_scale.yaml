@@ -48,7 +48,7 @@ rules:
   docs-installation-parameters: done
   entity-unavailable:
     status: done
-    comment: "The Charge switch, the Current price sensor, the Refresh button and the Last read sensor stay available after a failed read on purpose (turn_off still reaches the charger; the price lists and the last read's time stay visible); the other entities follow the rule."
+    comment: "The Charge switch, the Current price, Spot price and Fees and grid tariff sensors, the Refresh button and the Last read sensor stay available after a failed read on purpose (turn_off still reaches the charger; the price lists and the last read's time stay visible); the other entities follow the rule."
   integration-owner: done
   log-when-unavailable: done
   parallel-updates: done

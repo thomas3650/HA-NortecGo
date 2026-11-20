@@ -524,7 +524,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         )
         if forecast.currency is not None:
             self.price_currency = forecast.currency
-        await self._price_store.async_save(self.known_prices, self.price_currency)
+        await self._price_store.async_save(self.known_prices, self.price_currency, {})
         self.async_update_listeners()
 
     def _log_price_error(self, err: NortecGoError) -> None:

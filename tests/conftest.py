@@ -169,10 +169,21 @@ def make_vehicle(
 
 
 def make_forecast(
-    start: datetime, prices: Sequence[float], currency: str | None = "DKK"
+    start: datetime,
+    prices: Sequence[float],
+    currency: str | None = "DKK",
+    *,
+    spot_prices: Sequence[float] | None = None,
+    estimated: Sequence[bool] | None = None,
 ) -> PriceForecast:
-    """Return 15-minute slots from start, one per total price; the spot price is 0.5 less."""
+    """Return 15-minute slots from start, one per total price.
+
+    Without spot_prices the spot price is 0.5 less than the total; without estimated
+    every tariff is exact. Both, when given, hold one value per price.
+    """
     step = timedelta(minutes=15)
+    spots = [price - 0.5 for price in prices] if spot_prices is None else spot_prices
+    flags = [False] * len(prices) if estimated is None else estimated
     return PriceForecast(
         area_id=99,
         area_name="Test area",
@@ -182,10 +193,12 @@ def make_forecast(
                 start=start + i * step,
                 end=start + (i + 1) * step,
                 price=price,
-                spot_price=price - 0.5,
-                tariff_estimated=False,
+                spot_price=spot,
+                tariff_estimated=flag,
             )
-            for i, price in enumerate(prices)
+            for i, (price, spot, flag) in enumerate(
+                zip(prices, spots, flags, strict=True)
+            )
         ],
     )
 

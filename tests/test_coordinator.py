@@ -1300,6 +1300,45 @@ async def test_stored_split_loaded_and_pruned_at_setup(
     }
 
 
+async def test_price_read_prunes_the_split(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A successful read drops yesterday's split slots, the stored and the read ones."""
+    freezer.move_to(MIDNIGHT + timedelta(hours=10))
+    key = STORE_KEY.format(mock_config_entry.entry_id)
+    hass_storage[key] = {
+        "version": 2,
+        "minor_version": 1,
+        "key": key,
+        "data": {
+            "currency": "DKK",
+            "slots": [
+                {
+                    "start": "2026-09-26T21:45:00+00:00",
+                    "price": 9.0,
+                    "spot": 8.0,
+                    "tariff_estimated": True,
+                },
+            ],
+        },
+    }
+    # The read covers yesterday's last slot too, so only the read's prune can drop it.
+    mock_client.get_price_forecast.return_value = make_forecast(
+        MIDNIGHT - timedelta(minutes=15), [9.0, 1.0], spot_prices=[8.0, 0.4]
+    )
+    await setup_integration(hass, mock_config_entry)
+
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.known_split == {MIDNIGHT: SlotSplit(0.4, False)}
+    data = hass_storage[key]["data"]
+    assert [slot["start"] for slot in data["slots"]] == ["2026-09-26T22:00:00+00:00"]
+    assert [slot["spot"] for slot in data["slots"]] == [0.4]
+
+
 async def test_failed_price_read_keeps_split(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,

@@ -498,6 +498,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
     ) -> None:
         """Read the forecast, merge, prune and save it with its currency; keep the known slots on failure.
 
+        The split is merged, pruned and saved with the totals, and kept on failure too.
         A failed read asked to retry on failure is read once more later. One asked to raise
         on failure then raises a translated error, for the Refresh button.
         """

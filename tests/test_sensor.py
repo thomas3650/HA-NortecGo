@@ -300,7 +300,7 @@ async def test_split_adds_up_to_current_price(
     for total, spot, fee in zip(totals, spots, fees, strict=True):
         if spot["price"] is None:
             continue
-        assert spot["price"] + fee["price"] == pytest.approx(total["price"], abs=1e-4)
+        assert spot["price"] + fee["price"] == pytest.approx(total["price"], abs=5e-5)
         compared += 1
     assert compared == 3
 

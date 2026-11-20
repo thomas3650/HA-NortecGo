@@ -238,6 +238,26 @@ def test_split_tomorrow_empty_exactly_when_prices_tomorrow_is() -> None:
     assert {item["tariff_estimated"] for item in fees} == {None}
 
 
+def test_split_tomorrow_slot_with_total_and_split() -> None:
+    """A slot of tomorrow with a total and a split shows its spot and rounded add-on."""
+    slot = MIDNIGHT + timedelta(days=1) + 2 * STEP
+    known = {slot: 3.0}
+    split = {slot: SlotSplit(1.23456, True)}
+    assert prices_tomorrow(known, NOW, TZ) != []
+    spot = spot_prices(split, known, NOW, TZ, day=1)
+    fees = fees_prices(split, known, NOW, TZ, day=1)
+    assert len(spot) == len(fees) == 96
+    assert spot[2] == {"time": slot.astimezone(TZ), "price": 1.23456}
+    assert fees[2] == {
+        "time": slot.astimezone(TZ),
+        "price": 1.7654,
+        "tariff_estimated": True,
+    }
+    assert spot[1]["price"] is None
+    assert fees[1]["price"] is None
+    assert fees[1]["tariff_estimated"] is None
+
+
 @pytest.mark.parametrize(
     ("now", "slots"),
     [

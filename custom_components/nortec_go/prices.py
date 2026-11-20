@@ -289,7 +289,11 @@ class PriceStore:
         )
 
     async def async_load(self) -> StoredPrices:
-        """Load the saved slots and currency; none if the file is missing or of the wrong shape."""
+        """Load the saved slots, their split and the currency.
+
+        A wrongly typed split drops only the split; the totals and the currency are
+        kept. A missing file, or a wrong shape anywhere else, gives none.
+        """
         data = await self._store.async_load()
         if data is None:
             return StoredPrices({}, None)

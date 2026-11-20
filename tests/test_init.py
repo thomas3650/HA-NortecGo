@@ -293,7 +293,7 @@ async def test_unload_stops_the_timers(
 ) -> None:
     """After unload, neither the polling, the price time nor the tick reads anything."""
     await setup_integration(hass, mock_config_entry)
-    # A listener keeps polling scheduled without entities (Task 2), so unload has something to stop.
+    # A listener keeps polling scheduled without entities, so unload has something to stop.
     mock_config_entry.runtime_data.async_add_listener(lambda: None)
     assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
     await hass.async_block_till_done()

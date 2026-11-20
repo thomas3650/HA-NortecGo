@@ -85,8 +85,8 @@ async def copenhagen(hass: HomeAssistant) -> None:
 def _coordinator(entry: MockConfigEntry) -> NortecGoCoordinator:
     """The entry's coordinator, with a listener so it keeps polling without entities."""
     coordinator: NortecGoCoordinator = entry.runtime_data
-    # HA only schedules the next poll while the coordinator has listeners; in Task 2
-    # there are no entities yet. Adding the first listener also schedules a poll.
+    # HA only schedules the next poll while the coordinator has listeners, and these tests
+    # set up no entities. Adding the first listener also schedules a poll.
     coordinator.async_add_listener(lambda: None)
     return coordinator
 
@@ -1019,12 +1019,11 @@ async def test_car_device_updated_on_rename(
 ) -> None:
     """A car read with a new name, brand or model updates the car device.
 
-    The empty-name fallback to the translated "Car" needs Task 3's strings; Task 3 tests it.
+    The empty-name fallback to the translated "Car" is tested by test_device_name_fallbacks.
     """
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
-    # Task 2 has no device strings yet, so this device starts with the untranslated key as its name;
-    # the car read below overwrites it.
+    # The device starts with only its translation key; the car read below sets its name.
     device = device_registry.async_get_or_create(
         config_entry_id=mock_config_entry.entry_id,
         identifiers={car_device_identifier(str(FAKE_CHARGER_ID))},

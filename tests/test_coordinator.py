@@ -85,8 +85,8 @@ async def copenhagen(hass: HomeAssistant) -> None:
 def _coordinator(entry: MockConfigEntry) -> NortecGoCoordinator:
     """The entry's coordinator, with a listener so it keeps polling without entities."""
     coordinator: NortecGoCoordinator = entry.runtime_data
-    # HA only schedules the next poll while the coordinator has listeners; in Task 2
-    # there are no entities yet. Adding the first listener also schedules a poll.
+    # HA only schedules the next poll while the coordinator has listeners; this one keeps
+    # polling scheduled whatever entities a test leaves enabled.
     coordinator.async_add_listener(lambda: None)
     return coordinator
 
@@ -1019,12 +1019,11 @@ async def test_car_device_updated_on_rename(
 ) -> None:
     """A car read with a new name, brand or model updates the car device.
 
-    The empty-name fallback to the translated "Car" needs Task 3's strings; Task 3 tests it.
+    The empty-name fallback to the translated "Car" is tested by test_device_name_fallbacks.
     """
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
-    # Task 2 has no device strings yet, so this device starts with the untranslated key as its name;
-    # the car read below overwrites it.
+    # The device starts with only its translation key; the car read below sets its name.
     device = device_registry.async_get_or_create(
         config_entry_id=mock_config_entry.entry_id,
         identifiers={car_device_identifier(str(FAKE_CHARGER_ID))},
@@ -1784,7 +1783,7 @@ async def test_interval_while_start_pending(
 async def test_read_counter_handoff(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
-    """A read that began before a start attempt doesn't end the pending start (Review Focus 1)."""
+    """A read that began before a start attempt doesn't end the pending start."""
     mock_client.get_charger.return_value = make_charger(is_connected=True)
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
@@ -1833,7 +1832,7 @@ async def test_timeout_on_unchanged_read_updates_entities(
 async def test_stop_after_failed_read_keeps_others_unavailable(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
-    """A stop after a failed read doesn't mark the coordinator successful (Review Focus 4)."""
+    """A stop after a failed read doesn't mark the coordinator successful."""
     mock_client.get_charger.return_value = make_charger(
         is_connected=True, charge_state=ChargeState.CHARGING
     )
@@ -1871,7 +1870,7 @@ async def test_control_change_before_the_first_read_is_ignored(
 async def test_actions_within_the_cooldown_each_read_right_away(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
-    """A start and a stop within HA's 10 s debounce cooldown each read at once (Review Focus 4)."""
+    """A start and a stop within HA's 10 s debounce cooldown each read at once."""
     mock_client.get_charger.return_value = make_charger(is_connected=True)
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
@@ -1892,7 +1891,7 @@ async def test_start_whose_read_fails_is_read_again_after_30_s(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """The control change sets the 30 s interval before its read, so a failed read retries soon (Review Focus 2)."""
+    """The control change sets the 30 s interval before its read, so a failed read retries soon."""
     mock_client.get_charger.return_value = make_charger(is_connected=True)
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
@@ -1944,7 +1943,7 @@ async def test_car_read_on_an_early_charging_read(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A 5-minute read that comes a second early still reads the car (Review Focus 3)."""
+    """A 5-minute read that comes a second early still reads the car."""
     mock_client.get_charger.return_value = make_charger(
         is_connected=True, charge_state=ChargeState.CHARGING
     )
@@ -2086,7 +2085,7 @@ async def test_charger_stopping_during_an_outage_slows_down(
     mock_client: AsyncMock,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """The charger's own STOPPING gives 30 s reads for about 2 minutes of an outage, then 5 min (Review Focus 5)."""
+    """The charger's own STOPPING gives 30 s reads for about 2 minutes of an outage, then 5 min."""
     mock_client.get_charger.return_value = _STOPPING
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)

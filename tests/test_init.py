@@ -293,7 +293,7 @@ async def test_unload_stops_the_timers(
 ) -> None:
     """After unload, neither the polling, the price time nor the tick reads anything."""
     await setup_integration(hass, mock_config_entry)
-    # A listener keeps polling scheduled without entities (Task 2), so unload has something to stop.
+    # A listener keeps polling scheduled without entities, so unload has something to stop.
     mock_config_entry.runtime_data.async_add_listener(lambda: None)
     assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
     await hass.async_block_till_done()
@@ -528,7 +528,7 @@ async def test_stored_block_survives_restart(
     mock_client: AsyncMock,
     hass_storage: dict[str, Any],
 ) -> None:
-    """A stored block is loaded at setup: starts stay blocked and the issue is back (Review Focus 5)."""
+    """A stored block is loaded at setup: starts stay blocked and the issue is back."""
     key = f"nortec_go.{mock_config_entry.entry_id}.charge_control"
     hass_storage[key] = {
         "version": 1,

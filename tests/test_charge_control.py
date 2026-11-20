@@ -287,7 +287,7 @@ async def test_start_sets_pending_and_asks_for_a_read(
 
 
 async def test_second_start_is_noop(control: ChargeControl, client: AsyncMock) -> None:
-    """EVSC's repeated turn_on during a pending start makes no API call (Review Focus 2)."""
+    """EVSC's repeated turn_on during a pending start makes no API call."""
     await control.async_start()
     await control.async_start()
     client.start_charge.assert_awaited_once()
@@ -637,7 +637,7 @@ async def test_overdue_start_at_load_decided_by_the_first_read(
     freezer: FrozenDateTimeFactory,
     charger: Any,
 ) -> None:
-    """An overdue stored start is ended by a first read with evidence, with no block (Review Focus 1).
+    """An overdue stored start is ended by a first read with evidence, with no block.
 
     The read here runs before the loop could fire any timer; the grace itself is pinned by
     test_load_arms_the_start_timer's 9- and 30-minute rows.
@@ -1028,7 +1028,7 @@ async def test_background_stop_leaves_one_stop_timer(
 async def test_turn_off_before_the_background_stop_is_noop(
     hass: HomeAssistant, control: ChargeControl, client: AsyncMock
 ) -> None:
-    """A turn_off queued ahead of the background stop sends no second stop (Review Focus 1)."""
+    """A turn_off queued ahead of the background stop sends no second stop."""
     await control.async_start()
     await control.async_stop()
     await control._lock.acquire()  # noqa: SLF001

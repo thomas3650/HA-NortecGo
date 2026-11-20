@@ -70,7 +70,7 @@ async def test_switch_state(
 async def test_turn_on_twice_starts_once(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
-    """turn_on starts once; the switch is on at once; a second turn_on is a no-op (Review Focus 2)."""
+    """turn_on starts once; the switch is on at once; a second turn_on is a no-op."""
     mock_client.get_charger.return_value = make_charger(is_connected=True)
     await setup_integration(hass, mock_config_entry)
     await _call(hass, SERVICE_TURN_ON)
@@ -117,7 +117,7 @@ async def test_translated_error(
 async def test_switch_available_after_failed_read(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
 ) -> None:
-    """After a failed read the switch stays available and turn_off still stops (Review Focus 4)."""
+    """After a failed read the switch stays available and turn_off still stops."""
     mock_client.get_charger.return_value = make_charger(
         is_connected=True, charge_state=ChargeState.CHARGING
     )

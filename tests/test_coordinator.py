@@ -85,8 +85,8 @@ async def copenhagen(hass: HomeAssistant) -> None:
 def _coordinator(entry: MockConfigEntry) -> NortecGoCoordinator:
     """The entry's coordinator, with a listener so it keeps polling without entities."""
     coordinator: NortecGoCoordinator = entry.runtime_data
-    # HA only schedules the next poll while the coordinator has listeners, and these tests
-    # set up no entities. Adding the first listener also schedules a poll.
+    # HA only schedules the next poll while the coordinator has listeners; this one keeps
+    # polling scheduled whatever entities a test leaves enabled.
     coordinator.async_add_listener(lambda: None)
     return coordinator
 

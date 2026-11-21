@@ -38,6 +38,7 @@ from pynortecgo import (
     VehicleNotFoundError,
 )
 
+from .app_version import AppVersionTracker, async_delete_app_version_issue
 from .charge_control_store import (
     ChargeControlStore,
     StoredControl,
@@ -174,6 +175,7 @@ async def async_remove_charge_control(hass: HomeAssistant, entry_id: str) -> Non
         hass, DOMAIN, START_BLOCKED_ISSUE_ID.format(entry_id=entry_id)
     )
     ir.async_delete_issue(hass, DOMAIN, STOP_FAILED_ISSUE_ID.format(entry_id=entry_id))
+    async_delete_app_version_issue(hass, entry_id)
 
 
 class ChargeControl:
@@ -185,6 +187,7 @@ class ChargeControl:
         entry: NortecGoConfigEntry,
         client: NortecGoClient,
         *,
+        app_version: AppVersionTracker,
         on_change: Callable[[], None],
         request_refresh: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
@@ -192,6 +195,7 @@ class ChargeControl:
         self._hass = hass
         self._entry = entry
         self._client = client
+        self._app_version = app_version
         self._on_change = on_change
         self._request_refresh = request_refresh
         self._store = ChargeControlStore(hass, entry.entry_id)

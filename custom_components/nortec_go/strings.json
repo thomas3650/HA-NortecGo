@@ -200,6 +200,10 @@
     }
   },
   "issues": {
+    "app_version": {
+      "title": "The Nortec Go service no longer accepts the app version of {name}",
+      "description": "The Nortec Go service no longer accepts the version of the app that this integration presents, so some requests fail.\n\nUpdate the integration in HACS and restart Home Assistant. This notice goes away by itself once the requests work again."
+    },
     "start_blocked": {
       "title": "Charge starts are blocked on {name}",
       "fix_flow": {

@@ -31,6 +31,7 @@ from pynortecgo import (
     VehicleNotFoundError,
 )
 
+from .app_version import AppVersionTracker
 from .charge_control import (
     ChargeControl,
     ChargeControlState,
@@ -140,10 +141,12 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         )
         assert entry.unique_id is not None  # the config flow always sets it
         self.client = client
+        self.app_version = AppVersionTracker(hass, entry)
         self.charge_control = ChargeControl(
             hass,
             entry,
             client,
+            app_version=self.app_version,
             on_change=self._async_control_changed,
             request_refresh=self.async_read_now,
         )

@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+
+- A repair issue when the Nortec Go service no longer accepts the integration's app version, telling you to
+  update the integration. It goes away by itself once the requests work again. A start refused this way
+  places no card hold and says so, signing in shows its own error, and a refused read isn't tried again
+  sooner than usual.
+
 ## [0.7.0] - 2026-11-20
 
 ### Added

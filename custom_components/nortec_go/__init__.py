@@ -8,6 +8,7 @@ from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 from pynortecgo import Tokens
 
+from .app_version import async_delete_app_version_issue
 from .charge_control import async_remove_charge_control
 from .const import DOMAIN
 from .coordinator import NortecGoCoordinator, car_device_identifier
@@ -33,6 +34,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) -> bool:
     """Set up Nortec Go from a config entry, with the stored tokens."""
+    # An issue left by an earlier run; a refusal in this setup raises it again.
+    async_delete_app_version_issue(hass, entry.entry_id)
 
     async def _async_store_tokens(tokens: Tokens) -> None:
         # Runs inside the client's refresh: must not call the client.
@@ -93,4 +96,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: NortecGoConfigEntry) ->
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         await entry.runtime_data.charge_control.async_shutdown()
+        entry.runtime_data.app_version.close()
+        async_delete_app_version_issue(hass, entry.entry_id)
     return unloaded

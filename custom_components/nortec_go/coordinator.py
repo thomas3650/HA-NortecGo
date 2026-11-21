@@ -27,10 +27,12 @@ from pynortecgo import (
     NortecGoError,
     RateLimitError,
     UnexpectedResponseError,
+    UnsupportedAppVersionError,
     Vehicle,
     VehicleNotFoundError,
 )
 
+from .app_version import AppVersionCall, AppVersionTracker, is_refused
 from .charge_control import (
     ChargeControl,
     ChargeControlState,
@@ -67,6 +69,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # The setup car read's errors by class, the first match wins; anything else is car_read_failed.
 _SETUP_CAR_ERROR_KEYS: tuple[tuple[type[NortecGoError], str], ...] = (
+    (UnsupportedAppVersionError, "app_version"),
     (RateLimitError, "rate_limited"),
     (NortecGoConnectionError, "cannot_connect"),
     (ApiError, "api_error"),
@@ -75,12 +78,14 @@ _SETUP_CAR_ERROR_KEYS: tuple[tuple[type[NortecGoError], str], ...] = (
 
 # Charger read errors that keep the usual interval; any other is retried within
 # READ_RETRY_INTERVAL. Reauth replaces the reads; a missing charger or a changed API gains nothing
-# from reading sooner; a rate-limited API isn't read more often.
+# from reading sooner; a rate-limited API isn't read more often; a refused app version stays
+# refused until the integration is updated.
 _UNCAPPED_READ_ERRORS: tuple[type[NortecGoError], ...] = (
     AuthError,
     ChargerNotFoundError,
     UnexpectedResponseError,
     RateLimitError,
+    UnsupportedAppVersionError,
 )
 
 
@@ -140,10 +145,12 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         )
         assert entry.unique_id is not None  # the config flow always sets it
         self.client = client
+        self.app_version = AppVersionTracker(hass, entry)
         self.charge_control = ChargeControl(
             hass,
             entry,
             client,
+            app_version=self.app_version,
             on_change=self._async_control_changed,
             request_refresh=self.async_read_now,
         )
@@ -202,6 +209,7 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         # chained traceback (#37).
         try:
             charger = await self._async_read_charger()
+            self.app_version.succeeded(AppVersionCall.CHARGER_READ)
         except AuthError as err:
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN, translation_key="auth_failed"
@@ -215,6 +223,12 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
         except NortecGoConnectionError as err:
             raise UpdateFailed(
                 translation_domain=DOMAIN, translation_key="cannot_connect"
+            ) from err
+        except UnsupportedAppVersionError as err:
+            # Before ApiError, its parent class.
+            self.app_version.refused(AppVersionCall.CHARGER_READ)
+            raise UpdateFailed(
+                translation_domain=DOMAIN, translation_key="app_version"
             ) from err
         except ApiError as err:
             raise UpdateFailed(
@@ -356,7 +370,10 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
                 ),
                 "car_read_failed",
             )
+            if is_refused(err):
+                self.app_version.refused(AppVersionCall.CAR_READ)
             raise UpdateFailed(translation_domain=DOMAIN, translation_key=key) from err
+        self.app_version.succeeded(AppVersionCall.CAR_READ)
         self._vehicle = vehicle
         self._async_update_car_device(vehicle)
         return vehicle
@@ -377,8 +394,11 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             return None
         except NortecGoError as err:
             self._log_car_error(err)
+            if is_refused(err):
+                self.app_version.refused(AppVersionCall.CAR_READ)
             return self._vehicle
 
+        self.app_version.succeeded(AppVersionCall.CAR_READ)
         if self._car_failing:
             self._car_failing = False
             _LOGGER.info("Reading the car works again")
@@ -519,13 +539,17 @@ class NortecGoCoordinator(DataUpdateCoordinator[NortecGoData]):
             return
         except NortecGoError as err:
             self._log_price_error(err)
-            if retry_on_failure:
+            refused = is_refused(err)
+            if refused:
+                self.app_version.refused(AppVersionCall.PRICE_READ)
+            if retry_on_failure and not refused:
                 self._async_schedule_price_retry(err)
             if raise_on_failure:
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="price_read_failed"
                 ) from err
             return
+        self.app_version.succeeded(AppVersionCall.PRICE_READ)
         self._async_cancel_price_retry()
         if self._prices_failing:
             self._prices_failing = False

@@ -42,7 +42,8 @@
       "rate_limited": "Too many sign-in attempts. Wait a while before you try again.",
       "no_charger": "This account has no charger.",
       "multiple_chargers": "This account has more than one charger. Only one charger per account is supported.",
-      "unknown": "Unexpected error. Check the Home Assistant logs."
+      "unknown": "Unexpected error. Check the Home Assistant logs.",
+      "app_version": "The Nortec Go service no longer accepts the version of the app that the integration presents. Update the integration and try again."
     },
     "abort": {
       "already_configured": "This charger is already set up.",
@@ -165,6 +166,9 @@
     "start_failed": {
       "message": "Starting the charge failed. No card hold was placed. Check the Home Assistant logs."
     },
+    "start_app_version": {
+      "message": "The charge couldn't start because the Nortec Go service no longer accepts the version of the app that the integration presents. No card hold was placed. Update the integration."
+    },
     "auth_failed": {
       "message": "The Nortec Go session was rejected. Sign in again from the repair notice."
     },
@@ -183,6 +187,9 @@
     "api_error": {
       "message": "The Nortec Go service returned an error. Home Assistant will try again."
     },
+    "app_version": {
+      "message": "The Nortec Go service no longer accepts the version of the app that the integration presents. Update the integration."
+    },
     "charger_not_found": {
       "message": "The charger is no longer on the Nortec Go account. Remove the integration and add it again."
     },
@@ -200,6 +207,10 @@
     }
   },
   "issues": {
+    "app_version": {
+      "title": "The Nortec Go service no longer accepts this integration's app version ({name})",
+      "description": "The Nortec Go service no longer accepts the version of the app that this integration presents, so some requests fail.\n\nUpdate the integration in HACS and restart Home Assistant. This notice goes away by itself once the requests work again."
+    },
     "start_blocked": {
       "title": "Charge starts are blocked on {name}",
       "fix_flow": {

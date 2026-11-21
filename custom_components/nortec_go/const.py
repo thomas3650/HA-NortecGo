@@ -65,3 +65,5 @@ START_BLOCKED_ISSUE_ID: Final = "start_blocked_{entry_id}"
 STOP_FAILED_ISSUE_ID: Final = "stop_failed_{entry_id}"
 # The repair issue for a car that went from the account while running.
 CAR_GONE_ISSUE_ID: Final = "car_gone_{entry_id}"
+# The repair issue for calls the service refuses for the app version.
+APP_VERSION_ISSUE_ID: Final = "app_version_{entry_id}"

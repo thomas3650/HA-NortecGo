@@ -33,6 +33,7 @@ from pynortecgo import (
     RateLimitError,
     UnexpectedResponseError,
     UnknownChargerStateError,
+    UnsupportedAppVersionError,
     VehicleNotFoundError,
 )
 import pytest
@@ -41,6 +42,7 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
+from custom_components.nortec_go.app_version import AppVersionTracker
 from custom_components.nortec_go.charge_control import (
     ChargeControl,
     ChargeControlState,
@@ -248,6 +250,11 @@ def request_refresh() -> AsyncMock:
     return AsyncMock()
 
 
+def _tracker(hass: HomeAssistant, entry: MockConfigEntry) -> AppVersionTracker:
+    """A tracker for a directly built control."""
+    return AppVersionTracker(hass, entry)
+
+
 @pytest.fixture
 async def control(
     hass: HomeAssistant,
@@ -258,7 +265,12 @@ async def control(
 ) -> AsyncGenerator[ChargeControl]:
     """A loaded control that has seen one connected, idle read; shut down at teardown."""
     control = ChargeControl(
-        hass, entry, client, on_change=on_change, request_refresh=request_refresh
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=on_change,
+        request_refresh=request_refresh,
     )
     await control.async_load()
     control.on_charger_read(CONNECTED, control.start_attempts)
@@ -610,7 +622,12 @@ async def test_load_arms_the_start_timer(
         },
     }
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     assert control.state == PENDING
@@ -653,7 +670,12 @@ async def test_overdue_start_at_load_decided_by_the_first_read(
         },
     }
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     control.on_charger_read(charger, control.start_attempts)
@@ -682,7 +704,12 @@ async def test_overdue_start_at_load_blocks_after_the_grace_without_evidence(
         },
     }
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     control.on_charger_read(CONNECTED, control.start_attempts)
@@ -1080,7 +1107,12 @@ async def test_store_round_trip(
     assert saved["block_reason"] == "start_blocked"
     ir.async_delete_issue(hass, DOMAIN, f"start_blocked_{entry.entry_id}")
     again = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await again.async_load()
     assert again.state == BLOCKED
@@ -1115,7 +1147,12 @@ async def test_wrong_shape_store_blocks(
         "data": data,
     }
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     assert control.state == BLOCKED
@@ -1133,7 +1170,12 @@ async def test_corrupt_store_blocks(
 ) -> None:
     """A store file that was there and loads as nothing blocks starts, and the block is saved (#26)."""
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     with patch(
         "custom_components.nortec_go.charge_control_store._file_exists",
@@ -1159,7 +1201,12 @@ async def test_missing_store_does_not_block(
 ) -> None:
     """No store file is a first setup: nothing is blocked."""
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     assert control.state == IDLE
@@ -1190,7 +1237,12 @@ async def test_block_reason_survives_a_reload(
         },
     }
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     assert control.state == BLOCKED
@@ -1815,7 +1867,12 @@ async def test_reload_right_after_a_call_waits_and_keeps_the_count(
     assert saved["stop_tried_at"] is not None
 
     again = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await again.async_load()
     assert again.state == STOP_ASKED_ONLY
@@ -1855,7 +1912,12 @@ async def test_wait_at_load_is_never_more_than_2_minutes(
         },
     }
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
@@ -2028,7 +2090,12 @@ async def test_try_skipped_at_a_reload_is_sent_by_the_new_control(
     assert saved["stop_tries"] == 0
 
     again = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await again.async_load()
     assert again.state == STOP_ASKED_ONLY
@@ -2098,7 +2165,12 @@ async def test_wait_over_at_load_sends_the_stop_at_once(
         },
     }
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     assert control.state == STOP_ASKED_ONLY
@@ -2301,7 +2373,12 @@ async def test_failed_10th_call_gives_up_before_it_asks_for_its_read(
         )
 
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=read_now
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=read_now,
     )
     made.append(control)
     await control.async_load()
@@ -2521,7 +2598,12 @@ async def test_load_with_time_left(
     """A stop loaded 20 minutes after it was asked has 10 minutes left."""
     _store_a_stop(hass_storage, entry, asked_ago=timedelta(minutes=20))
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     assert control.state == STOP_ASKED_ONLY
@@ -2543,7 +2625,12 @@ async def test_load_past_the_limit_gives_up_at_once(
     """A stop from before a long outage is never sent: the owner is told instead."""
     _store_a_stop(hass_storage, entry, asked_ago=timedelta(minutes=31))
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     assert control.state == IDLE
@@ -2568,7 +2655,12 @@ async def test_load_with_a_time_in_the_future_gets_30_minutes(
     """A stored time in the future (a clock change) gives 30 minutes, not more."""
     _store_a_stop(hass_storage, entry, asked_ago=timedelta(hours=-3))
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     await _fire(hass, freezer, STOP_ASKED_MAX_AGE - timedelta(seconds=1))
@@ -2603,7 +2695,12 @@ async def test_load_with_10_tries_made(
         tried_ago=tried_ago,
     )
     control = ChargeControl(
-        hass, entry, client, on_change=MagicMock(), request_refresh=AsyncMock()
+        hass,
+        entry,
+        client,
+        app_version=_tracker(hass, entry),
+        on_change=MagicMock(),
+        request_refresh=AsyncMock(),
     )
     await control.async_load()
     if left:
@@ -2711,3 +2808,161 @@ async def test_removal_deletes_the_stop_issue(
     )
     await async_remove_charge_control(hass, entry.entry_id)
     assert _stop_issue(hass, entry) is None
+
+
+def _app_version_issue(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> ir.IssueEntry | None:
+    return ir.async_get(hass).async_get_issue(DOMAIN, f"app_version_{entry.entry_id}")
+
+
+def _refused_start(hold: bool) -> ChargeStartError:
+    """A failed start whose cause is the refused app version."""
+    step = ChargeStartStep.CONFIRM if hold else ChargeStartStep.PAYMENT_INTENT
+    err = ChargeStartError(step, hold)
+    err.__cause__ = UnsupportedAppVersionError("GET /example")
+    return err
+
+
+async def test_refused_start_before_payment(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A refused app version before the payment: start_app_version, no block, the issue."""
+    client.start_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_start()
+    assert exc_info.value.translation_key == "start_app_version"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
+    assert "Starting a charge failed: UnsupportedAppVersionError" in caplog.text
+    assert control.state == IDLE
+    assert _issue(hass, entry) is None
+    assert _app_version_issue(hass, entry) is not None
+    # Not blocked: the next start calls the client again.
+    with pytest.raises(HomeAssistantError):
+        await control.async_start()
+    assert client.start_charge.await_count == 2
+
+
+async def test_refused_start_with_hold_blocks_and_raises_issue(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+) -> None:
+    """A refusal after a payment request with a possible hold: the block wins, the issue too."""
+    client.start_charge.side_effect = _refused_start(hold=True)
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_start()
+    await hass.async_block_till_done()
+    assert exc_info.value.translation_key == "start_failed_hold"
+    assert control.state == BLOCKED
+    assert _issue(hass, entry) is not None
+    assert _app_version_issue(hass, entry) is not None
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await control.async_start()
+    assert exc_info.value.translation_key == "start_blocked"
+    client.start_charge.assert_awaited_once()
+
+
+async def test_refused_start_without_hold(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+) -> None:
+    """A refused start without a hold: start_app_version, no block, the issue."""
+    client.start_charge.side_effect = _refused_start(hold=False)
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_start()
+    assert exc_info.value.translation_key == "start_app_version"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
+    assert control.state == IDLE
+    assert _issue(hass, entry) is None
+    assert _app_version_issue(hass, entry) is not None
+
+
+async def test_start_success_clears_start(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+) -> None:
+    """A start that returns after a refused one deletes the issue."""
+    client.start_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    with pytest.raises(HomeAssistantError):
+        await control.async_start()
+    assert _app_version_issue(hass, entry) is not None
+    client.start_charge.side_effect = None
+    await control.async_start()
+    assert control.state == PENDING
+    assert _app_version_issue(hass, entry) is None
+
+
+async def test_already_active_does_not_clear_start(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+) -> None:
+    """A charge already on says nothing about the app version: the issue stays."""
+    client.start_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    with pytest.raises(HomeAssistantError):
+        await control.async_start()
+    assert _app_version_issue(hass, entry) is not None
+    client.start_charge.side_effect = ChargeAlreadyActiveError("x")
+    await control.async_start()
+    assert _app_version_issue(hass, entry) is not None
+
+
+async def test_refused_stop(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A refused stop is a failed try, as any other, and raises the issue; a stop that returns clears it."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    await control.async_stop()
+    await hass.async_block_till_done()
+    assert control.state == STOP_ASKED_ONLY
+    assert "(try 1 of 10): UnsupportedAppVersionError" in caplog.text
+    assert _app_version_issue(hass, entry) is not None
+
+    client.stop_charge.side_effect = None
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == 2
+    assert control.state == STOP_PENDING
+    assert _app_version_issue(hass, entry) is None
+
+
+async def test_no_active_charge_does_not_clear_stop(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A stop that finds no charge says nothing about the app version: the issue stays."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    await control.async_stop()
+    await hass.async_block_till_done()
+    assert _app_version_issue(hass, entry) is not None
+
+    client.stop_charge.side_effect = NoActiveChargeError("x")
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == 2
+    assert _app_version_issue(hass, entry) is not None

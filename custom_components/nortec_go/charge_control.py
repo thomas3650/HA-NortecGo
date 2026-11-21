@@ -35,9 +35,16 @@ from pynortecgo import (
     NortecGoError,
     PaymentSourceNotFoundError,
     UnknownChargerStateError,
+    UnsupportedAppVersionError,
     VehicleNotFoundError,
 )
 
+from .app_version import (
+    AppVersionCall,
+    AppVersionTracker,
+    async_delete_app_version_issue,
+    is_refused,
+)
 from .charge_control_store import (
     ChargeControlStore,
     StoredControl,
@@ -174,6 +181,7 @@ async def async_remove_charge_control(hass: HomeAssistant, entry_id: str) -> Non
         hass, DOMAIN, START_BLOCKED_ISSUE_ID.format(entry_id=entry_id)
     )
     ir.async_delete_issue(hass, DOMAIN, STOP_FAILED_ISSUE_ID.format(entry_id=entry_id))
+    async_delete_app_version_issue(hass, entry_id)
 
 
 class ChargeControl:
@@ -185,6 +193,7 @@ class ChargeControl:
         entry: NortecGoConfigEntry,
         client: NortecGoClient,
         *,
+        app_version: AppVersionTracker,
         on_change: Callable[[], None],
         request_refresh: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
@@ -192,6 +201,7 @@ class ChargeControl:
         self._hass = hass
         self._entry = entry
         self._client = client
+        self._app_version = app_version
         self._on_change = on_change
         self._request_refresh = request_refresh
         self._store = ChargeControlStore(hass, entry.entry_id)
@@ -308,20 +318,34 @@ class ChargeControl:
                 _LOGGER.warning(
                     "Starting a charge failed: %s: %s", type(err).__name__, err
                 )
+                refused = is_refused(err)
                 if err.hold_may_be_placed:
                     self._set_block("start_blocked")
                     self._changed()
                     self._request_read()
+                    if refused:
+                        self._app_version.refused(AppVersionCall.START)
                     raise HomeAssistantError(
                         translation_domain=DOMAIN, translation_key="start_failed_hold"
                     ) from None
+                if refused:
+                    self._app_version.refused(AppVersionCall.START)
                 raise HomeAssistantError(
-                    translation_domain=DOMAIN, translation_key="start_failed"
+                    translation_domain=DOMAIN,
+                    translation_key="start_app_version" if refused else "start_failed",
                 ) from None
             except AuthError:
                 self._entry.async_start_reauth(self._hass)
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="auth_failed"
+                ) from None
+            except UnsupportedAppVersionError as err:
+                self._app_version.refused(AppVersionCall.START)
+                _LOGGER.warning(
+                    "Starting a charge failed: %s: %s", type(err).__name__, err
+                )
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="start_app_version"
                 ) from None
             except NortecGoError as err:
                 key = _PRE_CHECK_ERRORS.get(type(err))
@@ -342,6 +366,7 @@ class ChargeControl:
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="start_failed"
                 ) from None
+            self._app_version.succeeded(AppVersionCall.START)
             self._set_start_pending(dt_util.utcnow())
             self._changed()
             self._request_read()
@@ -407,8 +432,11 @@ class ChargeControl:
             failed = "the session was rejected"
         except NortecGoError as err:
             failed = f"{type(err).__name__}: {err}"
+            if is_refused(err):
+                self._app_version.refused(AppVersionCall.STOP)
         else:
             accepted = True
+            self._app_version.succeeded(AppVersionCall.STOP)
         finally:
             # Also for a cancelled call: it was made, so the wait runs from here.
             self._try_queued = False

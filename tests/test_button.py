@@ -18,6 +18,7 @@ from pynortecgo import (
     NortecGoError,
     RateLimitError,
     UnexpectedResponseError,
+    UnsupportedAppVersionError,
 )
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -35,6 +36,7 @@ CHARGER_KEYS = [
     "rate_limited",
     "cannot_connect",
     "api_error",
+    "app_version",
     "charger_not_found",
     "unexpected_response",
     "read_failed",
@@ -124,6 +126,7 @@ async def test_press_after_failed_read_raises(
         (RateLimitError("too many requests", retry_after=30.0), "rate_limited"),
         (NortecGoConnectionError("network down"), "cannot_connect"),
         (ApiError("GET /example", 500), "api_error"),
+        (UnsupportedAppVersionError("GET /example"), "app_version"),
         (ChargerNotFoundError("GET /example: not found"), "charger_not_found"),
         (UnexpectedResponseError("GET /example", "bad shape"), "unexpected_response"),
         (NortecGoError("something new"), "read_failed"),

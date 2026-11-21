@@ -32,6 +32,7 @@ from pynortecgo import (
     NortecGoError,
     RateLimitError,
     UnexpectedResponseError,
+    UnsupportedAppVersionError,
     Vehicle,
     VehicleNotFoundError,
 )
@@ -43,6 +44,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.nortec_go.charge_control import ChargeControlState
 from custom_components.nortec_go.const import (
+    APP_VERSION_ISSUE_ID,
     CAR_GONE_ISSUE_ID,
     DOMAIN,
     FAST_READ_MAX_AGE,
@@ -349,6 +351,7 @@ async def test_no_car(
     [
         (RateLimitError("too many requests", retry_after=30.0), "rate_limited"),
         (NortecGoConnectionError("network down"), "cannot_connect"),
+        (UnsupportedAppVersionError("GET /example"), "app_version"),
         (ApiError("GET /example", 500), "api_error"),
         (UnexpectedResponseError("GET /example", "bad shape"), "unexpected_response"),
         (_UnknownClientError("something new"), "car_read_failed"),
@@ -597,6 +600,7 @@ async def test_control_change_during_outage_keeps_retry_interval(
         ChargerNotFoundError("x"),
         UnexpectedResponseError("GET /example", "bad shape"),
         RateLimitError("too many requests"),
+        UnsupportedAppVersionError("GET /example"),
     ],
 )
 async def test_uncapped_errors_keep_the_interval(
@@ -605,7 +609,7 @@ async def test_uncapped_errors_keep_the_interval(
     mock_client: AsyncMock,
     error: Exception,
 ) -> None:
-    """A missing charger, a changed API or a rate limit without a wait keeps the usual interval."""
+    """A missing charger, a changed API, a rate limit without a wait or a refused app version keeps the usual interval."""
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
 
@@ -745,6 +749,13 @@ async def test_unknown_client_error_fails_the_read(
             "charger_not_found",
             "The charger is no longer on the Nortec Go account. "
             "Remove the integration and add it again",
+        ),
+        (
+            UnsupportedAppVersionError("GET /example"),
+            UpdateFailed,
+            "app_version",
+            "The Nortec Go service no longer accepts the version of the app that the "
+            "integration presents. Update the integration",
         ),
         (
             UnexpectedResponseError("GET /example", "bad shape"),
@@ -2401,3 +2412,116 @@ async def test_control_change_during_the_energy_save_is_kept(
     assert control.state.stop_pending
     assert coordinator.data.control == control.state
     assert _switch(hass) == "off"
+
+
+def _issue(hass: HomeAssistant, entry: MockConfigEntry) -> ir.IssueEntry | None:
+    return ir.async_get(hass).async_get_issue(
+        DOMAIN, APP_VERSION_ISSUE_ID.format(entry_id=entry.entry_id)
+    )
+
+
+async def test_refused_charger_read(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A refused charger read fails the update with app_version and raises the issue."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_charger.side_effect = UnsupportedAppVersionError("GET /example")
+    await coordinator.async_refresh()
+
+    assert not coordinator.last_update_success
+    raised = coordinator.last_exception
+    assert isinstance(raised, UpdateFailed)
+    assert raised.translation_key == "app_version"
+    assert _issue(hass, mock_config_entry) is not None
+
+
+async def test_refused_charger_read_cleared_by_next_read(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A good charger read after a refused one deletes the issue."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+    mock_client.get_charger.side_effect = UnsupportedAppVersionError("GET /example")
+    await coordinator.async_refresh()
+    assert _issue(hass, mock_config_entry) is not None
+
+    mock_client.get_charger.side_effect = None
+    await coordinator.async_refresh()
+
+    assert coordinator.last_update_success
+    assert _issue(hass, mock_config_entry) is None
+
+
+async def test_refused_setup_car_read(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A refused car read at setup retries setup with app_version and raises the issue."""
+    mock_client.get_vehicle.side_effect = UnsupportedAppVersionError("GET /example")
+    await setup_integration(hass, mock_config_entry)
+
+    state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
+    assert state is ConfigEntryState.SETUP_RETRY
+    assert mock_config_entry.error_reason_translation_key == "app_version"
+    assert _issue(hass, mock_config_entry) is not None
+
+
+async def test_refused_car_read_while_running(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A refused car read keeps the last car data and raises the issue; a good one clears it."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_vehicle.side_effect = UnsupportedAppVersionError("GET /example")
+    await coordinator.async_read_now(with_car=True)
+    assert coordinator.last_update_success
+    assert coordinator.data.vehicle == make_vehicle()
+    assert _issue(hass, mock_config_entry) is not None
+
+    mock_client.get_vehicle.side_effect = None
+    await coordinator.async_read_now(with_car=True)
+    assert _issue(hass, mock_config_entry) is None
+
+
+async def test_refused_price_read_no_retry(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A refused scheduled price read raises the issue and schedules no retry; a good one clears it."""
+    freezer.move_to(_local(15))
+    await setup_integration(hass, mock_config_entry)
+    forecast = mock_client.get_price_forecast
+    forecast.side_effect = UnsupportedAppVersionError("GET /example")
+
+    await _at(hass, freezer, _local(15, 5))
+    assert forecast.await_count == 2
+    assert _issue(hass, mock_config_entry) is not None
+    await _at(hass, freezer, _local(15, 25))
+    await _at(hass, freezer, _local(19, 59))
+    assert forecast.await_count == 2
+
+    forecast.side_effect = None
+    await _at(hass, freezer, _local(20, 5))
+    assert forecast.await_count == 3
+    assert _issue(hass, mock_config_entry) is None
+
+
+async def test_refused_price_read_on_refresh(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: AsyncMock
+) -> None:
+    """A refused price read asked to raise raises price_read_failed, and raises the issue."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = _coordinator(mock_config_entry)
+
+    mock_client.get_price_forecast.side_effect = UnsupportedAppVersionError(
+        "GET /example"
+    )
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await coordinator.async_read_prices(raise_on_failure=True)
+
+    assert exc_info.value.translation_key == "price_read_failed"
+    assert _issue(hass, mock_config_entry) is not None

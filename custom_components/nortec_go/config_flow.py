@@ -22,6 +22,7 @@ from pynortecgo import (
     NortecGoConnectionError,
     RateLimitError,
     Tokens,
+    UnsupportedAppVersionError,
 )
 
 from .const import DOMAIN
@@ -55,6 +56,8 @@ async def _async_sign_in(
         charger = await client.get_charger()
     except AuthError:
         return "invalid_auth"
+    except UnsupportedAppVersionError:
+        return "app_version"
     except NortecGoConnectionError, ApiError:
         return "cannot_connect"
     except RateLimitError:

@@ -268,8 +268,8 @@ step on *Refresh* fails then too.
   integration keeps running, and start over after a Home Assistant restart or a reload of the integration.
 - The prices have been checked only for the DK2 price area (DKK).
 - Tomorrow's prices are a forecast until the day-ahead prices come out, around 13:00; the 15:05 read
-  replaces them (or its retry about 15 minutes later, if it fails, unless the service no longer accepts the
-  integration's app version).
+  replaces them (or, if it fails, its retry about 15 minutes later; there is no retry when the service no
+  longer accepts the integration's app version).
 - Car data can be hours old (see *Last seen*), so *Connected to charger* can turn on late.
 - Days and the price times follow Home Assistant's time zone.
 - The car device is added and removed only when the integration starts (a reload, or a restart of Home
@@ -360,7 +360,8 @@ understand), Home Assistant tries the start again by itself: first after a few s
 Assistant itself is starting, when it has started), then at longer gaps of up to 10 minutes. Until a try
 works, all the integration's entities are unavailable, *Charge* included. The integration's entry shows the
 reason, which can also be one of the texts for a service that can't be reached, limits requests, returns an
-error or sends an answer the integration doesn't understand.
+error or sends an answer the integration doesn't understand, or the one for a service that no longer accepts
+the integration's app version (see the next entry).
 
 ### "The Nortec Go service no longer accepts this integration's app version"
 
@@ -374,7 +375,8 @@ For the same reason:
 - A refused read of the charger, or of the car when the integration starts, shows "The Nortec Go service no
   longer accepts the version of the app that the integration presents. Update the integration." It shows as
   the entry's reason while Home Assistant tries the start again, and for the charger also as the error of a
-  *Refresh* press. The charger and the prices aren't read again sooner than usual (see *Data updates*).
+  *Refresh* press. Once the integration is running, the charger and the prices aren't read again sooner than
+  usual (see *Data updates*).
 - A start that is refused places no card hold and shows "The charge couldn't start because the Nortec Go
   service no longer accepts the version of the app that the integration presents. No card hold was placed.
   Update the integration." If a start may have left a card hold, starts are blocked as described in

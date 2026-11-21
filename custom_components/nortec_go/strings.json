@@ -183,6 +183,9 @@
     "api_error": {
       "message": "The Nortec Go service returned an error. Home Assistant will try again."
     },
+    "app_version": {
+      "message": "The Nortec Go service no longer accepts the version of the app that the integration presents. Update the integration."
+    },
     "charger_not_found": {
       "message": "The charger is no longer on the Nortec Go account. Remove the integration and add it again."
     },
@@ -201,7 +204,7 @@
   },
   "issues": {
     "app_version": {
-      "title": "The Nortec Go service no longer accepts the app version of {name}",
+      "title": "The Nortec Go service no longer accepts this integration's app version ({name})",
       "description": "The Nortec Go service no longer accepts the version of the app that this integration presents, so some requests fail.\n\nUpdate the integration in HACS and restart Home Assistant. This notice goes away by itself once the requests work again."
     },
     "start_blocked": {

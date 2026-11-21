@@ -1,19 +1,27 @@
 """Tests for the app version tracker and its repair issue."""
 
+from datetime import timedelta
 import json
 import logging
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.util import dt as dt_util
 from pynortecgo import (
     ApiError,
     ChargeStartError,
     ChargeStartStep,
+    NortecGoConnectionError,
     UnsupportedAppVersionError,
 )
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.nortec_go.app_version import (
     AppVersionCall,
@@ -154,10 +162,58 @@ async def test_setup_deletes_stale_issue(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: object
 ) -> None:
     """A successful setup leaves no issue from an earlier run."""
-    mock_config_entry.add_to_hass(hass)
     _create_issue(hass, mock_config_entry)
     assert _issue(hass, mock_config_entry) is not None
     await setup_integration(hass, mock_config_entry)
+    assert _issue(hass, mock_config_entry) is None
+
+
+@pytest.mark.parametrize(
+    "error", [NortecGoConnectionError("network down"), ApiError("GET /example", 500)]
+)
+async def test_other_error_changes_nothing(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+    error: Exception,
+) -> None:
+    """Another error neither clears nor duplicates the issue, and raises none by itself."""
+    await setup_integration(hass, mock_config_entry)
+    coordinator = mock_config_entry.runtime_data
+    tracker = coordinator.app_version
+
+    mock_client.get_charger.side_effect = error
+    await coordinator.async_refresh()
+    assert _issue(hass, mock_config_entry) is None
+
+    mock_client.get_charger.side_effect = UnsupportedAppVersionError("GET /example")
+    await coordinator.async_refresh()
+    assert _issue(hass, mock_config_entry) is not None
+
+    mock_client.get_charger.side_effect = error
+    await coordinator.async_refresh()
+    assert _issue(hass, mock_config_entry) is not None
+    assert len(ir.async_get(hass).issues) == 1
+    assert tracker.refused_calls == {AppVersionCall.CHARGER_READ}
+
+
+async def test_failed_setup_keeps_issue_and_next_setup_clears_it(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+) -> None:
+    """A setup that fails on a refusal keeps the issue; the setup that works deletes it."""
+    mock_client.get_charger.side_effect = UnsupportedAppVersionError("GET /example")
+    await setup_integration(hass, mock_config_entry)
+    state = mock_config_entry.state  # a local, so mypy doesn't keep the narrowing
+    assert state is ConfigEntryState.SETUP_RETRY
+    assert _issue(hass, mock_config_entry) is not None
+
+    mock_client.get_charger.side_effect = None
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=30))
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
     assert _issue(hass, mock_config_entry) is None
 
 

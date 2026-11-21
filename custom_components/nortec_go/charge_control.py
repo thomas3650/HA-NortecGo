@@ -319,15 +319,17 @@ class ChargeControl:
                     "Starting a charge failed: %s: %s", type(err).__name__, err
                 )
                 refused = is_refused(err)
-                if refused:
-                    self._app_version.refused(AppVersionCall.START)
                 if err.hold_may_be_placed:
                     self._set_block("start_blocked")
                     self._changed()
                     self._request_read()
+                    if refused:
+                        self._app_version.refused(AppVersionCall.START)
                     raise HomeAssistantError(
                         translation_domain=DOMAIN, translation_key="start_failed_hold"
                     ) from None
+                if refused:
+                    self._app_version.refused(AppVersionCall.START)
                 raise HomeAssistantError(
                     translation_domain=DOMAIN,
                     translation_key="start_app_version" if refused else "start_failed",
@@ -429,12 +431,12 @@ class ChargeControl:
             rejected = True
             failed = "the session was rejected"
         except NortecGoError as err:
+            failed = f"{type(err).__name__}: {err}"
             if is_refused(err):
                 self._app_version.refused(AppVersionCall.STOP)
-            failed = f"{type(err).__name__}: {err}"
         else:
-            self._app_version.succeeded(AppVersionCall.STOP)
             accepted = True
+            self._app_version.succeeded(AppVersionCall.STOP)
         finally:
             # Also for a cancelled call: it was made, so the wait runs from here.
             self._try_queued = False

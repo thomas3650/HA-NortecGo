@@ -377,7 +377,7 @@ For the same reason:
   the entry's reason while Home Assistant tries the start again, and for the charger also as the error of a
   *Refresh* press. Once the integration is running, the charger and the prices aren't read again sooner than
   usual (see *Data updates*).
-- A start that is refused places no card hold and shows "The charge couldn't start because the Nortec Go
+- A start refused before any payment places no card hold and shows "The charge couldn't start because the Nortec Go
   service no longer accepts the version of the app that the integration presents. No card hold was placed.
   Update the integration." If a start may have left a card hold, starts are blocked as described in
   *Starting a charge*, and the error says so instead.

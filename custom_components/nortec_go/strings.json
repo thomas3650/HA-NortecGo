@@ -165,6 +165,9 @@
     "start_failed": {
       "message": "Starting the charge failed. No card hold was placed. Check the Home Assistant logs."
     },
+    "start_app_version": {
+      "message": "The charge couldn't start because the Nortec Go service no longer accepts the version of the app that the integration presents. No card hold was placed. Update the integration."
+    },
     "auth_failed": {
       "message": "The Nortec Go session was rejected. Sign in again from the repair notice."
     },

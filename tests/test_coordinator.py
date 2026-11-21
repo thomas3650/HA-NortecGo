@@ -609,7 +609,7 @@ async def test_uncapped_errors_keep_the_interval(
     mock_client: AsyncMock,
     error: Exception,
 ) -> None:
-    """A missing charger, a changed API or a rate limit without a wait keeps the usual interval."""
+    """A missing charger, a changed API, a rate limit without a wait or a refused app version keeps the usual interval."""
     await setup_integration(hass, mock_config_entry)
     coordinator = _coordinator(mock_config_entry)
 

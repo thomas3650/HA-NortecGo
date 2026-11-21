@@ -33,6 +33,7 @@ from pynortecgo import (
     RateLimitError,
     UnexpectedResponseError,
     UnknownChargerStateError,
+    UnsupportedAppVersionError,
     VehicleNotFoundError,
 )
 import pytest
@@ -2807,3 +2808,161 @@ async def test_removal_deletes_the_stop_issue(
     )
     await async_remove_charge_control(hass, entry.entry_id)
     assert _stop_issue(hass, entry) is None
+
+
+def _app_version_issue(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> ir.IssueEntry | None:
+    return ir.async_get(hass).async_get_issue(DOMAIN, f"app_version_{entry.entry_id}")
+
+
+def _refused_start(hold: bool) -> ChargeStartError:
+    """A failed start whose cause is the refused app version."""
+    step = ChargeStartStep.CONFIRM if hold else ChargeStartStep.PAYMENT_INTENT
+    err = ChargeStartError(step, hold)
+    err.__cause__ = UnsupportedAppVersionError("GET /example")
+    return err
+
+
+async def test_refused_start_before_payment(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A refused app version before the payment: start_app_version, no block, the issue."""
+    client.start_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_start()
+    assert exc_info.value.translation_key == "start_app_version"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
+    assert "Starting a charge failed: UnsupportedAppVersionError" in caplog.text
+    assert control.state == IDLE
+    assert _issue(hass, entry) is None
+    assert _app_version_issue(hass, entry) is not None
+    # Not blocked: the next start calls the client again.
+    with pytest.raises(HomeAssistantError):
+        await control.async_start()
+    assert client.start_charge.await_count == 2
+
+
+async def test_refused_start_with_hold_blocks_and_raises_issue(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+) -> None:
+    """A refusal after a payment request with a possible hold: the block wins, the issue too."""
+    client.start_charge.side_effect = _refused_start(hold=True)
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_start()
+    await hass.async_block_till_done()
+    assert exc_info.value.translation_key == "start_failed_hold"
+    assert control.state == BLOCKED
+    assert _issue(hass, entry) is not None
+    assert _app_version_issue(hass, entry) is not None
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await control.async_start()
+    assert exc_info.value.translation_key == "start_blocked"
+    client.start_charge.assert_awaited_once()
+
+
+async def test_refused_start_without_hold(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+) -> None:
+    """A refused start without a hold: start_app_version, no block, the issue."""
+    client.start_charge.side_effect = _refused_start(hold=False)
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await control.async_start()
+    assert exc_info.value.translation_key == "start_app_version"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__
+    assert control.state == IDLE
+    assert _issue(hass, entry) is None
+    assert _app_version_issue(hass, entry) is not None
+
+
+async def test_start_success_clears_start(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+) -> None:
+    """A start that returns after a refused one deletes the issue."""
+    client.start_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    with pytest.raises(HomeAssistantError):
+        await control.async_start()
+    assert _app_version_issue(hass, entry) is not None
+    client.start_charge.side_effect = None
+    await control.async_start()
+    assert control.state == PENDING
+    assert _app_version_issue(hass, entry) is None
+
+
+async def test_already_active_does_not_clear_start(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+) -> None:
+    """A charge already on says nothing about the app version: the issue stays."""
+    client.start_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    with pytest.raises(HomeAssistantError):
+        await control.async_start()
+    assert _app_version_issue(hass, entry) is not None
+    client.start_charge.side_effect = ChargeAlreadyActiveError("x")
+    await control.async_start()
+    assert _app_version_issue(hass, entry) is not None
+
+
+async def test_refused_stop(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A refused stop is a failed try, as any other, and raises the issue; a stop that returns clears it."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    await control.async_stop()
+    await hass.async_block_till_done()
+    assert control.state == STOP_ASKED_ONLY
+    assert "(try 1 of 10): UnsupportedAppVersionError" in caplog.text
+    assert _app_version_issue(hass, entry) is not None
+
+    client.stop_charge.side_effect = None
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == 2
+    assert control.state == STOP_PENDING
+    assert _app_version_issue(hass, entry) is None
+
+
+async def test_no_active_charge_does_not_clear_stop(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    control: ChargeControl,
+    client: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A stop that finds no charge says nothing about the app version: the issue stays."""
+    control.on_charger_read(CHARGING, control.start_attempts)
+    client.stop_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    await control.async_stop()
+    await hass.async_block_till_done()
+    assert _app_version_issue(hass, entry) is not None
+
+    client.stop_charge.side_effect = NoActiveChargeError("x")
+    await _fire(hass, freezer, STOP_CONFIRM_TIMEOUT)
+    control.on_charger_read(CHARGING, control.start_attempts)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert client.stop_charge.await_count == 2
+    assert _app_version_issue(hass, entry) is not None

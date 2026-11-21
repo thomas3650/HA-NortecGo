@@ -6,8 +6,11 @@ import logging
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+from homeassistant.components.switch.const import DOMAIN as SWITCH_DOMAIN
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_ON
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 from pynortecgo import (
@@ -31,7 +34,7 @@ from custom_components.nortec_go.app_version import (
 from custom_components.nortec_go.charge_control import async_remove_charge_control
 from custom_components.nortec_go.const import APP_VERSION_ISSUE_ID, DOMAIN
 
-from .conftest import setup_integration
+from .conftest import make_charger, setup_integration
 
 COMPONENT = Path(__file__).parent.parent / "custom_components" / "nortec_go"
 BACK = "The Nortec Go service accepts the app version again"
@@ -223,3 +226,39 @@ def test_issue_strings_exist(name: str) -> None:
     issue = json.loads((COMPONENT / name).read_text())["issues"]["app_version"]
     assert issue["title"]
     assert issue["description"]
+
+
+@pytest.mark.parametrize("name", ["strings.json", "translations/en.json"])
+def test_start_app_version_string_exists(name: str) -> None:
+    """The refused start has its message in the strings and the English file."""
+    exceptions = json.loads((COMPONENT / name).read_text())["exceptions"]
+    assert exceptions["start_app_version"]["message"]
+
+
+async def test_refused_start_survives_charger_reads(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: AsyncMock,
+) -> None:
+    """Good charger reads after a refused start leave the issue up."""
+    mock_client.get_charger.return_value = make_charger(is_connected=True)
+    await setup_integration(hass, mock_config_entry)
+    coordinator = mock_config_entry.runtime_data
+    tracker = coordinator.app_version
+
+    mock_client.start_charge.side_effect = UnsupportedAppVersionError("GET /example")
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await hass.services.async_call(
+            SWITCH_DOMAIN,
+            SERVICE_TURN_ON,
+            {ATTR_ENTITY_ID: "switch.garage_charger_charge"},
+            blocking=True,
+        )
+    assert exc_info.value.translation_key == "start_app_version"
+    assert _issue(hass, mock_config_entry) is not None
+
+    for _ in range(3):
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success
+        assert _issue(hass, mock_config_entry) is not None
+    assert tracker.refused_calls == {AppVersionCall.START}

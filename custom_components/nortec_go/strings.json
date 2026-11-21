@@ -42,7 +42,8 @@
       "rate_limited": "Too many sign-in attempts. Wait a while before you try again.",
       "no_charger": "This account has no charger.",
       "multiple_chargers": "This account has more than one charger. Only one charger per account is supported.",
-      "unknown": "Unexpected error. Check the Home Assistant logs."
+      "unknown": "Unexpected error. Check the Home Assistant logs.",
+      "app_version": "The Nortec Go service no longer accepts the version of the app that the integration presents. Update the integration and try again."
     },
     "abort": {
       "already_configured": "This charger is already set up.",

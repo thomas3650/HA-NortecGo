@@ -1,7 +1,9 @@
 """Tests for the Nortec Go config flow."""
 
 from collections.abc import Mapping
+import json
 import logging
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -22,6 +24,7 @@ from pynortecgo import (
     NortecGoConnectionError,
     RateLimitError,
     UnexpectedResponseError,
+    UnsupportedAppVersionError,
 )
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -49,12 +52,23 @@ FLOW_ERRORS = [
     ("login", AuthError("rejected"), "invalid_auth"),
     ("login", NortecGoConnectionError("network down"), "cannot_connect"),
     ("login", ApiError("POST /example", 500), "cannot_connect"),
+    ("login", UnsupportedAppVersionError("POST /example"), "app_version"),
+    ("get_charger", UnsupportedAppVersionError("GET /example"), "app_version"),
     ("login", RateLimitError("too many requests"), "rate_limited"),
     ("get_charger", ChargerNotFoundError("no charger"), "no_charger"),
     ("get_charger", MultipleChargersError("two chargers"), "multiple_chargers"),
     ("get_charger", UnexpectedResponseError("GET /example", "bad shape"), "unknown"),
     ("login", RuntimeError("boom"), "unknown"),
 ]
+
+COMPONENT = Path(__file__).parent.parent / "custom_components" / DOMAIN
+
+
+@pytest.mark.parametrize("name", ["strings.json", "translations/en.json"])
+def test_app_version_error_string_exists(name: str) -> None:
+    """The sign-in form has a text for a refused app version in both files."""
+    errors = json.loads((COMPONENT / name).read_text())["config"]["error"]
+    assert errors["app_version"]
 
 
 def _suggested(result: Mapping[str, Any], key: str) -> Any:
